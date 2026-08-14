@@ -41,3 +41,32 @@ def test_candidate_rejection_evidence_names_every_failed_mandatory_check() -> No
         "transverse_shear_leg_spacing_failed",
         "reinforcement_fit_failed",
     )
+
+
+def test_candidate_rejects_failed_transverse_leg_clear_spacing() -> None:
+    result = EngineeringResult(
+        source_revision=1,
+        source_hash="fixture",
+        status="PASS",
+        summary="fixture",
+        families={
+            "bending": {"status": "PASS", "minimum_tensile_status": "PASS"},
+            "ductility": {"status": "PASS"},
+            "geometry": {"status": "PASS"},
+            "serviceability": {"status": "PASS"},
+            "crack_control": {"status": "PASS"},
+            "shear": {
+                "shear_ok": True,
+                "web_ok": True,
+                "Asv": 100.0,
+                "transverse_reinforcement_required": True,
+                "min_shear_ok": True,
+                "spacing_ok": True,
+                "transverse_spacing_ok": False,
+                "transverse_clear_spacing_ok": False,
+            },
+            "reinforcement_fit": {"accepted": True},
+        },
+    )
+
+    assert "transverse_shear_leg_clear_spacing_failed" in compliance_rejection_codes(result)

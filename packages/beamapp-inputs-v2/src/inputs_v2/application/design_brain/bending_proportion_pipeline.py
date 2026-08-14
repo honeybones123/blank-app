@@ -10,6 +10,10 @@ from inputs_v2.application.candidate_evaluation import complete_compliance
 from inputs_v2.application.design_brain.bending_repair_policy import (
     generate_proportion_balance_specs,
 )
+from inputs_v2.application.design_brain.section_strategies import (
+    proposal_concrete_area_mm2,
+    revise_family_geometry,
+)
 from inputs_v2.application.design_brain_apply import Candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
@@ -54,7 +58,7 @@ class BendingProportionPipeline:
         updated_inputs: BeamInputs,
         after: EngineeringResult,
     ) -> ProportionBalanceOutcome:
-        baseline_volume = candidate.proposal.width_mm * candidate.proposal.depth_mm
+        baseline_volume = proposal_concrete_area_mm2(candidate.proposal)
         baseline_steel = (
             candidate.proposal.bottom_bars
             * candidate.proposal.bottom_diameter_mm**2
@@ -115,12 +119,15 @@ class BendingProportionPipeline:
                 spec.row_counts,
             )
             if key not in cache:
-                proposal = replace(
-                    candidate.proposal,
+                proposal = revise_family_geometry(
+                    current,
+                    replace(
+                        candidate.proposal,
+                        bottom_bars=spec.bars,
+                        bottom_diameter_mm=spec.diameter_mm,
+                    ),
                     width_mm=spec.width_mm,
                     depth_mm=spec.depth_mm,
-                    bottom_bars=spec.bars,
-                    bottom_diameter_mm=spec.diameter_mm,
                 )
                 trial = Candidate(
                     f"proportion-{int(spec.width_mm)}-{int(spec.depth_mm)}-{spec.bars}-N{spec.diameter_mm}",
@@ -144,20 +151,29 @@ class BendingProportionPipeline:
             if result is None or not complete_compliance(result):
                 continue
             steel = spec.bars * spec.diameter_mm**2
+            area_proposal = revise_family_geometry(
+                current,
+                candidate.proposal,
+                width_mm=spec.width_mm,
+                depth_mm=spec.depth_mm,
+            )
             concrete_reduction = (
-                1.0 - spec.width_mm * spec.depth_mm / baseline_volume
+                1.0 - proposal_concrete_area_mm2(area_proposal) / baseline_volume
             )
             steel_increase = steel / max(baseline_steel, 1.0) - 1.0
             if concrete_reduction >= self._preferences.normal_concrete_reduction_threshold and (
                 steel_increase <= self._preferences.normal_reinforcement_increase_limit
                 or concrete_reduction >= self._preferences.substantial_concrete_reduction_threshold
             ):
-                proposal = replace(
-                    candidate.proposal,
+                proposal = revise_family_geometry(
+                    current,
+                    replace(
+                        candidate.proposal,
+                        bottom_bars=spec.bars,
+                        bottom_diameter_mm=spec.diameter_mm,
+                    ),
                     width_mm=spec.width_mm,
                     depth_mm=spec.depth_mm,
-                    bottom_bars=spec.bars,
-                    bottom_diameter_mm=spec.diameter_mm,
                 )
                 trial = Candidate(
                     f"proportion-{int(spec.width_mm)}-{int(spec.depth_mm)}-{spec.bars}-N{spec.diameter_mm}",

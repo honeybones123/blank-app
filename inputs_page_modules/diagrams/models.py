@@ -41,6 +41,7 @@ class Section2DFigureRequestViewModel:
     fallback_cover_side: float = 40.0
     fallback_cover_top: float = 40.0
     fallback_cover_bot: float = 40.0
+    validation_errors: tuple[str, ...] = ()
     display_hash: str = ""
 
 
@@ -62,6 +63,7 @@ class Beam3DFigureRequestViewModel:
     reo_layout: dict[str, Any]
     cage: dict[str, Any]
     resolved_bars: tuple[dict[str, Any], ...] | None = None
+    validation_errors: tuple[str, ...] = ()
     display_hash: str = ""
 
 

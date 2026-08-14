@@ -15,6 +15,19 @@ from inputs_application.region_contexts import RevisionIdentity
 from .models import InputsBeam3DRegionContext, InputsSection2DRegionContext
 
 
+def _render_invalid_reinforcement_notice(*, st_module: Any, errors: tuple[str, ...]) -> None:
+    if not errors:
+        return
+    items = "".join(f"<li>{html.escape(reason)}</li>" for reason in errors)
+    st_module.markdown(
+        '<div class="inputs-model-invalid-reo" role="alert">'
+        '<strong>Invalid reinforcement</strong>'
+        f"<ul>{items}</ul>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _format_reo_number(value: Any) -> str:
     numeric = float(value or 0.0)
     return str(int(numeric)) if numeric.is_integer() else f"{numeric:g}"
@@ -115,6 +128,10 @@ def render_inputs_section_2d_diagram_block(
         return
 
     view_model = region_context.view_model
+    _render_invalid_reinforcement_notice(
+        st_module=st_module,
+        errors=view_model.validation_errors,
+    )
     shape_name = str(view_model.shape_name or "").strip().lower()
     if "rectangle" in shape_name or shape_name == "rect":
         required = ["b", "D"]
@@ -166,6 +183,8 @@ def render_inputs_section_2d_diagram_block(
     figure_prepare_ms = (time_perf_counter_fn() - figure_started) * 1000.0
 
     if fig_sec is not None:
+        if view_model.validation_errors:
+            fig_sec.update_layout(paper_bgcolor="rgba(254,242,242,1)")
         try:
             fig_sec.update_layout(
                 autosize=True,
@@ -222,6 +241,10 @@ def render_inputs_3d_diagram_block(
         return
 
     view_model = region_context.view_model
+    _render_invalid_reinforcement_notice(
+        st_module=st_module,
+        errors=view_model.validation_errors,
+    )
     geo_fp = view_model.display_hash
     cache_payload = st_module.session_state.get("_inputs_model_3d_cache", {})
     cached_fp = cache_payload.get("geo_fp")

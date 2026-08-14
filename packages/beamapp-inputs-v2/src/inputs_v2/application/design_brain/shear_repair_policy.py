@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from inputs_v2.domain.beam_inputs import BeamInputs
+from inputs_v2.domain.beam_inputs import BeamInputs, SUPPORTED_SHEAR_LEG_COUNTS
 
 
 class ShearRepairSpec(NamedTuple):
@@ -18,8 +18,19 @@ def generate_shear_repair_specs(
 ) -> tuple[ShearRepairSpec, ...]:
     """Generate the V1-ordered spacing-to-geometry shear repair ladder."""
     spacings = (300.0, 250.0, 200.0, 175.0, 150.0, 125.0, 100.0)
-    legs_values = (2, 4, 6, 8)
-    diameters = (10, 12, 16)
+    current_legs = int(current.shear.legs or 0)
+    higher_leg_values = tuple(
+        legs for legs in SUPPORTED_SHEAR_LEG_COUNTS
+        if legs > current_legs
+    )
+    diameter_leg_values = tuple(
+        legs for legs in SUPPORTED_SHEAR_LEG_COUNTS
+        if legs >= max(current_legs, min(SUPPORTED_SHEAR_LEG_COUNTS))
+    )
+    diameters = tuple(
+        diameter for diameter in (10, 12, 16)
+        if diameter >= int(current.shear.diameter_mm or 0)
+    ) or (16,)
     depths = (
         ()
         if current.depth_locked
@@ -46,7 +57,7 @@ def generate_shear_repair_specs(
                 abs(spacing - current.shear.spacing_mm) / 100.0,
             )
         )
-    for legs in legs_values:
+    for legs in higher_leg_values:
         for spacing in spacings:
             candidates.append(
                 ShearRepairSpec(
@@ -56,7 +67,7 @@ def generate_shear_repair_specs(
                 )
             )
     for diameter in diameters:
-        for legs in legs_values:
+        for legs in diameter_leg_values:
             for spacing in spacings:
                 candidates.append(
                     ShearRepairSpec(
@@ -80,7 +91,7 @@ def generate_shear_repair_specs(
             )
     for width in widths:
         for diameter in diameters:
-            for legs in legs_values:
+            for legs in diameter_leg_values:
                 for spacing in spacings:
                     candidates.append(
                         ShearRepairSpec(
@@ -108,9 +119,9 @@ def _append_coordinated_geometry(
     widths: tuple[float, ...],
 ) -> None:
     coordinated_links = (
-        (10, 2, 100.0), (10, 4, 100.0), (10, 6, 100.0), (10, 8, 100.0),
-        (12, 2, 100.0), (12, 4, 100.0), (12, 6, 100.0), (12, 8, 100.0),
-        (16, 2, 100.0), (16, 4, 100.0), (16, 6, 100.0), (16, 8, 100.0),
+        (10, 2, 100.0), (10, 3, 100.0), (10, 4, 100.0), (10, 5, 100.0), (10, 6, 100.0), (10, 8, 100.0),
+        (12, 2, 100.0), (12, 3, 100.0), (12, 4, 100.0), (12, 5, 100.0), (12, 6, 100.0), (12, 8, 100.0),
+        (16, 2, 100.0), (16, 3, 100.0), (16, 4, 100.0), (16, 5, 100.0), (16, 6, 100.0), (16, 8, 100.0),
         (16, 6, 125.0), (16, 6, 150.0), (16, 6, 175.0), (16, 6, 200.0),
         (16, 8, 125.0), (16, 8, 150.0), (16, 8, 175.0), (16, 8, 200.0),
     )

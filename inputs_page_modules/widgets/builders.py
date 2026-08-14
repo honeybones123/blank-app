@@ -295,6 +295,8 @@ def build_shear_reinforcement_basic_widget_payloads(
     link_spacing_value: Any,
 ) -> tuple[dict[str, Any], ...]:
     """Return metadata payloads for the existing Shear reinforcement widgets."""
+    from inputs_application.shear_state_normalization import SUPPORTED_SHEAR_LEG_COUNTS
+
     diameters = list(reo_bar_diameters or ())
     return (
         {
@@ -317,9 +319,9 @@ def build_shear_reinforcement_basic_widget_payloads(
             "widget_key": str(link_legs_widget_key),
             "shared_key": "lig_legs",
             "callback_key": str(link_legs_widget_key),
-            "help_text": "Number of legs per shear link. Use 0 for no links; 2 or more for active shear reinforcement.",
+            "help_text": "Number of effective legs per supported shear-link arrangement. Use 0 for no links.",
             "default": int(link_legs_value),
-            "options": [0] + list(range(2, 13)),
+            "options": [0, *SUPPORTED_SHEAR_LEG_COUNTS],
         },
         {
             "widget_id": str(link_spacing_widget_key),

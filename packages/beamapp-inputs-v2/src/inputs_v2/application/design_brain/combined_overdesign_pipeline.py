@@ -17,6 +17,10 @@ from inputs_v2.application.design_brain.ratio_policy import (
     ratio_gate_required,
     ratio_review_required,
 )
+from inputs_v2.application.design_brain.section_strategies import (
+    proposal_concrete_area_mm2,
+    revise_family_geometry,
+)
 from inputs_v2.application.design_brain_apply import (
     Candidate,
     apply_candidate,
@@ -264,15 +268,18 @@ class CombinedOverdesignPipeline:
                             ),
                             source_revision=current.revision,
                             source_hash=current.content_hash,
-                            proposal=replace(
-                                seed.proposal,
+                            proposal=revise_family_geometry(
+                                current,
+                                replace(
+                                    seed.proposal,
+                                    bottom_bars=bending_candidate.proposal.bottom_bars,
+                                    bottom_diameter_mm=bending_candidate.proposal.bottom_diameter_mm,
+                                    shear_diameter_mm=shear_candidate.proposal.shear_diameter_mm,
+                                    shear_legs=shear_candidate.proposal.shear_legs,
+                                    shear_spacing_mm=shear_candidate.proposal.shear_spacing_mm,
+                                ),
                                 width_mm=width,
                                 depth_mm=depth,
-                                bottom_bars=bending_candidate.proposal.bottom_bars,
-                                bottom_diameter_mm=bending_candidate.proposal.bottom_diameter_mm,
-                                shear_diameter_mm=shear_candidate.proposal.shear_diameter_mm,
-                                shear_legs=shear_candidate.proposal.shear_legs,
-                                shear_spacing_mm=shear_candidate.proposal.shear_spacing_mm,
                             ),
                             rationale="Reduce bending reinforcement, ligatures and geometry in one verified revision.",
                         )
@@ -307,9 +314,8 @@ class CombinedOverdesignPipeline:
                                 result,
                                 self._preferences,
                             ) and (
-                                candidate.proposal.width_mm
-                                * candidate.proposal.depth_mm
-                                > current.width_mm * current.depth_mm * 0.95
+                                proposal_concrete_area_mm2(candidate.proposal)
+                                > current.section_geometry.concrete_area_mm2 * 0.95
                             ):
                                 reject("proportion_balance_required")
                                 continue
@@ -468,7 +474,7 @@ class CombinedOverdesignPipeline:
         zero_demand = abs(float(current.actions.shear_force_kn)) < 1e-9
         trials: list[Trial] = []
         for diameter in (0, 10, 12, 16):
-            for legs in ((0,) if diameter == 0 else (2, 4, 6, 8)):
+            for legs in ((0,) if diameter == 0 else (2, 3, 4, 5, 6, 8)):
                 for spacing in (600.0, 500.0, 400.0, 300.0, 250.0, 200.0, 175.0, 150.0, 125.0, 100.0):
                     if diameter == 0 and not zero_demand:
                         continue
@@ -557,7 +563,7 @@ class CombinedOverdesignPipeline:
         zero_demand = abs(float(current.actions.shear_force_kn)) < 1e-9
         options: list[tuple[float, int, int, float]] = []
         for diameter in (0, 10, 12, 16):
-            for legs in ((0,) if diameter == 0 else (2, 4, 6, 8)):
+            for legs in ((0,) if diameter == 0 else (2, 3, 4, 5, 6, 8)):
                 for spacing in (
                     600.0,
                     500.0,

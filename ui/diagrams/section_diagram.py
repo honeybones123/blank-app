@@ -6,6 +6,10 @@ import math
 from typing import Any, Callable
 
 import plotly.graph_objects as go
+from inputs_v2.engineering.shear_detailing import (
+    ShearDetailingInput,
+    resolve_transverse_leg_centres,
+)
 
 from section_props.plot import apply_section_axes
 from section_props.plotly_section import make_sectionA_figure
@@ -368,6 +372,33 @@ def build_summary_cross_section_result(
         x0, x1 = cover_side, b - cover_side
         y0, y1 = cover_top, D - cover_bot
 
+        longitudinal_bars = tuple(
+            (
+                float(x),
+                float(layer.get("y", 0.0) or 0.0),
+                float(layer.get("db", 0.0) or 0.0),
+            )
+            for face in ("bottom", "top")
+            for layer in (reo_layout.get(face) or [])
+            for x in (layer.get("x", []) or [])
+            if float(layer.get("db", 0.0) or 0.0) > 0.0
+        )
+        leg_centres = resolve_transverse_leg_centres(
+            ShearDetailingInput(
+                reinforcement_area_mm2=0.0,
+                spacing_mm=float(reo.get("s_lig", 0.0) or 0.0) or None,
+                concrete_strength_mpa=float(reo.get("fc", 0.0) or 0.0),
+                web_width_mm=b,
+                reinforcement_strength_mpa=float(reo.get("fsyv", 500.0) or 500.0),
+                section_depth_mm=D,
+                effective_legs=lig_legs,
+                link_diameter_mm=lig_d,
+                side_cover_mm=cover_side,
+                nominal_aggregate_size_mm=float(reo.get("dagg", 20.0) or 20.0),
+                longitudinal_bar_coordinates_mm=longitudinal_bars,
+            )
+        )
+
         if x1 > x0 and y1 > y0:
             for ligature_shape in build_rounded_ligature_shapes(
                 outside_x0=x0,
@@ -377,6 +408,7 @@ def build_summary_cross_section_result(
                 diameter_mm=lig_d,
                 legs=lig_legs,
                 color=LINK_STEEL,
+                leg_centres_mm=leg_centres,
             ):
                 fig.add_shape(ligature_shape)
 

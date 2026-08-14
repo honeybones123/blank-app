@@ -476,197 +476,6 @@ def render_html_diagram(
         components.html(html_body, height=height, scrolling=scrolling)
 
 
-@contextmanager
-def render_specialized_widget_rail(
-    key: str,
-    column_count: int,
-    *,
-    gap: str = "large",
-    visible_columns: int = 3,
-    visible_rows: int = 3,
-):
-    """Render specialised-page widgets in a three-row, scrollable rail."""
-    with _specialized_widget_rail_container(
-        key,
-        column_count,
-        gap=gap,
-        visible_columns=visible_columns,
-        visible_rows=visible_rows,
-    ) as columns:
-        yield columns
-
-
-def specialized_widget_rail_columns(
-    key: str,
-    column_count: int,
-    *,
-    gap: str = "large",
-    visible_columns: int = 3,
-    visible_rows: int = 3,
-):
-    """Return columns inside the specialised three-row scrollable rail."""
-    with _specialized_widget_rail_container(
-        key,
-        column_count,
-        gap=gap,
-        visible_columns=visible_columns,
-        visible_rows=visible_rows,
-    ) as columns:
-        return columns
-
-
-@contextmanager
-def _specialized_widget_rail_container(
-    key: str,
-    column_count: int,
-    *,
-    gap: str = "large",
-    visible_columns: int = 3,
-    visible_rows: int = 3,
-):
-    count = max(1, int(column_count))
-    visible = max(1, int(visible_columns))
-    rows = max(1, int(visible_rows))
-    width_pct = max(100.0, (count / visible) * 100.0)
-    mobile_width_pct = max(100.0, count * 100.0)
-    gap_rem_by_name = {"small": 1.0, "medium": 2.0, "large": 4.0}
-    gap_rem = gap_rem_by_name.get(str(gap or "large").strip().lower(), 4.0)
-    extra_gap_rem = max(0.0, (count / visible - 1.0) * gap_rem)
-    mobile_extra_gap_rem = max(0.0, (count - 1.0) * gap_rem)
-    width_expr = f"calc({width_pct:.6g}% + {extra_gap_rem:.6g}rem)"
-    mobile_width_expr = f"calc({mobile_width_pct:.6g}% + {mobile_extra_gap_rem:.6g}rem)"
-    # Measured Streamlit geometry: 2.1875rem heading, then 2.582rem widget
-    # rows separated by a 0.645rem vertical gap. The final allowance keeps
-    # both scrollbars clear of the third visible row.
-    rail_height_rem = 2.1875 + 0.645 + rows * 2.582 + max(0, rows - 1) * 0.645 + 1.2
-    outer_key = f"{key}_outer"
-    inner_key = f"{key}_inner"
-
-    st.markdown(
-        f"""
-        <style>
-        .st-key-{outer_key} {{
-            display: block;
-            width: 100%;
-            max-width: 100%;
-            height: {rail_height_rem:.6g}rem;
-            max-height: {rail_height_rem:.6g}rem;
-            overflow-x: auto !important;
-            overflow-y: auto !important;
-            padding-right: 0.25rem;
-            padding-bottom: 0.6rem;
-            scrollbar-gutter: stable;
-            overscroll-behavior: contain;
-            -webkit-overflow-scrolling: touch;
-            clip-path: inset(0);
-        }}
-        .st-key-{outer_key} * {{
-            box-sizing: border-box;
-        }}
-        .st-key-{inner_key} {{
-            width: {width_expr} !important;
-            min-width: {width_expr} !important;
-            max-width: none !important;
-        }}
-        .st-key-{inner_key} > div[data-testid="stVerticalBlock"] {{
-            width: 100% !important;
-            min-width: 100% !important;
-            max-width: none !important;
-        }}
-        /* The first direct item in every rail column is its heading. Give
-           every heading the same slot so row 1 begins at exactly the same Y
-           coordinate, including headings that contain an info popover. */
-        .st-key-{inner_key}
-            > div[data-testid="stLayoutWrapper"]
-            > div[data-testid="stHorizontalBlock"]
-            > div[data-testid="stColumn"]
-            > div[data-testid="stVerticalBlock"]
-            > :first-child {{
-            position: sticky;
-            top: 0;
-            z-index: 4;
-            display: flex;
-            align-items: center;
-            width: 100%;
-            height: 2.1875rem !important;
-            min-height: 2.1875rem !important;
-            max-height: 2.1875rem !important;
-            margin: 0 !important;
-            background: #ffffff;
-        }}
-        /* Each direct layout wrapper after the heading is one widget row.
-           A fixed slot prevents wrapped labels in one column from shifting
-           the following rows relative to neighbouring columns. */
-        .st-key-{inner_key}
-            > div[data-testid="stLayoutWrapper"]
-            > div[data-testid="stHorizontalBlock"]
-            > div[data-testid="stColumn"]
-            > div[data-testid="stVerticalBlock"]
-            > div[data-testid="stLayoutWrapper"]:not(:first-child) {{
-            display: flex;
-            align-items: center;
-            width: 100%;
-            height: 2.582rem !important;
-            min-height: 2.582rem !important;
-            max-height: 2.582rem !important;
-            margin: 0 !important;
-        }}
-        .st-key-{inner_key}
-            > div[data-testid="stLayoutWrapper"]
-            > div[data-testid="stHorizontalBlock"]
-            > div[data-testid="stColumn"]
-            > div[data-testid="stVerticalBlock"]
-            > div[data-testid="stLayoutWrapper"]:not(:first-child)
-            > div[data-testid="stHorizontalBlock"] {{
-            width: 100%;
-            align-items: center;
-        }}
-        /* Markdown-only opening/closing markers are structural helpers, not
-           widget rows. Remove them from the rail flow so reinforcement rows
-           line up with the same slots as every other section. */
-        .st-key-{inner_key}
-            > div[data-testid="stLayoutWrapper"]
-            > div[data-testid="stHorizontalBlock"]
-            > div[data-testid="stColumn"]
-            > div[data-testid="stVerticalBlock"]
-            > div[data-testid="stElementContainer"]:has(.compact-reo),
-        .st-key-{inner_key}
-            > div[data-testid="stLayoutWrapper"]
-            > div[data-testid="stHorizontalBlock"]
-            > div[data-testid="stColumn"]
-            > div[data-testid="stVerticalBlock"]
-            > div[data-testid="stElementContainer"]:has(div[data-testid="stMarkdownContainer"]:empty) {{
-            display: none !important;
-        }}
-        .st-key-{outer_key}::-webkit-scrollbar {{
-            height: 10px;
-            width: 10px;
-        }}
-        .st-key-{outer_key}::-webkit-scrollbar-track {{
-            background: rgba(49, 51, 63, 0.08);
-            border-radius: 999px;
-        }}
-        .st-key-{outer_key}::-webkit-scrollbar-thumb {{
-            background: rgba(49, 51, 63, 0.28);
-            border-radius: 999px;
-        }}
-        .st-key-{outer_key}::-webkit-scrollbar-thumb:hover {{
-            background: rgba(49, 51, 63, 0.4);
-        }}
-        @media (max-width: 760px) {{
-            .st-key-{inner_key} {{
-                width: {mobile_width_expr} !important;
-                min-width: {mobile_width_expr} !important;
-            }}
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.container(key=outer_key):
-        with st.container(key=inner_key):
-            yield st.columns([1] * count, gap=gap)
 
 
 def _register_rendered_key(key: str) -> None:
@@ -1037,10 +846,42 @@ def apply_global_widget_css():
         div[data-testid="stPopover"] button::before {
             display: none !important;
         }
+        /* Streamlit 1.61 renders the popover caret as a real material-icon
+           child rather than a pseudo-element. Keep the established compact
+           blue information trigger instead of displaying a dropdown arrow. */
+        div[data-testid="stPopover"] button [data-testid="stIconMaterial"],
+        div[data-testid="stPopover"] button .material-symbols-rounded,
+        div[data-testid="stPopover"] button .material-icons {
+            display: none !important;
+        }
         /* Ensure popover trigger buttons are small and inline */
         div[data-testid="stPopover"] {
             display: inline-block !important;
             vertical-align: middle !important;
+        }
+
+        /* Preserve the established engineering-info hierarchy inside current
+           Streamlit popovers: compact title, readable body and tight lists. */
+        div[data-testid="stPopoverBody"] {
+            max-width: min(34rem, 88vw) !important;
+        }
+        div[data-testid="stPopoverBody"] h3 {
+            font-size: 1.05rem !important;
+            line-height: 1.3 !important;
+            margin: 0 0 0.65rem 0 !important;
+        }
+        div[data-testid="stPopoverBody"] h4 {
+            font-size: 0.95rem !important;
+            line-height: 1.3 !important;
+            margin: 0.8rem 0 0.35rem 0 !important;
+        }
+        div[data-testid="stPopoverBody"] p {
+            margin: 0.35rem 0 !important;
+        }
+        div[data-testid="stPopoverBody"] ul,
+        div[data-testid="stPopoverBody"] ol {
+            margin: 0.35rem 0 0.55rem 1.15rem !important;
+            padding-left: 0.35rem !important;
         }
         </style>
         """,
@@ -1289,6 +1130,46 @@ div[data-testid="stExpander"] details summary svg {
 /* Tight spacing between steps */
 div[data-testid="stExpander"] { margin: 0 !important; }
 div[data-testid="stExpander"] details { margin: 0 !important; }
+
+/*
+ * Every shared calculation step emits its anchor and presentation markers as
+ * zero-height Streamlit children.  The parent flex layout still inserts a gap
+ * around those children, which made the visible card spacing roughly four
+ * times the intended value.  Scope the compact gap to calculation stacks
+ * only; headings and unrelated expanders retain the normal page rhythm.
+ */
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) {
+  gap: 0 !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) > div[data-testid="stElementContainer"]:has(style),
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) > div[data-testid="stElementContainer"]:has([data-calc-uid]),
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) > div[data-testid="stElementContainer"]:has([id^="calc_"]) {
+  display: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) > div[data-testid="stLayoutWrapper"]:has(
+  > div[data-testid="stExpander"]
+) {
+  margin-bottom: 2.3rem !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) > div[data-testid="stLayoutWrapper"] > div[data-testid="stExpander"],
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) > div[data-testid="stLayoutWrapper"] > div[data-testid="stExpander"] > details {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
 
 /* Make expander header look like your calcbox summary */
 div[data-testid="stExpander"] details summary {
@@ -2757,19 +2638,11 @@ def clickable_calcbox(
         if (!d.open) setCollapsed();
     }});
     
-    // MutationObserver for dynamic content changes
-    let t = null;
-    const mjTarget = document.getElementById('mj_target__' + UID);
-    if (mjTarget) {{
-        const obs = new MutationObserver(function() {{
-            if (!d.open) return;
-            clearTimeout(t);
-            t = setTimeout(function() {{
-                typeset(UID);
-            }}, 120);
-        }});
-        obs.observe(mjTarget, {{ childList: true, subtree: true }});
-    }}
+    // The calculation body is immutable for the lifetime of this component.
+    // The load and toggle handlers above are its only typesetting owners.
+    // A DOM observer previously duplicated that work and could outlive its
+    // target during Streamlit fragment replacement, producing repeated
+    // observe(non-Node) errors during navigation.
     </script>
     """
     

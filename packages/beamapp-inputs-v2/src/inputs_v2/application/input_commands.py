@@ -35,6 +35,9 @@ class UpdateFirstSlice:
     right_support: str = "Roller"
     span_mm: float = 2000.0
     section_shape: str = "RECT"
+    flange_width_mm: float | None = None
+    flange_thickness_mm: float | None = None
+    web_width_mm: float | None = None
     width_locked: bool = False
     depth_locked: bool = False
     shrinkage_time_days: float = 365.0
@@ -184,6 +187,9 @@ def apply_input_command(current: BeamInputs, command: UpdateFirstSlice) -> BeamI
         depth_mm=command.depth_mm,
         span_mm=command.span_mm,
         section_shape=command.section_shape,
+        flange_width_mm=command.flange_width_mm,
+        flange_thickness_mm=command.flange_thickness_mm,
+        web_width_mm=command.web_width_mm,
         width_locked=command.width_locked,
         depth_locked=command.depth_locked,
         bottom=bottom,

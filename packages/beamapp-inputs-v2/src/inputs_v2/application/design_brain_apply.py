@@ -7,6 +7,7 @@ from typing import Generic, TypeVar
 
 from inputs_v2.application.input_commands import UpdateFirstSlice, apply_input_command
 from inputs_v2.domain.beam_inputs import BeamInputs
+from inputs_v2.application.design_brain.section_strategies import section_strategy_for
 from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 
 
@@ -38,6 +39,9 @@ def propose_neutral_candidate(current: BeamInputs) -> Candidate[UpdateFirstSlice
         depth_mm=current.depth_mm,
         span_mm=current.span_mm,
         section_shape=current.section_shape,
+        flange_width_mm=current.flange_width_mm,
+        flange_thickness_mm=current.flange_thickness_mm,
+        web_width_mm=current.web_width_mm,
         width_locked=current.width_locked,
         depth_locked=current.depth_locked,
         bottom_mode=current.bottom.mode,
@@ -123,6 +127,12 @@ def apply_candidate(
     if current.depth_locked and proposal.depth_mm != current.depth_mm:
         return ApplyOutcome(False, "depth_locked", current)
     try:
+        section_strategy_for(proposal).geometry(proposal)
+        if proposal.section_shape in {"T", "I"} and (
+            proposal.web_width_mm is None
+            or abs(float(proposal.width_mm) - float(proposal.web_width_mm)) > 1e-9
+        ):
+            raise ValueError("Flanged section width mirror does not match the web width.")
         # The immutable arrangement is authoritative: its row counts must be
         # reflected in the canonical bottom-bar count before validation.
         if candidate.row_counts:

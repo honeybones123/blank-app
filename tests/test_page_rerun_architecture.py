@@ -45,6 +45,14 @@ def test_general_result_pages_are_fragment_scoped() -> None:
     assert '"deflection": ("Deflection", _render_deflection_page_fragment)' in source
 
 
+def test_shear_page_heading_has_one_shell_owner() -> None:
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    shear_source = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8-sig")
+
+    assert '"shear": "Shear & Torsion"' in app_source
+    assert 'render_result_page_title("Shear & Torsion"' not in shear_source
+
+
 def test_result_pages_use_one_neutral_refresh_contract() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
     for slug in ("bending", "shear", "creep", "shrinkage", "crack", "deflection"):
@@ -326,6 +334,12 @@ def test_runtime_has_no_background_design_brain_publication_path() -> None:
     assert not (ROOT / "inputs_application" / "design_brain_polling.py").exists()
     assert not (ROOT / "inputs_application" / "design_brain_job_service.py").exists()
     assert not (ROOT / "inputs_application" / "design_brain_job_worker.py").exists()
+
+
+def test_calcbox_has_no_duplicate_dom_observer_refresh_path() -> None:
+    source = (ROOT / "widgets_helpers.py").read_text(encoding="utf-8-sig")
+    assert "new MutationObserver" not in source
+    assert "obs.observe(" not in source
 
 
 def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler() -> None:

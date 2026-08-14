@@ -165,11 +165,36 @@ def _commit_widgets() -> None:
         shear_diameter, shear_legs = 0, 0
         st.session_state["v2_shear_diameter_mm"] = 0
         st.session_state["v2_shear_legs"] = 0
+    section_shape = str(st.session_state["v2_section_shape"]).upper()
+    # A shape change is one canonical engineering command.  Do not first
+    # publish an incomplete flanged section and try to hydrate its geometry on
+    # a later rerun.  The standalone shell has no flange widgets yet, so seed
+    # a complete, conservative geometry from the current section while
+    # preserving any existing flanged values.
+    flange_width_mm = current.flange_width_mm
+    flange_thickness_mm = current.flange_thickness_mm
+    web_width_mm = current.web_width_mm
+    if section_shape in {"T", "I"}:
+        web_width_mm = current.width_mm if web_width_mm is None else web_width_mm
+        flange_width_mm = (
+            max(2.0 * float(web_width_mm), float(web_width_mm))
+            if flange_width_mm is None
+            else flange_width_mm
+        )
+        default_tf = min(100.0, float(current.depth_mm) / 4.0)
+        flange_thickness_mm = (
+            max(25.0, default_tf)
+            if flange_thickness_mm is None
+            else flange_thickness_mm
+        )
     command = UpdateFirstSlice(
         width_mm=float(st.session_state["v2_width_mm"]),
         depth_mm=float(st.session_state["v2_depth_mm"]),
         span_mm=float(st.session_state["v2_span_mm"]),
-        section_shape=str(st.session_state["v2_section_shape"]),
+        section_shape=section_shape,
+        flange_width_mm=flange_width_mm,
+        flange_thickness_mm=flange_thickness_mm,
+        web_width_mm=web_width_mm,
         width_locked=bool(st.session_state["v2_width_locked"]),
         depth_locked=bool(st.session_state["v2_depth_locked"]),
         bottom_mode=LayoutMode(st.session_state["v2_bottom_mode"]),
@@ -328,7 +353,7 @@ def _render_top_controls() -> None:
 def _render_shear_controls() -> None:
     _section_heading("Shear")
     _compact_select("Link dia (mm)", [0, *ALLOWED_BAR_DIAMETERS], key="v2_shear_diameter_mm", format_func=lambda value: "0 (off)" if value == 0 else f"{value}")
-    _compact_select("No. of legs", [0, 2, 4, 6, 8], key="v2_shear_legs")
+    _compact_select("No. of legs", [0, 2, 3, 4, 5, 6, 8], key="v2_shear_legs")
     _compact_number("Link spacing (mm)", key="v2_shear_spacing_mm", min_value=0.0, max_value=1000.0, step=25.0)
 
 

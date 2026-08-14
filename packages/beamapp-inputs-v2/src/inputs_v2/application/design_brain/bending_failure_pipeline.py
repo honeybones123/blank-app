@@ -17,6 +17,7 @@ from inputs_v2.application.design_brain.bending_repair_policy import (
 )
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
+from inputs_v2.application.design_brain.section_strategies import revise_family_geometry
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
@@ -95,12 +96,15 @@ class BendingFailurePipeline:
                         f"bending-only-b{int(spec.width_mm)}-{int(spec.depth_mm)}-{spec.bars}-N{spec.diameter_mm}-rows{'-'.join(map(str, spec.row_counts))}",
                         current.revision,
                         current.content_hash,
-                        replace(
-                            seed.proposal,
-                            depth_mm=spec.depth_mm,
-                            bottom_bars=spec.bars,
-                            bottom_diameter_mm=spec.diameter_mm,
+                        revise_family_geometry(
+                            current,
+                            replace(
+                                seed.proposal,
+                                bottom_bars=spec.bars,
+                                bottom_diameter_mm=spec.diameter_mm,
+                            ),
                             width_mm=spec.width_mm,
+                            depth_mm=spec.depth_mm,
                         ),
                         f"Bending ladder: select {spec.bars}-N{spec.diameter_mm} at {spec.depth_mm:.0f} mm depth and {spec.width_mm:.0f} mm width.",
                         spec.row_counts,
@@ -199,7 +203,16 @@ class BendingFailurePipeline:
                     f"direct-cleanup-{int(spec.width_mm)}-{int(spec.depth_mm)}-{spec.bars}-N{spec.diameter_mm}",
                     current.revision,
                     current.content_hash,
-                    replace(seed.proposal, width_mm=spec.width_mm, depth_mm=spec.depth_mm, bottom_bars=spec.bars, bottom_diameter_mm=spec.diameter_mm),
+                    revise_family_geometry(
+                        current,
+                        replace(
+                            seed.proposal,
+                            bottom_bars=spec.bars,
+                            bottom_diameter_mm=spec.diameter_mm,
+                        ),
+                        width_mm=spec.width_mm,
+                        depth_mm=spec.depth_mm,
+                    ),
                     "Verified geometry reduction with minimum reinforcement retained.",
                     spec.row_counts,
                 )

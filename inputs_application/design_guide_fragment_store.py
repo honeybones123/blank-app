@@ -65,6 +65,41 @@ class PublicationStore:
         self._state[DESIGN_GUIDE_FRAGMENT_STATE_KEY] = refreshing
         return refreshing
 
+    def retarget_refresh(
+        self,
+        *,
+        expected_workspace_revision: int,
+        committed_workspace_revision: int,
+    ) -> DesignGuideFragmentState:
+        """Bind the current in-flight refresh to its committed input revision.
+
+        Widget reconciliation can commit the authoritative input snapshot while
+        the refresh is running.  That is still one transaction, not permission
+        to begin another refresh.  Retargeting is therefore allowed only when
+        the caller proves it owns the exact pending revision.
+        """
+
+        current = self.current()
+        if (
+            current.status != "refreshing"
+            or current.pending_workspace_revision
+            != int(expected_workspace_revision)
+        ):
+            raise ValueError("cannot retarget a superseded Design Guide refresh")
+        retargeted = DesignGuideFragmentState(
+            status="refreshing",
+            active_engineering_hash=current.active_engineering_hash,
+            active_publication_authority_hash=(
+                current.active_publication_authority_hash
+            ),
+            active_publication=dict(current.active_publication),
+            active_workspace_revision=current.active_workspace_revision,
+            pending_workspace_revision=int(committed_workspace_revision),
+            last_error=None,
+        )
+        self._state[DESIGN_GUIDE_FRAGMENT_STATE_KEY] = retargeted
+        return retargeted
+
     def publish(
         self,
         result: AuthoritativeDesignResult,

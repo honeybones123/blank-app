@@ -9,6 +9,21 @@ from inputs_application.state_utils import float_from_state
 CANONICAL_NO_SHEAR_SPACING_MM = 200.0
 PRACTICAL_SHEAR_DIAMETERS = (10, 12, 16)
 PRACTICAL_SHEAR_SPACINGS = (75, 100, 125, 150, 175, 200, 225, 250, 275, 300)
+# Runtime UI normalization must remain importable before the bundled V2
+# package is loaded by the adapter.  This tuple mirrors the V2 domain contract
+# and is guarded by cross-boundary tests.
+SUPPORTED_SHEAR_LEG_COUNTS = (2, 3, 4, 5, 6, 8)
+
+
+def _supported_shear_legs(value: int) -> int:
+    """Return the smallest supported arrangement that does not reduce legs."""
+
+    if value < 2:
+        return 0
+    return next(
+        (candidate for candidate in SUPPORTED_SHEAR_LEG_COUNTS if candidate >= value),
+        SUPPORTED_SHEAR_LEG_COUNTS[-1],
+    )
 
 
 def normalize_shear_link_pair(
@@ -24,7 +39,7 @@ def normalize_shear_link_pair(
     """
 
     diameter = int_from_state(state, "lig_d", 0)
-    legs = int_from_state(state, "lig_legs", 0)
+    legs = _supported_shear_legs(int_from_state(state, "lig_legs", 0))
     changed = str(changed_key or "").strip()
 
     if changed == "lig_d":
@@ -77,8 +92,11 @@ def normalize_invalid_shear_state_updates(
     resolved_state = dict(base_state or {})
     normalized = dict(updates or {})
     resolved_state.update(normalized)
-    legs = int_from_state(resolved_state, "lig_legs", 0)
+    raw_legs = int_from_state(resolved_state, "lig_legs", 0)
+    legs = _supported_shear_legs(raw_legs)
     diameter = int_from_state(resolved_state, "lig_d", 0)
+    if legs != raw_legs:
+        normalized["lig_legs"] = legs
     if legs <= 0:
         normalized["lig_legs"] = 0
         normalized["lig_d"] = 0
@@ -101,4 +119,8 @@ def normalize_invalid_shear_state_updates(
     return normalized
 
 
-__all__ = ["normalize_invalid_shear_state_updates", "normalize_shear_link_pair"]
+__all__ = [
+    "SUPPORTED_SHEAR_LEG_COUNTS",
+    "normalize_invalid_shear_state_updates",
+    "normalize_shear_link_pair",
+]

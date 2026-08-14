@@ -32,6 +32,7 @@ class CandidateEvidence:
     hard_congestion_rejection_codes: tuple[str, ...] = ()
     soft_congestion_score: float = 0.0
     soft_congestion_reasons: tuple[str, ...] = ()
+    conditional_preference_violation_codes: tuple[str, ...] = ()
     near_limit_evidence: tuple[NearLimitEvidence, ...] = ()
     geometry_change_penalty: float = 0.0
     material_quantity: float = 0.0

@@ -66,6 +66,7 @@ def build_rounded_ligature_shapes(
     legs: int,
     color: str,
     bend_inner_radius_mm: float | None = None,
+    leg_centres_mm: tuple[float, ...] | list[float] | None = None,
 ) -> list[dict[str, Any]]:
     """Build a closed, rounded ligature plus any intermediate vertical legs.
 
@@ -144,8 +145,15 @@ def build_rounded_ligature_shapes(
     if leg_count > 2:
         centre_x0 = x0 + diameter / 2.0
         centre_x1 = x1 - diameter / 2.0
-        for index in range(1, leg_count - 1):
-            centre_x = centre_x0 + (centre_x1 - centre_x0) * index / (leg_count - 1)
+        supplied_centres = tuple(float(value) for value in (leg_centres_mm or ()))
+        if len(supplied_centres) == leg_count:
+            internal_centres = supplied_centres[1:-1]
+        else:
+            internal_centres = tuple(
+                centre_x0 + (centre_x1 - centre_x0) * index / (leg_count - 1)
+                for index in range(1, leg_count - 1)
+            )
+        for centre_x in internal_centres:
             shapes.append(
                 _filled_polygon(
                     [

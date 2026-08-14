@@ -40,7 +40,6 @@ from widgets_helpers import (
     render_longitudinal_reo_rows,
     render_longitudinal_reo_row_config_controls,
     main_longitudinal_reo_pair_labels,
-    specialized_widget_rail_columns,
     render_plotly_diagram,
     COMPACT_SIDE_VIEW_HEIGHT_PX,
     compact_side_view_figure,
@@ -51,6 +50,16 @@ from engineering_check_ui import DEFLECTION_CHECK_SUMMARY_COLUMNS
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 from ui.summary_rows import build_deflection_summary_rows
 from deflection_checks_helpers import build_deflection_check_rows_from_state
+from engineering_page_sections.compact_check_inputs import (
+    CheckInputCategory,
+    CheckInputPanelConfig,
+    InputSource,
+    compact_check_input_columns,
+    format_dimensions,
+    format_number,
+    join_summary,
+)
+from inputs_application.action_source_control import uses_load_analysis_actions
 from ui.diagrams.deflection_diagram import (
     build_deflected_beam_plotly,
     build_deflected_shape_figure,
@@ -408,12 +417,81 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
         return fallback_value, branch, source_text, meta
 
-    # One shared rail: three visible columns, with reinforcement continuing
-    # horizontally to the right in the same three-row shell.
-    col_geom, col_mats, col_loads, col_reo_bot, col_reo_top = specialized_widget_rail_columns(
-        "deflection_primary_inputs",
-        5,
-        gap="large",
+    _defl_b_summary = get_param("b", None)
+    _defl_D_summary = get_param("D", None)
+    _defl_L_summary = get_param("L", None)
+    _defl_fc_summary = get_param("fc", None)
+    _defl_ec_summary = get_param("Ec", None)
+    _defl_sls_m_summary = get_param("sls_Mstar", get_param("Ms", None))
+    _defl_sls_v_summary = get_param("sls_Vstar", None)
+    _defl_bot_count = get_param("nb_or_s_bot_1", get_param("nb_bot", None))
+    _defl_bot_dia = get_param("db_bot_1", get_param("db_bot", None))
+    _defl_top_count = get_param("nb_or_s_top_1", get_param("nb_top", None))
+    _defl_top_dia = get_param("db_top_1", get_param("db_top", None))
+    col_geom, col_mats, col_loads, col_reo_bot, col_reo_top = compact_check_input_columns(
+        st,
+        CheckInputPanelConfig(
+            page_slug="deflection",
+            categories=(
+                CheckInputCategory(
+                    "section_geometry",
+                    "Section & geometry",
+                    join_summary(
+                        format_dimensions(_defl_b_summary, _defl_D_summary),
+                        f"L {format_number(_defl_L_summary, 'mm')}",
+                    ),
+                    lambda: None,
+                    icon="▣",
+                ),
+                CheckInputCategory(
+                    "material_long_term",
+                    "Material & long-term properties",
+                    join_summary(
+                        f"f'c {format_number(_defl_fc_summary, 'MPa')}",
+                        f"Ec {format_number(_defl_ec_summary, 'MPa')}",
+                    ),
+                    lambda: None,
+                    icon="◇",
+                ),
+                CheckInputCategory(
+                    "serviceability_actions",
+                    "Serviceability actions & limits",
+                    join_summary(
+                        f"M_s {format_number(_defl_sls_m_summary, 'kNm', decimals=1)}",
+                        f"V_s {format_number(_defl_sls_v_summary, 'kN', decimals=1)}",
+                    ),
+                    lambda: None,
+                    source=(
+                        InputSource.LOAD_ANALYSIS
+                        if uses_load_analysis_actions(st.session_state)
+                        else InputSource.BEAM_INPUTS
+                    ),
+                    icon="↧",
+                ),
+                CheckInputCategory(
+                    "bottom_reinforcement",
+                    "Bottom reinforcement",
+                    (
+                        "Not provided"
+                        if _defl_bot_count is None or _defl_bot_dia is None
+                        else f"{float(_defl_bot_count):.0f}-N{float(_defl_bot_dia):.0f}"
+                    ),
+                    lambda: None,
+                    icon="●",
+                ),
+                CheckInputCategory(
+                    "top_reinforcement",
+                    "Top reinforcement",
+                    (
+                        "Not provided"
+                        if _defl_top_count is None or _defl_top_dia is None
+                        else f"{float(_defl_top_count):.0f}-N{float(_defl_top_dia):.0f}"
+                    ),
+                    lambda: None,
+                    icon="●",
+                ),
+            ),
+        ),
     )
 
     # ---------- Column 1: Geometry ----------

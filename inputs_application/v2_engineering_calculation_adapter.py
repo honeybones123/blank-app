@@ -615,6 +615,24 @@ def _resolved_inputs_projection(
             "sustained_sigma_cs_mpa": current.time_dependent.sustained_concrete_stress_mpa,
         }
     )
+    if current.section_shape == "T":
+        resolved.pop("b", None)
+        resolved.update(
+            {
+                "bw": current.web_width_mm,
+                "bf": current.flange_width_mm,
+                "tf": current.flange_thickness_mm,
+            }
+        )
+    elif current.section_shape == "I":
+        resolved.pop("b", None)
+        resolved.update(
+            {
+                "tw": current.web_width_mm,
+                "bf": current.flange_width_mm,
+                "tf": current.flange_thickness_mm,
+            }
+        )
     return resolved
 
 

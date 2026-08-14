@@ -153,6 +153,7 @@ class RankingPolicy:
 
     criteria: tuple[str, ...] = (
         "complete_compliance",
+        "conditional_preference_violation_count",
         "target_distance",
         "new_near_failure_count",
         "least_congestion",
@@ -165,6 +166,9 @@ class RankingPolicy:
     def rank_key(self, evidence: CandidateEvidence) -> tuple:
         values = {
             "complete_compliance": 0 if evidence.compliant and evidence.mandatory_checks_complete else 1,
+            "conditional_preference_violation_count": len(
+                evidence.conditional_preference_violation_codes
+            ),
             "target_distance": evidence.target_distance,
             "new_near_failure_count": evidence.new_near_failure_count,
             "fewest_changes": evidence.edit_count,
@@ -926,6 +930,11 @@ _EVIDENCE_BLOCKERS: tuple[tuple[str, str], ...] = (
     ("minimum_shear_reinforcement_failed", "Minimum shear reinforcement is not satisfied."),
     ("shear_spacing_failed", "The proposed ligature spacing exceeds the permitted limit."),
     ("transverse_shear_leg_spacing_failed", "The fitted horizontal spacing between adjacent effective shear-link legs exceeds the permitted limit."),
+    ("transverse_shear_leg_clear_spacing_failed", "The clear spacing between adjacent effective shear-link legs is below the required detailing clearance."),
+    ("shear_cage_topology_unavailable", "No complete, buildable shear-cage topology is available for the proposed leg arrangement."),
+    ("shear_cage_longitudinal_bar_collision", "An internal shear-link leg clashes with the longitudinal reinforcement."),
+    ("internal_leg_anchorage_failed", "The proposed internal shear-link legs do not have sufficient anchorage space."),
+    ("longitudinal_bar_restraint_failed", "The proposed shear cage does not enclose and restrain every longitudinal bar."),
     ("serviceability_fail", "Deflection remains above the allowable limit."),
     ("crack_control_fail", "Crack width remains above the allowable limit."),
     ("search_budget_exhausted", "The configured search budget was reached before every required ladder stage could be completed."),
@@ -1239,11 +1248,16 @@ def assert_candidate_proposal_permitted(
     """Compare the complete proposal so hidden, undisplayed mutations cannot leak."""
 
     groups = {
-        "width_mm": ((current.width_mm, proposal.width_mm),),
+        "width_mm": (
+            (current.width_mm, proposal.width_mm),
+            (current.web_width_mm, proposal.web_width_mm),
+        ),
         "depth_mm": ((current.depth_mm, proposal.depth_mm),),
         "geometry": (
             (current.span_mm, proposal.span_mm),
             (current.section_shape, proposal.section_shape),
+            (current.flange_width_mm, proposal.flange_width_mm),
+            (current.flange_thickness_mm, proposal.flange_thickness_mm),
         ),
         "bottom": (
             (current.bottom.mode, proposal.bottom_mode),

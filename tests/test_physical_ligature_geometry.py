@@ -73,6 +73,30 @@ def test_multi_leg_ligature_uses_full_diameter_filled_internal_legs() -> None:
         assert max(x for x, _ in points) - min(x for x, _ in points) == pytest.approx(diameter)
 
 
+def test_multi_leg_ligature_draws_verified_non_clashing_leg_centres() -> None:
+    shapes = build_rounded_ligature_shapes(
+        outside_x0=40.0,
+        outside_y0=40.0,
+        outside_x1=410.0,
+        outside_y1=660.0,
+        diameter_mm=10.0,
+        legs=4,
+        color="#222",
+        leg_centres_mm=(45.0, 153.6666667, 296.3333333, 405.0),
+    )
+
+    drawn_centres = []
+    for internal_leg in shapes[-2:]:
+        points = _path_points(internal_leg)
+        drawn_centres.append((min(x for x, _ in points) + max(x for x, _ in points)) / 2.0)
+
+    # Plotly path serialization intentionally rounds drawing coordinates.
+    assert drawn_centres == pytest.approx([153.6666667, 296.3333333], abs=0.001)
+    for centre in drawn_centres:
+        assert abs(centre - 170.6666667) >= 16.999
+        assert abs(centre - 279.3333333) >= 16.999
+
+
 def test_longitudinal_bar_surface_is_tangent_to_inside_ligature_surface() -> None:
     cover = 40.0
     ligature_diameter = 12.0

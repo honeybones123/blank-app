@@ -10,10 +10,8 @@ import streamlit as st
 from application.app_metadata import application_metadata
 from application.disclaimer_config import DISCLAIMER
 from application.opening_page_preferences import (
-    clear_opening_page_preference,
     load_opening_page_preference,
     normalise_opening_page,
-    save_opening_page_preference,
 )
 from ui.opening_page_preference_bridge import render_pending_guest_preference_write
 from application.reference_registry import reference_entries
@@ -173,7 +171,7 @@ def _render_opening_page_preference(user_id: str) -> None:
             st.session_state.get("_opening_page_preference") or query_saved
         )
     st.session_state.setdefault("start_default_opening_page_choice", saved_default)
-    selected_default = st.radio(
+    st.radio(
         "Default opening page",
         options=("start", "inputs", "design"),
         format_func=lambda value: OPENING_PAGE_LABELS[value],
@@ -181,56 +179,7 @@ def _render_opening_page_preference(user_id: str) -> None:
         horizontal=True,
         label_visibility="collapsed",
     )
-    remember = st.checkbox("Remember my choice", key="start_remember_opening_page")
-
-    def _clear_saved_opening_preference() -> None:
-        result = clear_opening_page_preference(
-            user_id=user_id,
-            session_state=st.session_state,
-        )
-        if result is not None and not result.saved:
-            st.session_state["_start_preference_flash"] = (
-                "warning",
-                result.error or "The account preference could not be cleared.",
-            )
-        else:
-            st.session_state["_start_preference_flash"] = (
-                "success",
-                "Saved preference cleared. New beam designs will open on Start.",
-            )
-
-    save_col, clear_col = st.columns(2, gap="small")
-    with save_col:
-        if st.button(
-            "Save opening preference",
-            key="start_save_opening_preference",
-            width="stretch",
-        ):
-            result = save_opening_page_preference(
-                user_id=user_id,
-                value=selected_default,
-                remember=remember,
-                session_state=st.session_state,
-            )
-            if result is not None and not result.saved:
-                st.warning(result.error or "The account preference could not be saved.")
-            else:
-                st.success("Opening preference saved. It will apply to new beam designs.")
-    with clear_col:
-        st.button(
-            "Clear saved preference",
-            key="start_clear_opening_preference",
-            width="stretch",
-            on_click=_clear_saved_opening_preference,
-        )
-
-    flash = st.session_state.pop("_start_preference_flash", None)
-    if isinstance(flash, tuple) and len(flash) == 2:
-        level, message = flash
-        if level == "warning":
-            st.warning(str(message))
-        else:
-            st.success(str(message))
+    st.checkbox("Remember my choice", key="start_remember_opening_page")
 
 
 def render_start_page(

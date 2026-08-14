@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from inputs_v2.domain.beam_inputs import BeamInputs
+from inputs_v2.domain.beam_inputs import BeamInputs, SUPPORTED_SHEAR_LEG_COUNTS
 
 
 class GeometryArrangement(NamedTuple):
@@ -154,7 +154,7 @@ def generate_shear_preservation_options(
     )
     legs = tuple(
         value
-        for value in (2, 4, 6, 8)
+        for value in SUPPORTED_SHEAR_LEG_COUNTS
         if value >= max(current.shear.legs, 2)
     )
     spacings = tuple(

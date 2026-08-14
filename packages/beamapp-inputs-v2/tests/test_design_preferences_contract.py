@@ -47,6 +47,40 @@ def test_family_ranking_rejects_hard_congestion_before_soft_preferences() -> Non
     assert selected is soft_but_safe
 
 
+def test_family_enforces_width_appropriate_link_count_when_safe_option_exists() -> None:
+    policy = RankingPolicy()
+    width_appropriate = CandidateEvidence(
+        "three-legs",
+        True,
+        True,
+        target_distance=0.15,
+    )
+    width_inappropriate = CandidateEvidence(
+        "six-legs",
+        True,
+        True,
+        target_distance=0.0,
+        conditional_preference_violation_codes=(
+            "ligature_leg_count_outside_practical_width_range",
+        ),
+    )
+    assert policy.select((width_inappropriate, width_appropriate)) is width_appropriate
+
+
+def test_family_can_relax_width_leg_preference_when_only_safe_option() -> None:
+    policy = RankingPolicy()
+    width_inappropriate = CandidateEvidence(
+        "six-legs",
+        True,
+        True,
+        conditional_preference_violation_codes=(
+            "ligature_leg_count_outside_practical_width_range",
+        ),
+    )
+    failing_preferred = CandidateEvidence("three-legs", False, False)
+    assert policy.select((width_inappropriate, failing_preferred)) is width_inappropriate
+
+
 def test_near_limit_rules_are_explicit_compatible_whitelists() -> None:
     for contract in FAMILY_CONTRACTS.values():
         for rule in contract.near_limit_policy.rules:

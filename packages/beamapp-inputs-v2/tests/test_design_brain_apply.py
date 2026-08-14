@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from inputs_v2.application.design_brain_apply import Candidate, apply_candidate, propose_neutral_candidate
 from inputs_v2.application.input_commands import UpdateFirstSlice
 from inputs_v2.domain.beam_inputs import BeamInputs, LayoutMode
@@ -75,3 +77,38 @@ def test_design_brain_cannot_change_user_owned_lock_state() -> None:
     assert outcome.applied is False
     assert outcome.reason == "lock_state_mutation_forbidden"
     assert outcome.inputs == current
+
+
+def test_t_section_candidate_applies_complete_web_geometry() -> None:
+    current = BeamInputs(
+        width_mm=300.0,
+        depth_mm=600.0,
+        section_shape="T",
+        web_width_mm=300.0,
+        flange_width_mm=900.0,
+        flange_thickness_mm=120.0,
+    ).validated()
+    seed = propose_neutral_candidate(current)
+    candidate = replace(
+        seed,
+        proposal=replace(
+            seed.proposal,
+            width_mm=325.0,
+            web_width_mm=325.0,
+        ),
+    )
+
+    outcome = apply_candidate(current, candidate)
+
+    assert outcome.applied is True
+    assert outcome.inputs.section_shape == "T"
+    assert outcome.inputs.width_mm == 325.0
+    assert outcome.inputs.web_width_mm == 325.0
+    assert outcome.inputs.flange_width_mm == 900.0
+    assert outcome.inputs.flange_thickness_mm == 120.0
+    assert outcome.inputs.section_geometry.concrete_area_mm2 == 264000.0
+
+
+def test_flanged_section_requires_complete_geometry() -> None:
+    with pytest.raises(ValueError, match="Flanged sections require"):
+        BeamInputs(section_shape="I").validated()

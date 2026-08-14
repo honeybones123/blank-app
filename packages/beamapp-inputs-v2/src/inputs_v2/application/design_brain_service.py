@@ -570,6 +570,9 @@ class DesignBrainService:
                     hard_congestion_rejection_codes=evidence.hard_congestion_rejection_codes,
                     soft_congestion_score=evidence.soft_congestion_score,
                     soft_congestion_reasons=evidence.soft_congestion_reasons,
+                    conditional_preference_violation_codes=(
+                        evidence.conditional_preference_violation_codes
+                    ),
                     near_limit_evidence=evidence.near_limit_evidence,
                     geometry_change_penalty=evidence.geometry_change_penalty,
                     material_quantity=evidence.material_quantity,
@@ -602,6 +605,40 @@ class DesignBrainService:
         return outcome.preview
     def preview_shear_only(self, current: BeamInputs) -> DesignBrainPreview:
         """Apply the V1 SHEAR_FAIL_GOVERNS order: spacing, legs, diameter, depth, width."""
+        if self._active_family_contract is None:
+            # Direct preview callers use the same contract binding as the
+            # production orchestrator.  This is not an alternative ranking
+            # path; it prevents isolated callers bypassing family authority.
+            from inputs_v2.application.design_brain.family_context import FamilyRunContext
+            from inputs_v2.application.design_brain.family_owners import FAMILY_CONTRACTS
+            from inputs_v2.application.design_brain_families import (
+                DesignFamily,
+                FamilyClassification,
+                design_signals,
+            )
+
+            current_result = self._calculator.calculate_current(current).result
+            context = FamilyRunContext(
+                current=current,
+                current_result=current_result,
+                classification=FamilyClassification(
+                    selected_family=DesignFamily.SHEAR_FAIL_GOVERNS,
+                    selected_entry_condition_id=(
+                        FAMILY_CONTRACTS[
+                            DesignFamily.SHEAR_FAIL_GOVERNS
+                        ].entry_condition_id
+                    ),
+                    matched_families=(DesignFamily.SHEAR_FAIL_GOVERNS,),
+                    signals=design_signals(current_result, current),
+                    reason_code="direct_shear_preview_contract_binding",
+                ),
+                preferences=self.preference_profile,
+                search_profile=self.search_profile,
+            )
+            with self.family_contract(
+                FAMILY_CONTRACTS[DesignFamily.SHEAR_FAIL_GOVERNS], context
+            ):
+                return self.preview_shear_only(current)
         pipeline = ShearFailurePipeline(
             calculate=lambda inputs: self._calculator.calculate_current(inputs).result,
             evaluate=self._evaluate,

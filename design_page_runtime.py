@@ -2468,15 +2468,23 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     def _commit_design_section() -> None:
         x_commit = _clamp_x(float(st.session_state.get("design_section_x_slider", 0.0) or 0.0), beam_length)
+        # Resolve the committed actions from the authoritative analysis arrays.
+        # Preview values live in the beam-owned result store, not as independent
+        # session-state keys, so reading ``preview_*`` from session state could
+        # silently publish zeros even while the diagram showed valid actions.
+        committed_M_uls = _interp_at_x(x_uls, M_uls_vals, x_commit)
+        committed_V_uls = _interp_at_x(x_uls, V_uls_vals, x_commit)
+        committed_M_sls = _interp_at_x(x_sls, M_sls_vals, x_commit)
+        committed_V_sls = _interp_at_x(x_sls, V_sls_vals, x_commit)
         st.session_state["design_section_x_m"] = x_commit
         st.session_state["design_section_committed"] = True
         _publish_local_results(
-            design_M_uls_kNm=float(st.session_state.get("preview_M_uls_kNm", 0.0) or 0.0),
-            design_M_uls_kNm_signed=float(st.session_state.get("preview_M_uls_kNm", 0.0) or 0.0),
-            design_V_uls_kN=float(st.session_state.get("preview_V_uls_kN", 0.0) or 0.0),
-            design_M_sls_kNm=float(st.session_state.get("preview_M_sls_kNm", 0.0) or 0.0),
-            design_M_sls_kNm_signed=float(st.session_state.get("preview_M_sls_kNm", 0.0) or 0.0),
-            design_V_sls_kN=float(st.session_state.get("preview_V_sls_kN", 0.0) or 0.0),
+            design_M_uls_kNm=float(committed_M_uls),
+            design_M_uls_kNm_signed=float(committed_M_uls),
+            design_V_uls_kN=float(committed_V_uls),
+            design_M_sls_kNm=float(committed_M_sls),
+            design_M_sls_kNm_signed=float(committed_M_sls),
+            design_V_sls_kN=float(committed_V_sls),
         )
         st.session_state["_design_section_commit_msg"] = f"Design actions set from x = {x_commit:.3f} m"
 
@@ -2531,6 +2539,19 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             st.session_state.get("design_section_x_slider", initial_cursor_x)
         )
 
+        # Match the section selector to the plotted beam span.  The keyed
+        # widget boundary keeps this rule local to the section selector while
+        # preserving the already-aligned left edge at every page width.
+        st.markdown(
+            """
+            <style>
+            .st-key-design_section_x_slider {
+                width: 90.91% !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         slider_left, slider_mid, slider_right = st.columns([0.08, 0.84, 0.08], gap=None)
         with slider_mid:
             st.slider(

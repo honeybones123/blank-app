@@ -321,7 +321,7 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
             "active": st.column_config.TextColumn("Active", disabled=True),
             "beam_id": st.column_config.TextColumn("Beam ID", disabled=True),
             "use_for_auto_design": st.column_config.CheckboxColumn(
-                "Use for auto design",
+                "Use for auto assign",
                 help="Use this beam's complete geometry and reinforcement as an Auto assign template.",
                 default=False,
             ),
@@ -477,7 +477,7 @@ def _run_auto_assign_now(workflow: BatchDesignWorkflowState, ctx: BatchDesignPag
     }
     source_ids.discard("")
     if not source_ids:
-        st.warning("Tick at least one beam in ‘Use for auto design’ first.")
+        st.warning("Tick at least one beam in ‘Use for auto assign’ first.")
         return
     if ctx.design_brain_adapter is None:
         st.info("Design Brain adapter is not connected for this app session.")

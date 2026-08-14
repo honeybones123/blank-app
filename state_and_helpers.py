@@ -8886,29 +8886,43 @@ def _contract_session_integrity(state: dict) -> None:
 from state_runtime_gateway import (
     StateRuntimeBindings,
     configure_state_runtime_gateway,
+    state_runtime_gateway_configured,
 )
 
 
-configure_state_runtime_gateway(
-    StateRuntimeBindings(
-        get_param=get_param,
-        update_results=update_results,
-        get_longitudinal_row_inputs=get_longitudinal_row_inputs,
-        get_sync_callbacks=get_sync_callbacks,
-        speed_profile_record=speed_profile_record,
-        speed_profile_section=speed_profile_section,
-        resolve_widget_key=resolve_widget_key,
-        zero_allowed=zero_allowed,
-        audit=_audit,
-        mark_user_edit=mark_user_edit,
-        set_shared=set_shared,
-        canonical_s_lig_raw=canonical_s_lig_raw,
-        get_canonical_s_lig=get_canonical_s_lig,
-        get_active_s_lig_widget_value=get_active_s_lig_widget_value,
-    ),
-    shared_defaults=SHARED_DEFAULTS,
-    result_keys=RESULT_KEYS,
-    derived_keys=DERIVED_KEYS,
-    tab_keys=TAB_KEYS,
-    nonzero_required_shared_keys=NONZERO_REQUIRED_SHARED_KEYS,
-)
+def ensure_state_runtime_gateway_configured() -> None:
+    """Restore the low-level binding after a Streamlit module reload.
+
+    The application composition owns this registration. Calculation/page
+    fragments may call this idempotent guard before entering session-backed
+    cores, but lower-level cores remain unable to configure themselves.
+    """
+
+    if state_runtime_gateway_configured():
+        return
+    configure_state_runtime_gateway(
+        StateRuntimeBindings(
+            get_param=get_param,
+            update_results=update_results,
+            get_longitudinal_row_inputs=get_longitudinal_row_inputs,
+            get_sync_callbacks=get_sync_callbacks,
+            speed_profile_record=speed_profile_record,
+            speed_profile_section=speed_profile_section,
+            resolve_widget_key=resolve_widget_key,
+            zero_allowed=zero_allowed,
+            audit=_audit,
+            mark_user_edit=mark_user_edit,
+            set_shared=set_shared,
+            canonical_s_lig_raw=canonical_s_lig_raw,
+            get_canonical_s_lig=get_canonical_s_lig,
+            get_active_s_lig_widget_value=get_active_s_lig_widget_value,
+        ),
+        shared_defaults=SHARED_DEFAULTS,
+        result_keys=RESULT_KEYS,
+        derived_keys=DERIVED_KEYS,
+        tab_keys=TAB_KEYS,
+        nonzero_required_shared_keys=NONZERO_REQUIRED_SHARED_KEYS,
+    )
+
+
+ensure_state_runtime_gateway_configured()

@@ -488,8 +488,55 @@ def prepare_engineering_workspace_transaction(
             ),
         }
 
-    workspace_store.begin_calculation(revision=workspace_revision)
     fragment_store = services.publications
+    fragment_state = fragment_store.current()
+    pending_fragment_revision = int(
+        fragment_state.pending_workspace_revision or 0
+    )
+    active_fragment_revision = int(
+        fragment_state.active_workspace_revision or 0
+    )
+
+    # A fragment request can finish reconciling after a newer widget edit has
+    # already started its Design Brain transaction.  That older render has no
+    # authority to restart calculation or disturb the newer publication.
+    if pending_fragment_revision > int(workspace_revision):
+        return {
+            "reconciled_design_action_keys": reconciled_keys,
+            "engineering_hash": (
+                existing_result.engineering_hash
+                if existing_result is not None
+                else fragment_state.active_engineering_hash
+            ),
+            "calculation_status": "superseded",
+            "design_guide_fragment_status": fragment_state.status,
+            "design_guide_publication_authority_hash": (
+                fragment_state.active_publication_authority_hash
+            ),
+        }
+
+    if active_fragment_revision > int(workspace_revision):
+        result_revision = services.engineering_results.source_input_revision()
+        if result_revision not in {None, int(workspace_revision)}:
+            return {
+                "reconciled_design_action_keys": reconciled_keys,
+                "engineering_hash": (
+                    existing_result.engineering_hash
+                    if existing_result is not None
+                    else fragment_state.active_engineering_hash
+                ),
+                "calculation_status": "superseded",
+                "design_guide_fragment_status": fragment_state.status,
+                "design_guide_publication_authority_hash": (
+                    fragment_state.active_publication_authority_hash
+                ),
+            }
+        # Per-beam revisions are independent.  When the active result has
+        # already been restored to this lower revision, the higher fragment
+        # revision belongs to the previous active beam/result projection.
+        fragment_store.clear()
+
+    workspace_store.begin_calculation(revision=workspace_revision)
     fragment_store.begin_refresh(workspace_revision=workspace_revision)
     compute_counts = dict(
         st_module.session_state.get("_inputs_engineering_compute_count_by_revision")
@@ -532,9 +579,13 @@ def prepare_engineering_workspace_transaction(
         # The committed input transaction is the sole revision authority. This
         # branch handles startup migration and a newer edit observed before the
         # calculation began; it never writes a second revision counter.
+        refresh_started_revision = workspace_revision
         workspace_revision = committed_revision
         workspace_store.begin_calculation(revision=workspace_revision)
-        fragment_store.begin_refresh(workspace_revision=workspace_revision)
+        fragment_store.retarget_refresh(
+            expected_workspace_revision=refresh_started_revision,
+            committed_workspace_revision=workspace_revision,
+        )
     if authoritative_result is None:
         # An untouched beam with no actions or explicit design state is not a
         # calculation failure and is not work that polling should retry. Clear

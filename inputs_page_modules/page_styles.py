@@ -33,6 +33,25 @@ def apply_inputs_page_css():
             margin: 0;
             padding: 0;
         }
+        .inputs-model-invalid-reo {
+            margin: 0.25rem 0 0.65rem;
+            padding: 0.75rem 0.9rem;
+            border: 2px solid #ef4444;
+            border-left-width: 6px;
+            border-radius: 10px;
+            background: #fef2f2;
+            color: #991b1b;
+            line-height: 1.4;
+        }
+        .inputs-model-invalid-reo strong {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: #b91c1c;
+        }
+        .inputs-model-invalid-reo ul {
+            margin: 0;
+            padding-left: 1.25rem;
+        }
         .inputs-model-reo-labels {
             display: flex;
             flex-wrap: wrap;

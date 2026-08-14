@@ -15,7 +15,7 @@ def render_assignment_panel(
     on_auto_assign=None,
 ) -> None:
     st.caption(
-        "Tick ‘Use for auto design’ in the Project beams table to choose whole-beam templates. "
+        "Tick ‘Use for auto assign’ in the Project beams table to choose whole-beam templates. "
         "Each unticked beam is checked against those templates using its own loads."
     )
     disabled = workflow is None or selected_template_count == 0 or target_count == 0 or on_auto_assign is None

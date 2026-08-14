@@ -13,7 +13,7 @@ from state_runtime_gateway import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, specialized_widget_rail_columns, page_divider, render_plotly_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
+from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, page_divider, render_plotly_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
 from step_ui import render_expandable_step
 from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS
 from ui.summary_rows import build_shrinkage_summary_rows
@@ -38,6 +38,14 @@ from inputs_application.time_dependent_engineering_state import (
 from inputs_application.authoritative_check_packs import current_authoritative_family
 from inputs_application.time_dependent_presentation import (
     resolve_time_dependent_family_values,
+)
+from engineering_page_sections.compact_check_inputs import (
+    CheckInputCategory,
+    CheckInputPanelConfig,
+    format_dimensions,
+    format_number,
+    join_summary,
+    render_compact_check_inputs,
 )
 from application.contracts.concrete_crack_shrinkage import (
     CementClass,
@@ -196,6 +204,10 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
         )
         k1 = method_result.drying_time_coefficient
         eps_cse = method_result.autogenous_shrinkage
+        # Keep the common presentation contract complete for the EC2/C766
+        # branch.  This is the un-time-developed drying strain that is
+        # equivalent to the AS 3600 branch's ``eps_csd_final`` field.
+        eps_csd_final = method_result.nominal_drying_shrinkage
         eps_csd_t = method_result.drying_shrinkage
         eps_cs_total = method_result.total_shrinkage
         eps_cs_total_micro = eps_cs_total * 1e6
@@ -314,18 +326,9 @@ def render_shrinkage():
     # Page title
     # --------------------------------------------------------
     def _render_shrinkage_explainer() -> None:
-        method_options = list(SHRINKAGE_METHOD_LABELS)
         method_current = str(get_param("shrinkage_method", ShrinkageMethod.EXISTING_AS3600.value))
-        if method_current not in method_options:
+        if method_current not in SHRINKAGE_METHOD_LABELS:
             method_current = ShrinkageMethod.EXISTING_AS3600.value
-        st.selectbox(
-            "Calculation method",
-            options=method_options,
-            index=method_options.index(method_current),
-            format_func=lambda value: SHRINKAGE_METHOD_LABELS[value],
-            key="sh_method",
-            on_change=sync_callbacks["sh_method"],
-        )
         if method_current == ShrinkageMethod.EC2_C766.value:
             st.markdown(
                 """
@@ -359,17 +362,34 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     summary_placeholder = st.empty()
 
     # --------------------------------------------------------
-    col_geom, col_env, col_time = specialized_widget_rail_columns(
-        "shrinkage_primary_inputs",
-        3,
-        gap="large",
-    )
+    b_val = float(engineering_value("b", 400.0))
+    D_val = float(engineering_value("D", 600.0))
+    fc_val = float(engineering_value("fc", 32.0))
+    b = b_val
+    D = D_val
+    fc = fc_val
+    faces_option = str(get_param("member_faces_exposed", "Slab – one face exposed"))
+    env_option = str(get_param("shrinkage_env", "Arid environment"))
+    t_days = float(get_param("t_shrink", 365.0))
 
-    with col_geom:
+    def _render_shrinkage_method_inputs() -> None:
+        nonlocal shrinkage_method
+        method_options = list(SHRINKAGE_METHOD_LABELS)
+        method_current = str(get_param("shrinkage_method", ShrinkageMethod.EXISTING_AS3600.value))
+        if method_current not in method_options:
+            method_current = ShrinkageMethod.EXISTING_AS3600.value
+        shrinkage_method = st.selectbox(
+            "Calculation method",
+            options=method_options,
+            index=method_options.index(method_current),
+            format_func=lambda value: SHRINKAGE_METHOD_LABELS[value],
+            key="sh_method",
+            on_change=sync_callbacks["sh_method"],
+        )
+
+    def _render_shrinkage_geometry_inputs() -> None:
+        nonlocal b, D, faces_option
         st.markdown("**Geometry / member**")
-        b_val = float(engineering_value("b", 400.0))
-        D_val = float(engineering_value("D", 600.0))
-
         number_row(
             "Section width b (mm)",
             "sh_b",
@@ -408,10 +428,9 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
                 on_change=sync_callbacks["sh_faces"],
             )
 
-    with col_env:
+    def _render_shrinkage_environment_inputs() -> None:
+        nonlocal fc, env_option
         st.markdown("**Material / environment**")
-        fc_val = float(engineering_value("fc", 32.0))
-
         number_row(
             "Concrete strength f'c (MPa)",
             "inputs_fc",
@@ -461,7 +480,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
                     on_change=sync_callbacks["sh_cement_class"],
                 )
 
-    with col_time:
+    def _render_shrinkage_time_inputs() -> None:
+        nonlocal t_days
         st.markdown("**Time / drying**")
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -485,6 +505,58 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
                     min_value=0.0,
                     on_change=sync_callbacks["sh_drying_start"],
                 )
+
+    method_label = SHRINKAGE_METHOD_LABELS.get(shrinkage_method, shrinkage_method)
+    environment_summary = (
+        env_option
+        if shrinkage_method == ShrinkageMethod.EXISTING_AS3600.value
+        else (
+            f"RH {float(get_param('shrinkage_relative_humidity_percent', 51.0)):.0f}%"
+            f" · cement {str(get_param('shrinkage_cement_class', 'S'))}"
+        )
+    )
+    render_compact_check_inputs(
+        st,
+        CheckInputPanelConfig(
+            page_slug="shrinkage",
+            categories=(
+                CheckInputCategory(
+                    category_id="method",
+                    label="Calculation method",
+                    summary=method_label,
+                    render_body=_render_shrinkage_method_inputs,
+                    icon="≡",
+                ),
+                CheckInputCategory(
+                    category_id="section_member",
+                    label="Section & member",
+                    summary=join_summary(
+                        format_dimensions(b_val, D_val),
+                        faces_option,
+                    ),
+                    render_body=_render_shrinkage_geometry_inputs,
+                    icon="▣",
+                ),
+                CheckInputCategory(
+                    category_id="material_environment",
+                    label="Material & environment",
+                    summary=join_summary(
+                        f"f'c {format_number(fc_val, 'MPa')}",
+                        environment_summary,
+                    ),
+                    render_body=_render_shrinkage_environment_inputs,
+                    icon="◇",
+                ),
+                CheckInputCategory(
+                    category_id="time_drying",
+                    label="Time & drying",
+                    summary=f"t {format_number(t_days, 'days')}",
+                    render_body=_render_shrinkage_time_inputs,
+                    icon="◷",
+                ),
+            ),
+        ),
+    )
 
     page_divider()
 
@@ -516,6 +588,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         th_table = method_result.notional_size_mm
         k1 = method_result.drying_time_coefficient
         eps_cse = method_result.autogenous_shrinkage
+        eps_csd_final = method_result.nominal_drying_shrinkage
         eps_csd_t = method_result.drying_shrinkage
         eps_cs_total = method_result.total_shrinkage
         eps_cs_total_micro = eps_cs_total * 1e6
@@ -531,18 +604,26 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # Use the same current V2 family result for the summary and every detailed
     # value.  Page-local calculation is retained only as an unavailable-result
     # fallback, so navigation cannot leave the card on an older value.
-    displayed = resolve_time_dependent_family_values(
-        st.session_state,
-        family="shrinkage",
-        fallback={
-            "th_shrinkage_mm": th_table,
-            "k1_shrinkage": k1,
-            "eps_cse": eps_cse,
-            "eps_csd_final": eps_csd_final,
-            "eps_csd_t": eps_csd_t,
-            "eps_cs_total": eps_cs_total,
-            "eps_cs_total_micro": eps_cs_total_micro,
-        },
+    shrinkage_fallback = {
+        "th_shrinkage_mm": th_table,
+        "k1_shrinkage": k1,
+        "eps_cse": eps_cse,
+        "eps_csd_final": eps_csd_final,
+        "eps_csd_t": eps_csd_t,
+        "eps_cs_total": eps_cs_total,
+        "eps_cs_total_micro": eps_cs_total_micro,
+    }
+    # The installed V2 family currently publishes the AS 3600 shrinkage
+    # result.  It must not overwrite a deliberately selected EC2/C766 page
+    # calculation with values from a different method.
+    displayed = (
+        resolve_time_dependent_family_values(
+            st.session_state,
+            family="shrinkage",
+            fallback=shrinkage_fallback,
+        )
+        if shrinkage_method == ShrinkageMethod.EXISTING_AS3600.value
+        else dict(shrinkage_fallback)
     )
     th_table = int(displayed["th_shrinkage_mm"])
     k1 = float(displayed["k1_shrinkage"])

@@ -24,7 +24,6 @@ from widgets_helpers import (
     render_page_explainer_expander,
     render_result_page_title,
     render_section_title,
-    specialized_widget_rail_columns,
     page_divider,
     render_plotly_diagram,
     compact_side_view_figure,
@@ -59,6 +58,14 @@ from inputs_application.time_dependent_engineering_state import (
 from inputs_application.authoritative_check_packs import current_authoritative_family
 from inputs_application.time_dependent_presentation import (
     resolve_time_dependent_family_values,
+)
+from engineering_page_sections.compact_check_inputs import (
+    CheckInputCategory,
+    CheckInputPanelConfig,
+    format_dimensions,
+    format_number,
+    join_summary,
+    render_compact_check_inputs,
 )
 
 
@@ -305,18 +312,22 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     summary_placeholder = st.empty()
     
     # --------------------------------------------------------
-    col_geom, col_env, col_load = specialized_widget_rail_columns(
-        "creep_primary_inputs",
-        3,
-        gap="large",
-    )
+    b_val = float(engineering_value("b", 400.0))
+    D_val = float(engineering_value("D", 600.0))
+    fc_val = float(engineering_value("fc", 32.0))
+    Ec_val = float(engineering_value("Ec", 30000.0) or 30000.0)
+    b = b_val
+    D = D_val
+    fc = fc_val
+    Ec = Ec_val
+    faces_option = str(get_param("member_faces_exposed", "Beam – three faces exposed"))
+    env_option = str(get_param("env_option", "Temperate inland environment"))
+    t_creep = float(get_param("t_creep", 365.0))
+    age_at_loading = float(get_param("age_at_loading", 28.0))
 
-    # --- Geometry ---
-    with col_geom:
+    def _render_creep_geometry_inputs() -> None:
+        nonlocal b, D, faces_option
         st.markdown("**Geometry / member**")
-        b_val = float(engineering_value("b", 400.0))
-        D_val = float(engineering_value("D", 600.0))
-
         number_row(
             "Section width b (mm)",
             "cr_b",
@@ -355,12 +366,9 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
                 on_change=sync_callbacks["cr_faces"],
             )
 
-    # --- Environment & material ---
-    with col_env:
+    def _render_creep_environment_inputs() -> None:
+        nonlocal fc, Ec, env_option
         st.markdown("**Material / environment**")
-        fc_val = float(engineering_value("fc", 32.0))
-        Ec_val = float(engineering_value("Ec", 30000.0) or 30000.0)
-
         number_row(
             "Concrete strength f'c (MPa)",
             "inputs_fc",
@@ -393,8 +401,8 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
                 on_change=sync_callbacks["cr_env"],
             )
 
-    # --- Loading data ---
-    with col_load:
+    def _render_creep_time_inputs() -> None:
+        nonlocal t_creep, age_at_loading
         st.markdown("**Time / loading**")
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -423,6 +431,45 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
                 label_visibility="collapsed",
                 on_change=sync_callbacks["inputs_age_at_loading"],
             )
+
+    render_compact_check_inputs(
+        st,
+        CheckInputPanelConfig(
+            page_slug="creep",
+            categories=(
+                CheckInputCategory(
+                    category_id="section_member",
+                    label="Section & member",
+                    summary=join_summary(
+                        format_dimensions(b_val, D_val),
+                        faces_option,
+                    ),
+                    render_body=_render_creep_geometry_inputs,
+                    icon="▣",
+                ),
+                CheckInputCategory(
+                    category_id="material_environment",
+                    label="Material & environment",
+                    summary=join_summary(
+                        f"f'c {format_number(fc_val, 'MPa')}",
+                        env_option,
+                    ),
+                    render_body=_render_creep_environment_inputs,
+                    icon="◇",
+                ),
+                CheckInputCategory(
+                    category_id="time_loading",
+                    label="Time & loading",
+                    summary=join_summary(
+                        f"t {format_number(t_creep, 'days')}",
+                        f"loading age {format_number(age_at_loading, 'days')}",
+                    ),
+                    render_body=_render_creep_time_inputs,
+                    icon="◷",
+                ),
+            ),
+        ),
+    )
 
 
     page_divider()

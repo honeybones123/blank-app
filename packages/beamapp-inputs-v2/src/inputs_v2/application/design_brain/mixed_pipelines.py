@@ -14,6 +14,7 @@ from inputs_v2.application.design_brain.bending_overdesign_policy import (
 from inputs_v2.application.design_brain.candidate_arrangements import with_practical_bottom_rows
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain.shear_failure_pipeline import ShearFailurePipeline
+from inputs_v2.application.design_brain.section_strategies import revise_family_geometry
 from inputs_v2.application.design_brain_apply import Candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
@@ -126,7 +127,7 @@ class BendingFailureShearCleanupPipeline:
         if zero_demand:
             options.append((0, 0, current.shear.spacing_mm))
         for diameter in (0, 10, 12, 16):
-            for legs in ((0,) if diameter == 0 else (2, 4, 6, 8)):
+            for legs in ((0,) if diameter == 0 else (2, 3, 4, 5, 6, 8)):
                 for spacing in (600.0, 500.0, 400.0, 300.0, 250.0, 200.0, 175.0, 150.0, 125.0, 100.0):
                     if diameter == 0 and not zero_demand:
                         continue
@@ -224,12 +225,15 @@ class ShearFailureBendingOptimisePipeline:
                 raw = replace(
                     base.candidate,
                     candidate_id=f"mixed-shear-repair-geometry-{int(cell.width_mm)}-{int(cell.depth_mm)}-{bars}-N{diameter}",
-                    proposal=replace(
-                        base.candidate.proposal,
+                    proposal=revise_family_geometry(
+                        current,
+                        replace(
+                            base.candidate.proposal,
+                            bottom_bars=bars,
+                            bottom_diameter_mm=diameter,
+                        ),
                         width_mm=cell.width_mm,
                         depth_mm=cell.depth_mm,
-                        bottom_bars=bars,
-                        bottom_diameter_mm=diameter,
                     ),
                     rationale="Repair shear and resize the section while preserving every governing check.",
                 )

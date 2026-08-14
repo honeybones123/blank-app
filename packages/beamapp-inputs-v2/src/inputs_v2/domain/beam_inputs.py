@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from inputs_v2.domain.reinforcement_arrangement import ReinforcementArrangement
+from inputs_v2.domain.section_geometry import SectionGeometry, geometry_from_values
 from enum import StrEnum
 import hashlib
 import json
@@ -22,6 +23,7 @@ class KvMethod(StrEnum):
 
 
 ALLOWED_BAR_DIAMETERS = (10, 12, 16, 20, 24, 28, 32, 36, 40)
+SUPPORTED_SHEAR_LEG_COUNTS = (2, 3, 4, 5, 6, 8)
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,8 +66,8 @@ class ShearReinforcement:
     def validated(self) -> "ShearReinforcement":
         if self.diameter_mm != 0 and self.diameter_mm not in ALLOWED_BAR_DIAMETERS:
             raise ValueError("Shear link diameter is not supported.")
-        if self.legs not in (0, 2, 4, 6, 8):
-            raise ValueError("Shear link legs must be 2, 4, 6 or 8.")
+        if self.legs not in (0, *SUPPORTED_SHEAR_LEG_COUNTS):
+            raise ValueError("Shear link legs must be 2, 3, 4, 5, 6 or 8.")
         if (self.diameter_mm == 0) != (self.legs == 0):
             raise ValueError("Shear links must be fully off or specify diameter and legs.")
         if self.spacing_mm < 50.0 or self.spacing_mm > 600.0:
@@ -272,18 +274,17 @@ class BeamInputs:
             raise ValueError("Beam span must be between 500 and 100000 mm.")
         if self.section_shape not in {"RECT", "T", "I"}:
             raise ValueError("Section shape is not supported.")
-        if self.section_shape in {"T", "I"} and any(
-            value is not None
-            for value in (self.flange_width_mm, self.flange_thickness_mm, self.web_width_mm)
+        # Building the typed section contract also rejects incomplete flanged
+        # geometry.  A T/I section must never fall back to rectangular width.
+        self.section_geometry
+        if (
+            self.section_shape in {"T", "I"}
+            and self.web_width_mm is not None
+            and abs(float(self.width_mm) - float(self.web_width_mm)) > 1e-9
         ):
-            if self.flange_width_mm is None or self.flange_thickness_mm is None or self.web_width_mm is None:
-                raise ValueError("Flanged sections require flange width, flange thickness and web width.")
-            if not (self.flange_width_mm >= self.web_width_mm > 0.0):
-                raise ValueError("Flange width must be at least the web width.")
-            if not (0.0 < self.flange_thickness_mm < self.depth_mm):
-                raise ValueError("Flange thickness must be within the section depth.")
-            if self.section_shape == "I" and 2.0 * self.flange_thickness_mm >= self.depth_mm:
-                raise ValueError("I-section flanges must leave a positive web depth.")
+            raise ValueError(
+                "Flanged-section compatibility width must equal the authoritative web width."
+            )
         if self.side_cover_mm < 10.0 or self.side_cover_mm > 150.0:
             raise ValueError("Side cover must be between 10 and 150 mm.")
         self.bottom.validated()
@@ -308,6 +309,9 @@ class BeamInputs:
         depth_mm: float,
         span_mm: float | None = None,
         section_shape: str | None = None,
+        flange_width_mm: float | None = None,
+        flange_thickness_mm: float | None = None,
+        web_width_mm: float | None = None,
         width_locked: bool | None = None,
         depth_locked: bool | None = None,
         bottom: LongitudinalReinforcement,
@@ -328,6 +332,15 @@ class BeamInputs:
             depth_mm=float(depth_mm),
             span_mm=self.span_mm if span_mm is None else float(span_mm),
             section_shape=self.section_shape if section_shape is None else str(section_shape),
+            flange_width_mm=(
+                self.flange_width_mm if flange_width_mm is None else float(flange_width_mm)
+            ),
+            flange_thickness_mm=(
+                self.flange_thickness_mm
+                if flange_thickness_mm is None
+                else float(flange_thickness_mm)
+            ),
+            web_width_mm=self.web_width_mm if web_width_mm is None else float(web_width_mm),
             width_locked=self.width_locked if width_locked is None else bool(width_locked),
             depth_locked=self.depth_locked if depth_locked is None else bool(depth_locked),
             bottom=bottom,
@@ -347,6 +360,19 @@ class BeamInputs:
             serviceability=self.serviceability if serviceability is None else serviceability,
         )
         return candidate.validated()
+
+    @property
+    def section_geometry(self) -> SectionGeometry:
+        """Return the complete immutable geometry used by calculations."""
+
+        return geometry_from_values(
+            section_shape=self.section_shape,
+            width_mm=self.width_mm,
+            depth_mm=self.depth_mm,
+            flange_width_mm=self.flange_width_mm,
+            flange_thickness_mm=self.flange_thickness_mm,
+            web_width_mm=self.web_width_mm,
+        )
 
     @property
     def canonical_payload(self) -> dict[str, object]:

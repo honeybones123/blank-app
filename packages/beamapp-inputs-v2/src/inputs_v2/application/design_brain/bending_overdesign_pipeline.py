@@ -17,6 +17,10 @@ from inputs_v2.application.design_brain.bending_overdesign_selection import (
 )
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain.candidate_arrangements import with_practical_bottom_rows
+from inputs_v2.application.design_brain.section_strategies import (
+    proposal_concrete_area_mm2,
+    revise_family_geometry,
+)
 from inputs_v2.application.design_brain_apply import (
     Candidate,
     propose_neutral_candidate,
@@ -111,12 +115,15 @@ class BendingOverdesignPipeline:
                     and diameter == current.bottom.diameter_mm
                 ):
                     continue
-                proposal = replace(
-                    seed.proposal,
+                proposal = revise_family_geometry(
+                    current,
+                    replace(
+                        seed.proposal,
+                        bottom_bars=bars,
+                        bottom_diameter_mm=diameter,
+                    ),
                     width_mm=cell.width_mm,
                     depth_mm=cell.depth_mm,
-                    bottom_bars=bars,
-                    bottom_diameter_mm=diameter,
                 )
                 candidate = Candidate(
                     f"bending-overdesign-geometry-{int(cell.width_mm)}-{int(cell.depth_mm)}-{bars}-N{diameter}",
@@ -159,8 +166,10 @@ class BendingOverdesignPipeline:
                         continue
                     util = float(result.families.get("bending", {}).get("util", 0.0) or 0.0)
                     if util <= 1.0 and complete_compliance(result):
-                        area_ratio = cell.width_mm * cell.depth_mm / max(
-                            current.width_mm * current.depth_mm, 1.0
+                        area_ratio = proposal_concrete_area_mm2(
+                            arranged_candidate.proposal
+                        ) / max(
+                            current.section_geometry.concrete_area_mm2, 1.0
                         )
                         edit_size = (
                             abs(cell.width_mm - current.width_mm) / 100

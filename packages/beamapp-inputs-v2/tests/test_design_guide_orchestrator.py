@@ -22,6 +22,70 @@ from inputs_v2.domain.beam_inputs import (
 from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 
 
+@pytest.mark.parametrize("section_shape", ("T", "I"))
+def test_flanged_bending_failure_uses_shape_safe_geometry_and_exact_apply(
+    section_shape: str,
+) -> None:
+    current = BeamInputs(
+        width_mm=200.0,
+        depth_mm=400.0,
+        section_shape=section_shape,
+        web_width_mm=200.0,
+        flange_width_mm=600.0,
+        flange_thickness_mm=100.0,
+        bottom=LongitudinalReinforcement(bars=2, diameter_mm=12, cover_mm=40.0),
+        shear=ShearReinforcement(),
+        actions=ActionInputs(bending_moment_knm=600.0),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+    proposal = decision.candidate.proposal
+
+    assert decision.family is DesignFamily.BENDING_FAIL_GOVERNS
+    assert decision.status is DecisionStatus.ACTION
+    assert decision.apply_allowed is True
+    assert proposal.width_mm == proposal.web_width_mm
+    assert proposal.flange_width_mm == current.flange_width_mm
+    assert proposal.flange_thickness_mm == current.flange_thickness_mm
+
+    applied = apply_candidate(current, decision.candidate)
+    assert applied.applied is True
+    assert applied.inputs.web_width_mm == proposal.web_width_mm
+    assert applied.inputs.depth_mm == proposal.depth_mm
+    assert applied.inputs.flange_width_mm == proposal.flange_width_mm
+    assert applied.inputs.flange_thickness_mm == proposal.flange_thickness_mm
+
+    applied_result = DesignBrainService()._calculator.calculate_current(applied.inputs).result
+    assert applied_result is not None
+    assert applied_result.families == decision.proposed_result.families
+
+
+@pytest.mark.parametrize("section_shape", ("T", "I"))
+def test_flanged_mixed_shear_repair_never_generates_invalid_shape_geometry(
+    section_shape: str,
+) -> None:
+    current = BeamInputs(
+        width_mm=250.0,
+        depth_mm=500.0,
+        section_shape=section_shape,
+        web_width_mm=250.0,
+        flange_width_mm=750.0,
+        flange_thickness_mm=100.0,
+        bottom=LongitudinalReinforcement(bars=3, diameter_mm=20),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=200.0),
+        actions=ActionInputs(bending_moment_knm=100.0, shear_force_kn=800.0),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+
+    assert decision.family is DesignFamily.SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS
+    assert decision.status is DecisionStatus.ACTION
+    assert decision.candidate.proposal.width_mm == decision.candidate.proposal.web_width_mm
+    assert decision.candidate.proposal.flange_width_mm == current.flange_width_mm
+    assert decision.candidate.proposal.flange_thickness_mm == current.flange_thickness_mm
+    assert apply_candidate(current, decision.candidate).applied is True
+
+
 def test_orchestrator_routes_combined_failure_to_one_atomic_ladder() -> None:
     current = BeamInputs(actions=ActionInputs(bending_moment_knm=1000.0, shear_force_kn=300.0)).validated()
     decision = DesignGuideOrchestrator().preview(current)
@@ -547,7 +611,18 @@ def test_bending_overdesign_preserves_near_limit_shear_in_one_decision() -> None
     assert decision.apply_allowed
     assert 0.85 <= proposed_bending <= 1.0
     assert proposed_shear_util <= 1.0
-    assert decision.candidate.proposal.shear_spacing_mm < current.shear.spacing_mm
+    current_index = (
+        current.shear.legs
+        * current.shear.diameter_mm**2
+        / current.shear.spacing_mm
+    )
+    proposal = decision.candidate.proposal
+    proposed_index = (
+        proposal.shear_legs
+        * proposal.shear_diameter_mm**2
+        / proposal.shear_spacing_mm
+    )
+    assert proposed_index > current_index
 
 
 def test_bending_cleanup_uses_newly_available_compliant_geometry_candidate() -> None:

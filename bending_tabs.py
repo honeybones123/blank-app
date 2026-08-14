@@ -100,7 +100,7 @@ def _render_authoritative_uls_steps(
     def info_control(help_text: str, heading: str, body: str):
         def render_info():
             with _bending_check_info_row(help_text=help_text):
-                st.markdown(f"**{heading}**\n\n{body}")
+                st.markdown(f"### {heading}\n\n{body}")
         return render_info
 
     def stress_block_diagram(key: str, title: str, *, show_dn: bool, show_lever_arm: bool):
@@ -168,7 +168,31 @@ $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$.
         status=None,
         content_before=info_control(
             "Stress-block parameters", "Check 1.1 — Stress-block parameters",
-            "Explains the AS 3600 equivalent rectangular stress block and how α₂ and γ vary with concrete strength.",
+            r"""
+This check determines the equivalent rectangular stress-block factors
+$\alpha_2$ and $\gamma$ used for Ultimate Limit State flexural design.
+
+#### What the factors represent
+
+The actual concrete compression stress is nonlinear. AS 3600 represents it
+with an equivalent rectangular block [1] so that the simplified block develops
+the appropriate compression resultant and lever arm.
+
+- $\alpha_2 f'_c$ is the equivalent average compression stress.
+- $a=\gamma d_n$ is the equivalent stress-block depth.
+
+Together these factors define the concrete compression force used in the
+strain-compatible section analysis.
+
+#### Why this check matters
+
+The stress-block intensity and depth control the concrete compression
+resultant, its line of action and therefore the section's bending resistance.
+
+#### References
+
+[1] AS 3600:2018, Clause 8.1.3 — equivalent rectangular stress block.
+""",
         ),
         diagram_fn=stress_block_diagram(
             "bending_uls_authoritative_1_diagram", "Stress-block parameters",
@@ -178,13 +202,13 @@ $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$.
     step_expander_calcbox(
         uid="bending_uls_authoritative_2",
         summary_line=(
-            "1.2 Strain compatibility and force equilibrium | "
-            f"Result: dn = {dn:.1f} mm, a = {block_depth:.1f} mm"
+            "1.2 Strain compatibility and steel stresses | "
+            f"Result: {stress_text}"
         ),
         details_md=rf"""
 **Purpose**
 
-Solve the neutral-axis depth using strain compatibility and internal force equilibrium for every reinforcement layer.
+Calculate the compatible strain and stress in every reinforcement layer using the authoritative neutral-axis solution.
 
 **Inputs**
 
@@ -193,15 +217,72 @@ Solve the neutral-axis depth using strain compatibility and internal force equil
 - Ultimate concrete strain: $\varepsilon_{{cu}}=0.003$
 - Steel-layer stresses from the authoritative solver: {stress_text}
 
-**Formula**
+**Strain compatibility**
 
 $$\varepsilon_s=\varepsilon_{{cu}}\frac{{d-y_s}}{{d_n}}$$
+
+Steel stress is obtained from the material relationship and limited by the
+applicable steel strength:
+
+$$\sigma_{{s,i}}=f_s(\varepsilon_{{s,i}})$$
+
+**Authoritative result**
+
+- Calculated steel-layer stresses: {stress_text}
+- Ultimate concrete compression strain: $\varepsilon_{{cu}}=0.003$
+""",
+        status=None,
+        content_before=info_control(
+            "Strain compatibility and equilibrium", "Check 1.2 — Strain compatibility and force equilibrium",
+            r"""
+This check establishes the linear strain profile and calculates the strain
+and stress in every reinforcement layer.
+
+#### Strain assumptions
+
+Plane sections are assumed to remain plane [1], so strain varies linearly from
+the extreme compression fibre to each reinforcement layer. Each layer's
+strain is converted to stress using the steel stress–strain relationship;
+the analysis does not assume that every layer has yielded.
+
+This confirms whether each layer is elastic, yielded in tension or acting in
+compression before its force is used in equilibrium [1]. Compression steel is
+therefore not incorrectly treated as yielded tension steel.
+
+#### Why this check matters
+
+The reinforcement forces used later are valid only when they are derived from
+the compatible strain at the actual location of each layer [1]. The concrete
+compression block used with those forces follows the equivalent rectangular
+stress-block provisions [2].
+
+#### References
+
+[1] AS 3600:2018, Clause 8.1 — strain compatibility and internal equilibrium.
+[2] AS 3600:2018, Clause 8.1.3 — equivalent rectangular stress block.
+""",
+        ),
+        diagram_fn=strain_diagram,
+    )
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_3",
+        summary_line=(
+            "1.3 Neutral-axis and block-depth solution | "
+            f"Result: dn = {dn:.1f} mm, a = {block_depth:.1f} mm"
+        ),
+        details_md=rf"""
+**Purpose**
+
+Solve the neutral-axis depth by enforcing internal force equilibrium across
+the complete section.
+
+**Formula**
 
 The solver varies $d_n$ until:
 
 $$\sum C-\sum T=0$$
 
-and then calculates:
+The equivalent rectangular block depth is then:
 
 $$a=\gamma d_n$$
 
@@ -217,18 +298,44 @@ $d_n={dn:.1f}\,\text{{mm}}$ and $a={block_depth:.1f}\,\text{{mm}}$.
 """,
         status=None,
         content_before=info_control(
-            "Strain compatibility and equilibrium", "Check 1.2 — Strain compatibility and force equilibrium",
-            "Explains the iterative neutral-axis solution using every reinforcement layer, material stress limits and internal force equilibrium.",
+            "Neutral-axis and block-depth solution",
+            "Check 1.3 — Neutral-axis and block-depth solution",
+            r"""
+The neutral axis is the position through the section where longitudinal
+bending strain is zero. Concrete on the compression side and reinforcement
+on both sides of this position contribute compatible internal forces.
+
+#### How it is found
+
+The authoritative solver moves the neutral axis until total compression and
+tension balance [1]. The resulting depth controls the compression zone,
+reinforcement strains, ductility and internal lever arm.
+
+The stress-block depth $a$ differs from $d_n$ because it represents the
+equivalent rectangular compression block [2]:
+
+$$a=\gamma d_n$$
+
+#### Why this check matters
+
+An incorrect neutral-axis depth would invalidate the compatible steel
+stresses, compression block, lever arm and calculated capacity.
+
+#### References
+
+[1] AS 3600:2018, Clause 8.1 — strain compatibility and force equilibrium.
+[2] AS 3600:2018, Clause 8.1.3 — equivalent rectangular stress block.
+""",
         ),
         diagram_fn=stress_block_diagram(
-            "bending_uls_authoritative_2_diagram", "Neutral axis and block depth",
-            show_dn=True, show_lever_arm=True,
+            "bending_uls_authoritative_3_diagram", "Neutral axis and block depth",
+            show_dn=True, show_lever_arm=False,
         ),
     )
     step_expander_calcbox(
-        uid="bending_uls_authoritative_3",
+        uid="bending_uls_authoritative_4",
         summary_line=(
-            "1.3 Internal force resultants | "
+            "1.4 Internal force resultants | "
             f"Result: T = {tension_kn:.1f} kN"
         ),
         details_md=rf"""
@@ -262,16 +369,95 @@ The authoritative force-equilibrium residual is ${residual_kn:.6f}\,\text{{kN}}$
 """,
         status=None,
         content_before=info_control(
-            "Internal force resultants", "Check 1.3 — Internal force resultants",
-            "Shows how concrete compression, compression steel and tension steel form the internal resisting couple.",
+            "Internal force resultants", "Check 1.4 — Internal force resultants",
+            r"""
+This check shows the internal forces developed by the solved strain profile.
+
+#### Concrete and reinforcement resultants
+
+The concrete compression resultant is obtained from the equivalent stress
+block [2]. Reinforcement forces are obtained layer by layer from steel area and
+the stress calculated from that layer's compatible strain.
+
+At equilibrium, the total compression and tension resultants balance [1]. Their
+different lines of action form the internal resisting couple that provides
+the section's bending capacity.
+
+This layer-based treatment is important when compression reinforcement is
+present: compression steel is included with its calculated stress and is not
+incorrectly treated as yielded tension steel.
+
+#### Why this check matters
+
+These resultants form the internal force couple used to calculate nominal
+moment capacity.
+
+#### References
+
+[1] AS 3600:2018, Clause 8.1 — internal force equilibrium and flexural strength.
+[2] AS 3600:2018, Clause 8.1.3 — concrete compression resultant.
+""",
         ),
-        diagram_fn=force_diagram("bending_uls_authoritative_3_diagram", "Internal force resultants"),
+        diagram_fn=force_diagram("bending_uls_authoritative_4_diagram", "Internal force resultants"),
     )
     step_expander_calcbox(
-        uid="bending_uls_authoritative_4",
+        uid="bending_uls_authoritative_5",
         summary_line=(
-            "1.4 Neutral-axis ratio and strength factor | "
-            f"Result: ku = {ku:.3f}, phi = {phi:.3f}"
+            "1.5 Force-equilibrium verification | "
+            f"Result: residual = {residual_kn:.6f} kN"
+        ),
+        details_md=rf"""
+**Purpose**
+
+Verify that the authoritative neutral-axis solution satisfies internal force
+equilibrium.
+
+**Formula**
+
+$$R=\sum C-\sum T$$
+
+**Substitution**
+
+- Concrete compression: $C_c={concrete_kn:.1f}\,\text{{kN}}$
+- Compression-steel resultant: $C_s={compression_steel_kn:.1f}\,\text{{kN}}$
+- Tension resultant: $T={tension_kn:.1f}\,\text{{kN}}$
+
+$$R={residual_kn:.6f}\,\text{{kN}}$$
+
+**Result**
+
+The residual is within the authoritative solver tolerance.
+""",
+        status=None,
+        content_before=info_control(
+            "Force-equilibrium verification",
+            "Check 1.5 — Force-equilibrium verification",
+            r"""
+This check proves that the selected neutral axis is an equilibrium solution,
+not merely a geometric estimate.
+
+#### Equilibrium requirement
+
+All concrete and reinforcement compression forces are balanced against the
+tensile reinforcement forces. The remaining residual records the numerical
+closure of that solution and should be effectively zero within the solver's
+tolerance [1].
+
+This verification must be completed before the internal resultants can be
+used to calculate moment capacity.
+
+#### References
+
+[1] AS 3600:2018, Clause 8.1 — internal force equilibrium for members
+subjected to bending.
+""",
+        ),
+    )
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_6",
+        summary_line=(
+            "1.6 Neutral-axis ratio, ductility and strength factor | "
+            f"Result: ku = {ku:.3f}, phi = {phi:.3f}, {clause_status}"
         ),
         details_md=rf"""
 **Purpose**
@@ -295,39 +481,7 @@ $$k_u=\frac{{{dn:.1f}}}{{{d:.1f}}}={ku:.3f}$$
 
 $$\phi=\min(0.85,\max(0.65,1.24-13\times {ku:.3f}/12))={phi:.3f}$$
 
-**Result**
-
-$k_u={ku:.3f}$ and $\phi={phi:.3f}$.
-""",
-        status=None,
-        content_before=info_control(
-            "Neutral-axis ratio and strength factor", "Check 1.4 — Neutral-axis ratio and strength factor",
-            "Explains how kᵤ is calculated from the solved neutral axis and how it determines the bending strength-reduction factor φ.",
-        ),
-        diagram_fn=stress_block_diagram(
-            "bending_uls_authoritative_4_diagram", "Neutral-axis ratio",
-            show_dn=True, show_lever_arm=False,
-        ),
-    )
-    step_expander_calcbox(
-        uid="bending_uls_authoritative_5",
-        summary_line=(
-            "1.5 Clause 8.1.5 conditional assessment | "
-            f"Result: {clause_status}"
-        ),
-        details_md=rf"""
-**Purpose**
-
-Determine whether the additional AS 3600 Clause 8.1.5 ductility assessment is required and report its verified outcome.
-
-**Inputs**
-
-- Calculated neutral-axis ratio: $k_u={ku:.3f}$
-- Ductility threshold: $k_{{u,lim}}={limit:.2f}$
-- Design action: $M_u^*={demand:.2f}\,\text{{kNm}}$
-- Design capacity: $\phi M_u={capacity:.2f}\,\text{{kNm}}$
-
-**Formula / condition**
+**Clause 8.1.5 conditional assessment**
 
 The additional assessment is triggered when both:
 
@@ -335,42 +489,79 @@ $$k_u>k_{{u,lim}}$$
 
 $$M_u^*>0.8\phi M_u$$
 
-**Substitution**
-
-- $k_u={ku:.3f}$ compared with ${limit:.2f}$
-- $M_u^*={demand:.2f}\,\text{{kNm}}$ compared with $0.8\phi M_u={0.8 * capacity:.2f}\,\text{{kNm}}$
+- Triggered: **{"Yes" if triggered else "No"}**
+- Status: **{clause_status}**
+- Outstanding requirements: {failed_text}
 
 **Result**
 
-- Conditional assessment triggered: **{"Yes" if triggered else "No"}**
-- Status: **{clause_status}**
-- Outstanding requirements: {failed_text}
+$k_u={ku:.3f}$, $\phi={phi:.3f}$ and the conditional assessment status is
+**{clause_status}**.
 """,
         status=("PASS" if clause_status == "PASS" else "FAIL" if clause_status == "FAIL" else None),
         content_before=info_control(
-            "Clause 8.1.5 assessment", "Check 1.5 — Clause 8.1.5 conditional assessment",
-            "Explains when the additional ductility assessment is triggered and which verified requirements govern the result.",
+            "Neutral-axis ratio, ductility and strength factor",
+            "Check 1.6 — Neutral-axis ratio, ductility and strength factor",
+            r"""
+The neutral-axis ratio is
+
+$$k_u=\frac{d_n}{d}$$
+
+where $d_n$ is the solved neutral-axis depth and $d$ is the effective depth
+to the governing tensile reinforcement.
+
+#### What the ratio means
+
+A smaller $k_u$ generally indicates a shallower compression zone and greater
+tensile-steel strain. A larger $k_u$ indicates a deeper compression zone and
+reduced ductility. The calculated value therefore links equilibrium, strain
+compatibility and the expected failure behaviour.
+
+#### Strength reduction and conditional ductility
+
+The bending strength-reduction factor $\phi$ is derived from the calculated
+section behaviour under the strength-reduction provisions [1]; it is not a
+fixed user-selected value.
+
+Where Clause 8.1.5 is triggered, its additional ductility requirements [2] are
+assessed in this same check. A numerical moment capacity does not override an
+unsatisfied authoritative ductility requirement.
+
+#### Why this check matters
+
+It confirms that the capacity calculation uses the correct strength-reduction
+factor and that a numerically strong but insufficiently ductile section is not
+reported as compliant.
+
+#### References
+
+[1] AS 3600:2018, Clause 2.2.2 — strength-reduction factors.
+[2] AS 3600:2018, Clause 8.1.5 — ductility and neutral-axis assessment.
+""",
         ),
-        diagram_fn=strain_diagram,
+        diagram_fn=stress_block_diagram(
+            "bending_uls_authoritative_6_diagram", "Neutral-axis ratio and lever arm",
+            show_dn=True, show_lever_arm=True,
+        ),
     )
     capacity_ok = capacity > 0.0 and demand <= capacity
     step_expander_calcbox(
-        uid="bending_uls_authoritative_6",
+        uid="bending_uls_authoritative_7",
         summary_line=(
-            "1.6 Flexural capacity | "
-            f"Result: phi Mu = {capacity:.1f} kNm ({'PASS' if capacity_ok else 'FAIL'})"
+            "1.7 Nominal and design moment capacity | "
+            f"Result: Mu = {nominal:.1f} kNm, phi Mu = {capacity:.1f} kNm"
         ),
         details_md=rf"""
 **Purpose**
 
-Calculate nominal and design bending capacity from the authoritative internal-force solution and compare it with the applied ULS action.
+Calculate nominal and design bending capacity from the authoritative
+internal-force solution.
 
 **Inputs**
 
 - Tension resultant: $T={tension_kn:.1f}\,\text{{kN}}$
 - Authoritative lever arm: $z={lever_arm:.1f}\,\text{{mm}}$
 - Strength-reduction factor: $\phi={phi:.3f}$
-- Applied moment: $M_u^*={demand:.2f}\,\text{{kNm}}$
 
 **Formula**
 
@@ -378,26 +569,119 @@ $$M_u=\sum F_i z_i$$
 
 $$\phi M_u=\phi\,M_u$$
 
-$$\text{{Utilisation}}=\frac{{M_u^*}}{{\phi M_u}}$$
-
 **Substitution**
 
 $$M_u={nominal:.2f}\,\text{{kNm}}$$
 
 $$\phi M_u={phi:.3f}\times {nominal:.2f}={capacity:.2f}\,\text{{kNm}}$$
 
-$$\text{{Utilisation}}={utilisation_text}$$
+**Result**
+
+$M_u={nominal:.2f}\,\text{{kNm}}$ and
+$\phi M_u={capacity:.2f}\,\text{{kNm}}$.
+""",
+        status=None,
+        content_before=info_control(
+            "Nominal and design moment capacity",
+            "Check 1.7 — Nominal and design moment capacity",
+            r"""
+The balanced internal compression and tension resultants act at different
+locations and form an internal force couple. Their separation is the lever
+arm, and the couple produces the nominal moment capacity $M_u$.
+
+#### Lever arm and nominal capacity
+
+The concrete resultant acts through the centroid of the equivalent
+compression block [1]. The reinforcement resultant acts through the calculated
+centroid of the participating steel forces. Their separation supplies the
+lever arm used in the section moment calculation.
+
+#### Design capacity
+
+AS 3600 applies the calculated strength-reduction factor to obtain the design
+capacity $\phi M_u$ [2]. The applied design action is deliberately checked in the
+next step so the capacity derivation and compliance decision remain distinct.
+
+#### Why this check matters
+
+This converts the verified strain and force solution into the capacity that
+can be compared with the applied design action.
+
+#### References
+
+[1] AS 3600:2018, Clause 8.1.3 — compression resultant and equivalent stress block.
+[2] AS 3600:2018, Section 2 and Clause 8.1 — design strength and ultimate flexural capacity.
+""",
+        ),
+        diagram_fn=force_diagram("bending_uls_authoritative_7_diagram", "ULS force model and capacity"),
+    )
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_8",
+        summary_line=(
+            "1.8 Final flexural capacity check | "
+            f"Result: Mu* = {demand:.1f} kNm vs phi Mu = {capacity:.1f} kNm "
+            f"({'PASS' if capacity_ok else 'FAIL'})"
+        ),
+        details_md=rf"""
+**Purpose**
+
+Compare the applied Ultimate Limit State bending moment with the authoritative
+design capacity.
+
+**Formula**
+
+$$M_u^*\leq\phi M_u$$
+
+This strength comparison follows the limit-state design requirements [1] and
+the flexural member provisions [2].
+
+$$\text{{Utilisation}}=\frac{{M_u^*}}{{\phi M_u}}$$
+
+**Substitution**
+
+- Applied design action: $M_u^*={demand:.2f}\,\text{{kNm}}$
+- Design capacity: $\phi M_u={capacity:.2f}\,\text{{kNm}}$
+- Utilisation: ${utilisation_text}$
 
 **Result**
 
-$M_u^*={demand:.2f}\,\text{{kNm}}$ versus $\phi M_u={capacity:.2f}\,\text{{kNm}}$: **{"PASS" if capacity_ok else "FAIL"}**.
+$M_u^*={demand:.2f}\,\text{{kNm}}$ versus
+$\phi M_u={capacity:.2f}\,\text{{kNm}}$: **{"PASS" if capacity_ok else "FAIL"}**.
 """,
         status="PASS" if capacity_ok else "FAIL",
         content_before=info_control(
-            "Flexural capacity", "Check 1.6 — Flexural capacity",
-            "Explains how the authoritative internal forces and lever arm produce nominal capacity, then applies φ and compares capacity with demand.",
+            "Final flexural capacity check",
+            "Check 1.8 — Final flexural capacity check",
+            r"""
+This is the final Ultimate Limit State flexural verification. It compares the
+applied design bending moment with the design capacity established in the
+preceding checks:
+
+$$M_u^*\leq\phi M_u$$
+
+This strength comparison follows the limit-state design requirements [1] and
+the flexural member provisions [2].
+
+The comparison brings together the stress block, compatible reinforcement
+stresses, force equilibrium, neutral-axis and ductility assessment, strength
+reduction and internal lever arm.
+
+A passing numerical strength comparison does not override a failed mandatory
+ductility assessment recorded in Check 1.6.
+
+#### Pass and fail meaning
+
+- **PASS:** the authoritative design capacity is not less than the applied
+  design moment and every applicable mandatory flexural check is satisfied.
+- **FAIL:** the applied action exceeds capacity or an applicable mandatory
+  flexural requirement remains unsatisfied.
+
+#### References
+
+[1] AS 3600:2018, Section 2 — design actions, design strengths and strength reduction.
+[2] AS 3600:2018, Clause 8.1 — ultimate strength of members subjected to bending.
+""",
         ),
-        diagram_fn=force_diagram("bending_uls_authoritative_6_diagram", "ULS force model and capacity"),
     )
 
 

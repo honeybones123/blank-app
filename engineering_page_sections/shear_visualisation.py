@@ -45,8 +45,14 @@ def _render_plotly_in_mcft_column(fig: go.Figure, *, chart_key: str) -> None:
         compact_top=True,
     )
 
-def _render_mcft_behaviour_chart(fig: go.Figure, *, chart_key: str, animated: bool) -> None:
-    plot_h = int(fig.layout.height or SHEAR_VISUAL_HEIGHT_PX)
+def _render_mcft_behaviour_chart(
+    fig: go.Figure,
+    *,
+    chart_key: str,
+    animated: bool,
+    height_px: int | None = None,
+) -> None:
+    plot_h = int(height_px or fig.layout.height or SHEAR_VISUAL_HEIGHT_PX)
     if animated:
         _render_animated_plotly_figure(
             fig,
@@ -58,5 +64,11 @@ def _render_mcft_behaviour_chart(fig: go.Figure, *, chart_key: str, animated: bo
             max_width_px=int(BEHAVIOUR_VISUAL_WIDTH),
         )
     else:
-        _render_plotly_in_mcft_column(fig, chart_key=chart_key)
-
+        _render_centered_shear_plotly(
+            fig,
+            chart_key=chart_key,
+            max_width_px=SHEAR_BEHAVIOUR_MAX_WIDTH_PX,
+            height_px=plot_h,
+            title_pad_t=int(MCFT_BEHAVIOUR_MARGIN["t"]),
+            compact_top=True,
+        )

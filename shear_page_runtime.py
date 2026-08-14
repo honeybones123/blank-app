@@ -45,7 +45,7 @@ from ui.diagrams.principal_stress_cue_diagram import (
 )
 from shear_core import build_shear_zone_layout_strip_figure, derive_eps_top_bot_for_step4_diagram
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_global_widget_css, apply_result_page_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, render_result_page_title, render_specialized_widget_rail, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
+from widgets_helpers import apply_global_widget_css, apply_result_page_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
 from step_ui import render_expandable_step
 from engineering_check_ui import SHEAR_ROW_UID_TO_TAB
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
@@ -73,6 +73,16 @@ from calculations.shear import (
     torsion_section_geometry_values,
     web_crushing_fallback_values,
 )
+from engineering_page_sections.compact_check_inputs import (
+    CheckInputCategory,
+    CheckInputPanelConfig,
+    InputSource,
+    compact_check_input_regions,
+    format_dimensions,
+    format_number,
+    join_summary,
+)
+from inputs_application.action_source_control import uses_load_analysis_actions
 
 
 from engineering_page_sections import shear_visualisation as _shear_visualisation_section
@@ -574,6 +584,7 @@ def _render_shear_behaviour_diagrams(theta_v_deg: float) -> None:
         fig,
         chart_key="shear_behaviour_mcft_single",
         animated=bool(show_load_flow or show_stm_flow),
+        height_px=300,
     )
     st.caption(
         "Illustrative only — schematic principal-stress-style field with optional strut-and-tie overlay, "
@@ -1885,7 +1896,6 @@ def compute_shear_results(publish: bool = True) -> dict:
 #  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shear():
-    page_title_placeholder = st.container()
     _shear_visualisation_section.bind_runtime(globals())
     render_timing_mark("shear_page.runtime.start")
     # Handle cross-page navigation from Inputs page
@@ -2009,12 +2019,6 @@ In short:
 """
                     )
 
-    with page_title_placeholder:
-        # This page contributes one additional shell row before its content;
-        # compensate for that row while keeping the same visible gap as the
-        # other result-page headings.
-        render_result_page_title("Shear & Torsion", top_margin_rem=-0.9)
-
     debug_mode = st.sidebar.checkbox(
         "Debug session state",
         key=f"debug_state_toggle_{st.session_state.get('page_slug','page')}"
@@ -2086,7 +2090,57 @@ In short:
     if st.session_state.get(support_widget_key) != support_current:
         st.session_state[support_widget_key] = support_current
 
-    with render_specialized_widget_rail("shear_input_scroll", 4) as (
+    _shear_shape_summary = str(get_param("sec_shape", "RECT") or "RECT")
+    _shear_b_summary = float(get_param("b", 0.0) or 0.0)
+    _shear_D_summary = float(get_param("D", 0.0) or 0.0)
+    _shear_fc_summary = float(get_param("fc", 0.0) or 0.0)
+    _shear_v_summary = float(get_param("uls_Vstar", get_param("shear_V", 0.0)) or 0.0)
+    _shear_t_summary = float(get_param("Tu_star", 0.0) or 0.0)
+    _shear_n_summary = float(get_param("P_star", 0.0) or 0.0)
+    _shear_lig_d_summary = float(get_param("lig_d", 0.0) or 0.0)
+    _shear_lig_legs_summary = int(get_param("lig_legs", 0) or 0)
+    _shear_spacing_summary = float(get_param("s_lig", 0.0) or 0.0)
+    _shear_method_summary = str(get_param("k_v_method", "General method") or "General method")
+    _shear_input_config = CheckInputPanelConfig(
+        page_slug="shear",
+        categories=(
+                CheckInputCategory(
+                "design_actions", "Design actions",
+                join_summary(
+                    f"V* {format_number(_shear_v_summary, 'kN', decimals=1)}",
+                    f"N* {format_number(_shear_n_summary, 'kN', decimals=1)}",
+                    f"T* {format_number(_shear_t_summary, 'kNm', decimals=1)}",
+                ),
+                lambda: None,
+                source=(
+                    InputSource.LOAD_ANALYSIS
+                    if uses_load_analysis_actions(st.session_state)
+                    else InputSource.BEAM_INPUTS
+                ),
+                icon="↧",
+            ),
+            CheckInputCategory(
+                "section_material", "Section & material",
+                join_summary(
+                    format_dimensions(_shear_b_summary, _shear_D_summary),
+                    _shear_shape_summary,
+                    f"f'c {format_number(_shear_fc_summary, 'MPa')}",
+                ),
+                lambda: None, icon="▣",
+            ),
+            CheckInputCategory(
+                "shear_reinforcement", "Shear reinforcement",
+                f"N{_shear_lig_d_summary:.0f} · {_shear_lig_legs_summary} legs · {_shear_spacing_summary:.0f} mm spacing",
+                lambda: None, icon="□",
+            ),
+            CheckInputCategory(
+                "method_parameters", "Method & section parameters",
+                _shear_method_summary,
+                lambda: None, icon="≡",
+            ),
+        ),
+    )
+    with compact_check_input_regions(st, _shear_input_config) as (
         col_actions,
         col_geom_mat,
         col_shear_reo,

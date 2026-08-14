@@ -562,6 +562,46 @@ class EngineeringCalculator:
             if inputs.shear.kv_method is KvMethod.GENERAL
             else "kv_simplified_method"
         )
+        cage_fit = evaluate_arrangement(
+            inputs,
+            tuple(row.bar_count for row in arrangement.rows)
+            if arrangement is not None else (inputs.bottom.bars,),
+        )
+        cage_arrangement = cage_fit.arrangement if cage_fit.accepted else arrangement
+        # Longitudinal reinforcement and link legs live in the web for T and
+        # symmetric-I sections.  Capacity, fit and detailing must therefore
+        # use one identical cage width; falling back to the flange/legacy
+        # rectangular width can hide impossible cages.
+        cage_width_mm = float(inputs.web_width_mm or inputs.width_mm)
+        cage_bar_coordinates: list[tuple[float, float, float]] = []
+        cage_rows = tuple(cage_arrangement.rows) if cage_arrangement is not None else ()
+        for row in cage_rows:
+            diameter = float(row.bar_diameter_mm or inputs.bottom.diameter_mm)
+            start_x = float(inputs.side_cover_mm) + float(inputs.shear.diameter_mm) + diameter / 2.0
+            pitch = diameter + float(row.clear_spacing_mm)
+            cage_bar_coordinates.extend(
+                (start_x + index * pitch, float(row.centre_from_tension_face_mm), diameter)
+                for index in range(int(row.bar_count))
+            )
+        top_diameter = float(inputs.top.diameter_mm)
+        top_usable_width = cage_width_mm - 2.0 * (
+            float(inputs.side_cover_mm) + float(inputs.shear.diameter_mm)
+        )
+        top_clear = (
+            (top_usable_width - int(inputs.top.bars) * top_diameter)
+            / (int(inputs.top.bars) - 1)
+            if int(inputs.top.bars) > 1
+            else top_usable_width
+        )
+        top_start_x = float(inputs.side_cover_mm) + float(inputs.shear.diameter_mm) + top_diameter / 2.0
+        cage_bar_coordinates.extend(
+            (
+                top_start_x + index * (top_diameter + top_clear),
+                float(inputs.depth_mm) - float(inputs.top.cover_mm) - float(inputs.shear.diameter_mm) - top_diameter / 2.0,
+                top_diameter,
+            )
+            for index in range(int(inputs.top.bars))
+        )
         shear_detailing = calculate_shear_detailing(ShearDetailingInput(
             reinforcement_area_mm2=float(shear.get("Asv", 0.0) or 0.0),
             spacing_mm=float(inputs.shear.spacing_mm),
@@ -575,6 +615,7 @@ class EngineeringCalculator:
             # the bottom cover is the canonical side-cover proxy used by the
             # fitted section layout and reproduces cover + link radius.
             side_cover_mm=float(inputs.side_cover_mm),
+            longitudinal_bar_coordinates_mm=tuple(cage_bar_coordinates),
         ))
         shear.update(shear_detailing.as_family_values())
         shear["transverse_reinforcement_required"] = bool(
@@ -690,12 +731,19 @@ class EngineeringCalculator:
             "aggregate_clearance_ok": fit.aggregate_clearance_ok,
             "cover_mm": float(inputs.bottom.cover_mm),
             "cover_status": "PASS" if float(inputs.bottom.cover_mm) > 0.0 else "FAIL",
+            "cage_width_mm": cage_width_mm,
+            "section_shape": inputs.section_shape,
             "check_metadata": check_metadata("durability_cover"),
         }
         geometry = {
-            "depth_width_ratio": float(inputs.depth_mm) / max(float(inputs.width_mm), 1.0),
+            "section_shape": inputs.section_shape,
+            "web_width_mm": cage_width_mm,
+            "flange_width_mm": inputs.flange_width_mm,
+            "flange_thickness_mm": inputs.flange_thickness_mm,
+            "concrete_area_mm2": inputs.section_geometry.concrete_area_mm2,
+            "depth_width_ratio": float(inputs.depth_mm) / max(cage_width_mm, 1.0),
             "maximum_depth_width_ratio": 2.0,
-            "status": "PASS" if float(inputs.depth_mm) <= 2.0 * float(inputs.width_mm) else "FAIL",
+            "status": "PASS" if float(inputs.depth_mm) <= 2.0 * cage_width_mm else "FAIL",
         }
         return EngineeringResult(
             inputs.revision, inputs.content_hash, "production-shadow",

@@ -34,7 +34,6 @@ from widgets_helpers import (
     info_i_button,
     render_longitudinal_reo_row_config_controls,
     main_longitudinal_reo_pair_labels,
-    specialized_widget_rail_columns,
 )
 from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table, bind_summary_clicks
 from ui.summary_rows import build_crack_summary_rows, mark_primary_summary_row
@@ -66,6 +65,15 @@ from calculations.concrete_crack_shrinkage_methods import (
     calculate_as5100_wall_crack_control,
     calculate_c766_crack_control,
     calculate_c766_end_restraint,
+)
+from engineering_page_sections.compact_check_inputs import (
+    CheckInputCategory,
+    CheckInputPanelConfig,
+    compact_check_input_columns,
+    compact_check_input_regions,
+    format_dimensions,
+    format_number,
+    join_summary,
 )
 
 
@@ -99,6 +107,30 @@ def _method_number(label: str, key: str, shared_key: str, default: float, sync_c
     if key not in st.session_state:
         st.session_state[key] = float(get_param(shared_key, default))
     return float(st.number_input(label, key=key, on_change=sync_callbacks[key], **kwargs))
+
+
+def _render_crack_method_selector(sync_callbacks) -> str:
+    """Render the existing method widget from the shared compact input owner."""
+
+    method_options = list(CRACK_METHOD_LABELS)
+    method_current = str(
+        get_param(
+            "crack_control_method",
+            CrackControlMethod.EXISTING_AS3600.value,
+        )
+    )
+    if method_current not in method_options:
+        method_current = CrackControlMethod.EXISTING_AS3600.value
+    return str(
+        st.selectbox(
+            "Calculation method",
+            options=method_options,
+            index=method_options.index(method_current),
+            format_func=lambda value: CRACK_METHOD_LABELS[value],
+            key="crack_method",
+            on_change=sync_callbacks["crack_method"],
+        )
+    )
 
 
 def _render_as5100_wall_method(sync_callbacks):
@@ -436,18 +468,9 @@ def render_crack():
     # Page title
     # --------------------------------------------------------
     def _render_crack_explainer() -> None:
-        method_options = list(CRACK_METHOD_LABELS)
         method_current = str(get_param("crack_control_method", CrackControlMethod.EXISTING_AS3600.value))
-        if method_current not in method_options:
+        if method_current not in CRACK_METHOD_LABELS:
             method_current = CrackControlMethod.EXISTING_AS3600.value
-        st.selectbox(
-            "Calculation method",
-            options=method_options,
-            index=method_options.index(method_current),
-            format_func=lambda value: CRACK_METHOD_LABELS[value],
-            key="crack_method",
-            on_change=sync_callbacks["crack_method"],
-        )
         if method_current == CrackControlMethod.AS5100_WALL.value:
             st.markdown(
                 "AS 5100.5:2017 Clause 11.7.2 restrained-wall horizontal reinforcement check. "
@@ -499,8 +522,39 @@ You can:
         summary_placeholder = st.empty()
         diagram_placeholder = st.empty()
         page_divider()
-        render_section_title("Wall crack-control inputs")
-        method_result = _render_as5100_wall_method(sync_callbacks)
+        wall_thickness = get_param("crack_wall_thickness_mm", None)
+        wall_area = get_param("crack_wall_horizontal_area_per_face", None)
+        wall_spacing = get_param("crack_wall_vertical_spacing_mm", None)
+        with compact_check_input_regions(
+            st,
+            CheckInputPanelConfig(
+                page_slug="crack_as5100",
+                categories=(
+                    CheckInputCategory(
+                        "method",
+                        "Calculation method",
+                        CRACK_METHOD_LABELS[selected_method],
+                        lambda: None,
+                        icon="≡",
+                    ),
+                    CheckInputCategory(
+                        "wall_reinforcement",
+                        "Wall geometry & reinforcement",
+                        join_summary(
+                            f"thickness {format_number(wall_thickness, 'mm')}",
+                            f"area {format_number(wall_area, 'mm²/m')}",
+                            f"spacing {format_number(wall_spacing, 'mm')}",
+                        ),
+                        lambda: None,
+                        icon="▣",
+                    ),
+                ),
+            ),
+        ) as (method_region, wall_region):
+            with method_region:
+                _render_crack_method_selector(sync_callbacks)
+            with wall_region:
+                method_result = _render_as5100_wall_method(sync_callbacks)
         area_status = "PASS" if method_result.area_passes else "FAIL"
         spacing_status = "PASS" if method_result.spacing_passes else "FAIL"
         rows = [
@@ -525,8 +579,38 @@ You can:
         summary_placeholder = st.empty()
         diagram_placeholder = st.empty()
         page_divider()
-        render_section_title("Restrained-deformation inputs")
-        method_result = _render_c766_method(sync_callbacks)
+        restraint_summary = str(
+            get_param(
+                "crack_c766_restraint_type",
+                RestraintType.CONTINUOUS_EDGE.value,
+            )
+        ).replace("_", " ").title()
+        with compact_check_input_regions(
+            st,
+            CheckInputPanelConfig(
+                page_slug="crack_c766",
+                categories=(
+                    CheckInputCategory(
+                        "method",
+                        "Calculation method",
+                        CRACK_METHOD_LABELS[selected_method],
+                        lambda: None,
+                        icon="≡",
+                    ),
+                    CheckInputCategory(
+                        "restraint_parameters",
+                        "Restraint & crack parameters",
+                        restraint_summary,
+                        lambda: None,
+                        icon="↔",
+                    ),
+                ),
+            ),
+        ) as (method_region, restraint_region):
+            with method_region:
+                _render_crack_method_selector(sync_callbacks)
+            with restraint_region:
+                method_result = _render_c766_method(sync_callbacks)
         restraint_type = str(get_param("crack_c766_restraint_type", RestraintType.CONTINUOUS_EDGE.value))
         crack_width = float(method_result.characteristic_crack_width_mm or 0.0)
         rows = [
@@ -555,12 +639,65 @@ You can:
     # --------------------------------------------------------
     page_divider()
 
-    # Top row: 3 columns in a shared two-visible-column rail.
-    top_c1, top_c2, top_c3 = specialized_widget_rail_columns(
-        "crack_primary_inputs",
-        3,
-        gap="large",
+    _crack_b_summary = get_param("b", None)
+    _crack_D_summary = get_param("D", None)
+    _crack_fc_summary = get_param("fc", None)
+    _crack_cover_summary = get_param("cover_bot", None)
+    _crack_bot_count = get_param("nb_or_s_bot_1", get_param("nb_bot", None))
+    _crack_bot_dia = get_param("db_bot_1", get_param("db_bot", None))
+    _crack_exposure_summary = str(get_param("exposure_class", "Not provided") or "Not provided")
+    _crack_member_summary = str(get_param("crack_member_type", "Not provided") or "Not provided")
+    top_method, top_c1, top_c2, top_c3 = compact_check_input_columns(
+        st,
+        CheckInputPanelConfig(
+            page_slug="crack",
+            categories=(
+                CheckInputCategory(
+                    "method",
+                    "Calculation method",
+                    CRACK_METHOD_LABELS.get(selected_method, selected_method),
+                    lambda: None,
+                    icon="≡",
+                ),
+                CheckInputCategory(
+                    "section_material",
+                    "Section & material",
+                    join_summary(
+                        format_dimensions(_crack_b_summary, _crack_D_summary),
+                        f"f'c {format_number(_crack_fc_summary, 'MPa')}",
+                        f"cover {format_number(_crack_cover_summary, 'mm')}",
+                    ),
+                    lambda: None,
+                    icon="▣",
+                ),
+                CheckInputCategory(
+                    "reinforcement",
+                    "Tension reinforcement",
+                    (
+                        "Not provided"
+                        if _crack_bot_count is None or _crack_bot_dia is None
+                        else f"{float(_crack_bot_count):.0f}-N{float(_crack_bot_dia):.0f}"
+                    ),
+                    lambda: None,
+                    icon="●",
+                ),
+                CheckInputCategory(
+                    "criteria",
+                    "Crack-control parameters",
+                    join_summary(
+                        _crack_exposure_summary,
+                        _crack_member_summary,
+                        CRACK_METHOD_LABELS.get(selected_method, selected_method),
+                    ),
+                    lambda: None,
+                    icon="≡",
+                ),
+            ),
+        ),
     )
+
+    with top_method:
+        _render_crack_method_selector(sync_callbacks)
 
     # --- Materials & Geometry ---
     with top_c1:

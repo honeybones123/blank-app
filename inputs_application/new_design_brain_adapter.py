@@ -108,11 +108,11 @@ def _proposal_updates(
         if len(row_diameters_mm) == len(rows)
         else tuple(float(values.get("bottom_diameter_mm", 0.0)) for _ in rows)
     )
+    section_shape = str(values.get("section_shape") or "RECT").upper()
     updates: dict[str, Any] = {
-        "b": values.get("width_mm"),
         "D": values.get("depth_mm"),
         "L": values.get("span_mm"),
-        "sec_shape": values.get("section_shape"),
+        "sec_shape": section_shape,
         "bot_row_count": len(rows),
         "bot_row_1_bars": rows[0],
         "bot_row_1_spacing": values.get("bottom_spacing_mm"),
@@ -126,6 +126,24 @@ def _proposal_updates(
         "lig_legs": values.get("shear_legs"),
         "s_lig": values.get("shear_spacing_mm"),
     }
+    if section_shape == "RECT":
+        updates["b"] = values.get("width_mm")
+    elif section_shape == "T":
+        updates.update(
+            {
+                "bw": values.get("web_width_mm"),
+                "bf": values.get("flange_width_mm"),
+                "tf": values.get("flange_thickness_mm"),
+            }
+        )
+    elif section_shape == "I":
+        updates.update(
+            {
+                "tw": values.get("web_width_mm"),
+                "bf": values.get("flange_width_mm"),
+                "tf": values.get("flange_thickness_mm"),
+            }
+        )
     if len(rows) > 1:
         updates.update(
             {

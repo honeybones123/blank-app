@@ -222,6 +222,12 @@ def compliance_rejection_codes(result: EngineeringResult) -> tuple[str, ...]:
     fit = families.get("reinforcement_fit", {})
     if links_provided and shear.get("transverse_spacing_ok") is not True:
         rejected.append("transverse_shear_leg_spacing_failed")
+    if links_provided and shear.get("transverse_clear_spacing_ok") is False:
+        rejected.append("transverse_shear_leg_clear_spacing_failed")
+    if links_provided and shear.get("cage_topology_verified") is False:
+        rejected.extend(tuple(shear.get("cage_rejection_codes", ())))
+        if not shear.get("cage_rejection_codes"):
+            rejected.append("shear_cage_topology_unavailable")
     if not bool(fit.get("accepted", False)):
         rejected.append("reinforcement_fit_failed")
         if str(fit.get("cover_status", "PASS")).upper() == "FAIL":

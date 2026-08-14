@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from design_page_runtime import plot_load_diagram_plotly
 from ui.diagrams.moment_shear_diagram import (
     figure_bmd_from_state,
     figure_sfd_from_state,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_load_sfd_and_bmd_use_the_same_horizontal_plot_grid() -> None:
@@ -48,3 +53,10 @@ def test_load_sfd_and_bmd_use_the_same_horizontal_plot_grid() -> None:
     assert {figure.layout.margin.l for figure in figures} == {72}
     assert {figure.layout.margin.r for figure in figures} == {16}
 
+
+def test_design_section_slider_uses_the_action_diagram_width() -> None:
+    source = (ROOT / "design_page_runtime.py").read_text(encoding="utf-8-sig")
+
+    assert "st.columns([0.08, 0.84, 0.08], gap=None)" in source
+    assert ".st-key-design_section_x_slider" in source
+    assert "width: 90.91% !important" in source

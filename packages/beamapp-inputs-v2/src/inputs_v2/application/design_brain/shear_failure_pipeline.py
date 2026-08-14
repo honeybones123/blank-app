@@ -9,6 +9,7 @@ from inputs_v2.application.candidate_evaluation import complete_compliance
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain.candidate_arrangements import with_practical_bottom_rows
 from inputs_v2.application.design_brain.shear_repair_policy import generate_shear_repair_specs
+from inputs_v2.application.design_brain.section_strategies import revise_family_geometry
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
@@ -54,11 +55,22 @@ class ShearFailurePipeline:
         low, high = 0.85, 1.0
         trials: list[tuple[float, Candidate, BeamInputs, EngineeringResult, float]] = []
         for lane, changes, edit_size in generate_shear_repair_specs(current, current_util):
+            changes = dict(changes)
+            width_mm = changes.pop("width_mm", None)
+            depth_mm = changes.pop("depth_mm", None)
+            proposal = replace(seed.proposal, **changes)
+            if width_mm is not None or depth_mm is not None:
+                proposal = revise_family_geometry(
+                    current,
+                    proposal,
+                    width_mm=width_mm,
+                    depth_mm=depth_mm,
+                )
             candidate = Candidate(
                 f"shear-only-{lane}-{len(trials)}",
                 current.revision,
                 current.content_hash,
-                replace(seed.proposal, **changes),
+                proposal,
                 f"Shear-only ladder: {lane} repair toward 0.85–1.00 utilisation.",
             )
             stage_id = {
@@ -89,16 +101,11 @@ class ShearFailurePipeline:
                 in_band = low <= util <= high
                 distance = 0.0 if in_band else abs(util - (low + high) / 2.0)
                 trials.append((distance + (0.0 if in_band else 10.0), arranged_candidate, evaluation.outcome.inputs, result, edit_size))
-                if in_band:
-                    changed = tuple(
-                        name for name, old, new in (
-                            ("shear", current.shear, evaluation.outcome.inputs.shear),
-                            ("bottom", current.bottom, evaluation.outcome.inputs.bottom),
-                            ("width_mm", current.width_mm, evaluation.outcome.inputs.width_mm),
-                            ("depth_mm", current.depth_mm, evaluation.outcome.inputs.depth_mm),
-                        ) if old != new
-                    )
-                    return DesignBrainPreview(arranged_candidate, before, result, changed, True, "shear_target_band_candidate", low, high)
+                # Do not publish the first target-band hit.  Later candidates
+                # in this same family-owned link ladder may provide the same
+                # verified repair with a leg count appropriate to the web
+                # width.  Final selection is performed once by _select_best
+                # through the contract-bound RankingPolicy.
                 break
         for stage_id in (
             "repair_ligatures",

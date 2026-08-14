@@ -16,6 +16,7 @@ from inputs_application.contracts import (
 )
 from inputs_v2.application.design_brain_apply import propose_neutral_candidate
 from inputs_v2.application.design_brain_service import DesignBrainService
+from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_application.v2_engineering_calculation_adapter import (
     _bottom_row_specs,
     _beam_inputs_from_snapshot,
@@ -145,6 +146,32 @@ def test_runtime_apply_projection_preserves_exact_mixed_row_diameters() -> None:
     assert updates["bot_row_1_dia"] == 20.0
     assert updates["bot_row_2_bars"] == 2
     assert updates["bot_row_2_dia"] == 16.0
+
+
+@pytest.mark.parametrize(
+    ("shape", "web_key"),
+    (("T", "bw"), ("I", "tw")),
+)
+def test_runtime_apply_projection_uses_shape_specific_width_fields(
+    shape: str,
+    web_key: str,
+) -> None:
+    current = BeamInputs(
+        width_mm=300.0,
+        depth_mm=650.0,
+        section_shape=shape,
+        web_width_mm=300.0,
+        flange_width_mm=900.0,
+        flange_thickness_mm=120.0,
+    ).validated()
+    seed = propose_neutral_candidate(current)
+
+    updates = _proposal_updates(seed.proposal, seed.row_counts)
+
+    assert "b" not in updates
+    assert updates[web_key] == 300.0
+    assert updates["bf"] == 900.0
+    assert updates["tf"] == 120.0
 
 
 def test_row_diameter_only_revision_is_recorded_as_candidate_change() -> None:

@@ -41,6 +41,7 @@ def candidate_evidence(
         "high": preferences.soft_congestion_high_penalty,
     }.get(congestion, 0.0)
     soft_reasons: list[str] = []
+    conditional_preference_violations: list[str] = []
     if soft_score > 0.0:
         soft_reasons.append(f"{congestion}_congestion")
 
@@ -86,6 +87,23 @@ def candidate_evidence(
         if float(candidate.proposal.shear_spacing_mm) not in preferences.standard_link_spacings_mm:
             soft_score += preferences.soft_congestion_moderate_penalty
             soft_reasons.append("nonstandard_ligature_spacing")
+        practical_width_ranges = {
+            2: (0.0, 400.0),
+            3: (350.0, 550.0),
+            4: (450.0, 750.0),
+            5: (650.0, 950.0),
+            6: (800.0, 1100.0),
+            8: (1050.0, float("inf")),
+        }
+        practical_range = practical_width_ranges.get(int(candidate.proposal.shear_legs))
+        if practical_range is not None and not (
+            practical_range[0]
+            <= float(candidate.proposal.width_mm)
+            <= practical_range[1]
+        ):
+            conditional_preference_violations.append(
+                "ligature_leg_count_outside_practical_width_range"
+            )
     rejection_codes = compliance_rejection_codes(result)
     hard_congestion = tuple(
         code
@@ -96,6 +114,10 @@ def candidate_evidence(
             "clear_spacing_failed",
             "row_spacing_failed",
             "anchorage_failed",
+            "internal_leg_anchorage_failed",
+            "shear_cage_longitudinal_bar_collision",
+            "longitudinal_bar_restraint_failed",
+            "shear_cage_topology_unavailable",
             "constructability_limit_failed",
         }
     )
@@ -114,6 +136,9 @@ def candidate_evidence(
         hard_congestion_rejection_codes=hard_congestion,
         soft_congestion_score=soft_score,
         soft_congestion_reasons=tuple(soft_reasons),
+        conditional_preference_violation_codes=tuple(
+            conditional_preference_violations
+        ),
         near_limit_evidence=near_limit,
         new_near_failure_count=sum(
             1 for event in near_limit if event.penalty_applied

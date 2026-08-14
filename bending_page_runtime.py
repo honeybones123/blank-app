@@ -36,7 +36,6 @@ from widgets_helpers import (
     render_page_explainer_expander,
     render_section_title,
     render_result_page_title,
-    render_specialized_widget_rail,
     render_longitudinal_reo_rows,
     render_longitudinal_reo_row_config_controls,
     main_longitudinal_reo_pair_labels,
@@ -88,6 +87,16 @@ from ui_seamless_steps import (
     bind_summary_clicks,
     step_card,
 )
+from engineering_page_sections.compact_check_inputs import (
+    CheckInputCategory,
+    CheckInputPanelConfig,
+    InputSource,
+    compact_check_input_regions,
+    format_dimensions,
+    format_number,
+    join_summary,
+)
+from inputs_application.action_source_control import uses_load_analysis_actions
 
 # Safe option lists for reinforcement inputs
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -1314,12 +1323,63 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with inputs_placeholder.container():
         page_divider()
 
-        with render_specialized_widget_rail("bending_input_scroll", 4) as (
+        _bend_shape_summary = str(get_param("sec_shape", "RECT") or "RECT")
+        _bend_b_summary = float(get_param("b", 0.0) or 0.0)
+        _bend_D_summary = float(get_param("D", 0.0) or 0.0)
+        _bend_fc_summary = float(get_param("fc", 0.0) or 0.0)
+        _bend_m_summary = float(get_param("uls_Mstar", get_param("Mu_star", 0.0)) or 0.0)
+        _bend_n_summary = float(get_param("P_star", 0.0) or 0.0)
+        _bend_bot_count = int(get_param("nb_or_s_bot_1", get_param("nb_bot", 0)) or 0)
+        _bend_bot_dia = float(get_param("db_bot_1", get_param("db_bot", 0.0)) or 0.0)
+        _bend_top_count = int(get_param("nb_or_s_top_1", get_param("nb_top", 0)) or 0)
+        _bend_top_dia = float(get_param("db_top_1", get_param("db_top", 0.0)) or 0.0)
+        _bending_input_config = CheckInputPanelConfig(
+            page_slug="bending",
+            categories=(
+                CheckInputCategory(
+                    "design_actions", "Design actions",
+                    join_summary(
+                        f"M* {format_number(_bend_m_summary, 'kNm', decimals=1)}",
+                        f"N* {format_number(_bend_n_summary, 'kN', decimals=1)}",
+                    ),
+                    lambda: None,
+                    source=(
+                        InputSource.LOAD_ANALYSIS
+                        if uses_load_analysis_actions(st.session_state)
+                        else InputSource.BEAM_INPUTS
+                    ),
+                    icon="↧",
+                ),
+                CheckInputCategory(
+                    "section_material", "Section & material",
+                    join_summary(
+                        format_dimensions(_bend_b_summary, _bend_D_summary),
+                        _bend_shape_summary,
+                        f"f'c {format_number(_bend_fc_summary, 'MPa')}",
+                    ),
+                    lambda: None, icon="▣",
+                ),
+                CheckInputCategory(
+                    "reinforcement", "Reinforcement",
+                    join_summary(
+                        f"Bottom {_bend_bot_count}-N{_bend_bot_dia:.0f}",
+                        f"Top {_bend_top_count}-N{_bend_top_dia:.0f}",
+                    ),
+                    lambda: None, icon="●",
+                ),
+            ),
+        )
+        with compact_check_input_regions(st, _bending_input_config) as (
             col_actions,
             col_geom_mat,
-            col_bend_bot,
-            col_bend_top,
+            col_bend_reo,
         ):
+            with col_bend_reo:
+                with st.container(
+                    border=False,
+                    key="compact_check_inputs_full_span_bending_reinforcement",
+                ):
+                    col_bend_bot, col_bend_top = st.columns(2, gap="medium")
             with st.container():
                 with col_actions:
                     actions_mode = get_param("actions_mode", "manual")

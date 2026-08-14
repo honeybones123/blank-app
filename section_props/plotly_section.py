@@ -8,7 +8,6 @@ from section_props.reo_layout import (
     compute_longitudinal_reo_layout,
     flatten_reo_points,
     resolve_longitudinal_bars_from_layout,
-    resolve_active_tension_reinforcement,
 )
 try:
     from section_props.section_layout import compute_shear_reo_layout_pure
@@ -387,41 +386,23 @@ def make_sectionA_figure(
         if has_layout_bars
         else []
     )
-    active_ids = set()
-    if tension_face_norm in ("top", "bottom"):
-        active = resolve_active_tension_reinforcement(
-            dims,
-            resolved_bars,
-            "negative" if tension_face_norm == "top" else "positive",
-        )
-        active_ids = {str(bar.get("id")) for bar in (active.get("active_bars") or [])}
-
-    zone_fill_active = {
-        "web": "rgba(0,102,204,0.95)",
-        "flange_left": "rgba(24,146,89,0.95)",
-        "flange_right": "rgba(24,146,89,0.95)",
-    }
-    zone_fill_inactive = {
-        "web": "rgba(130,130,130,0.45)",
-        "flange_left": "rgba(130,130,130,0.45)",
-        "flange_right": "rgba(130,130,130,0.45)",
-    }
     for bar in resolved_bars:
         x = float(bar.get("x_mm", 0.0) or 0.0)
         y = float(bar.get("y_mm", 0.0) or 0.0)
         db = float(bar.get("dia_mm", 0.0) or 0.0)
         if db <= 0.0:
             continue
-        zone = str(bar.get("zone", "web"))
-        is_active = str(bar.get("id", "")) in active_ids if active_ids else False
-        fill_rgba = (zone_fill_active if is_active else zone_fill_inactive).get(zone, "rgba(120,120,120,0.50)")
-        line_col = "black" if is_active else "rgba(80,80,80,0.65)"
+        # Use the same face-owned colour contract as the rectangular beam
+        # diagram and 3D model.  Zone and active-tension diagnostics must not
+        # change the visible identity of longitudinal reinforcement.
+        face = str(bar.get("face", "bottom") or "bottom").strip().lower()
+        fill_rgba = "#d62728" if face == "top" else "#1f77b4"
         r = db / 2.0
         shapes.append(dict(
             type="circle",
             x0=x - r, y0=y - r,
             x1=x + r, y1=y + r,
-            line=dict(width=1.0, color=line_col),
+            line=dict(width=1.0, color="black"),
             fillcolor=fill_rgba,
             opacity=1.0,
         ))

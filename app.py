@@ -204,6 +204,7 @@ from state_and_helpers import (
     ux_probe_set_page_slug,
     render_timing_begin_rerun,
     render_timing_mark,
+    ensure_state_runtime_gateway_configured,
 )
 import time
 from persistence.save_to_dashboard import (
@@ -5137,6 +5138,7 @@ def _refresh_result_page_fragment_calculations() -> None:
     cannot restore the result that preceded the fragment edit.
     """
 
+    ensure_state_runtime_gateway_configured()
     recalc_derived_values()
     compute_all_results()
     update_results()

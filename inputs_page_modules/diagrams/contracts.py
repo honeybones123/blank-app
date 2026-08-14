@@ -13,6 +13,7 @@ SECTION_2D_HASH_FIELDS = (
     "fallback_cover_side",
     "fallback_cover_top",
     "fallback_cover_bot",
+    "validation_errors",
 )
 
 BEAM_3D_HASH_FIELDS = (
@@ -32,6 +33,7 @@ BEAM_3D_HASH_FIELDS = (
     "reo_layout",
     "cage",
     "resolved_bars",
+    "validation_errors",
 )
 
 OWNERSHIP_RULES = {
@@ -41,4 +43,3 @@ OWNERSHIP_RULES = {
     "figure_request_models": "inputs_page_modules.diagrams",
     "plotly_figure_builders": "ui.diagrams and section_props",
 }
-

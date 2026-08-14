@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from inputs_v2.application.candidate_evaluation import complete_compliance
 from inputs_v2.application.design_brain.candidate_arrangements import with_practical_bottom_rows
+from inputs_v2.application.design_brain.section_strategies import revise_family_geometry
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
@@ -101,7 +102,7 @@ class ShearOverdesignPipeline:
         trials: list[tuple[float, Candidate, EngineeringResult, float]] = []
         for spacing in (100.0, 125.0, 150.0, 175.0, 200.0, 250.0, 300.0, 400.0, 500.0, 600.0):
             for diameter in (0, 10, 12, 16):
-                for legs in ((0,) if diameter == 0 else (2, 4, 6, 8)):
+                for legs in ((0,) if diameter == 0 else (2, 3, 4, 5, 6, 8)):
                     proposed_link_index = _link_index(diameter, legs, spacing)
                     # Overdesign may only publish a real material reduction.
                     # This also excludes the unchanged link arrangement from
@@ -147,7 +148,11 @@ class ShearOverdesignPipeline:
                         f"shear-overdesign-width-{width}-{link_seed.candidate_id}",
                         current.revision,
                         current.content_hash,
-                        replace(link_seed.proposal, width_mm=float(width)),
+                        revise_family_geometry(
+                            current,
+                            link_seed.proposal,
+                            width_mm=float(width),
+                        ),
                         "Shear overdesign cleanup: reduce width and redesign the reinforcement while preserving compliance.",
                     )
                     for candidate in with_practical_bottom_rows(raw):

@@ -9,6 +9,7 @@ from typing import Any, Callable
 from inputs_v2.application.candidate_evaluation import complete_compliance
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain.candidate_arrangements import with_practical_bottom_rows
+from inputs_v2.application.design_brain.section_strategies import revise_family_geometry
 from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
@@ -103,7 +104,7 @@ class CombinedFailurePipeline:
                         *(
                         (diameter, legs, spacing, legs * diameter**2 / spacing)
                         for diameter in (10, 12, 16)
-                        for legs in (2, 4, 6, 8)
+                        for legs in (2, 3, 4, 5, 6, 8)
                         for spacing in (300.0, 250.0, 200.0, 175.0, 150.0, 125.0, 100.0)
                         ),
                     ),
@@ -211,15 +212,18 @@ class CombinedFailurePipeline:
             f"combined-failure-{bars}-N{diameter}-{shear_diameter}-{legs}-{int(spacing)}",
             current.revision,
             current.content_hash,
-            replace(
-                seed.proposal,
+            revise_family_geometry(
+                current,
+                replace(
+                    seed.proposal,
+                    bottom_bars=bars,
+                    bottom_diameter_mm=diameter,
+                    shear_diameter_mm=shear_diameter,
+                    shear_legs=legs,
+                    shear_spacing_mm=spacing,
+                ),
                 width_mm=width,
                 depth_mm=depth,
-                bottom_bars=bars,
-                bottom_diameter_mm=diameter,
-                shear_diameter_mm=shear_diameter,
-                shear_legs=legs,
-                shear_spacing_mm=spacing,
             ),
             "Combined bending/shear ladder: atomically repair both governing failures.",
         )

@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from inputs_v2.application.candidate_evaluation import complete_compliance
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
+from inputs_v2.application.design_brain.section_strategies import revise_family_geometry
 from inputs_v2.application.design_brain_apply import (
     Candidate,
     propose_neutral_candidate,
@@ -85,15 +86,18 @@ class ServiceabilityCandidatePipeline:
                 cell_trials = []
                 for bars in bar_counts:
                     for diameter in diameters:
-                        proposal = replace(
-                            seed.proposal,
+                        proposal = revise_family_geometry(
+                            current,
+                            replace(
+                                seed.proposal,
+                                bottom_bars=bars,
+                                bottom_diameter_mm=diameter,
+                                shear_diameter_mm=current.shear.diameter_mm,
+                                shear_legs=current.shear.legs,
+                                shear_spacing_mm=current.shear.spacing_mm,
+                            ),
                             width_mm=width,
                             depth_mm=depth,
-                            bottom_bars=bars,
-                            bottom_diameter_mm=diameter,
-                            shear_diameter_mm=current.shear.diameter_mm,
-                            shear_legs=current.shear.legs,
-                            shear_spacing_mm=current.shear.spacing_mm,
                         )
                         for row_counts in practical_row_counts(bars):
                             candidate = Candidate(

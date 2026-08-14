@@ -121,6 +121,17 @@ def test_load_analysis_summary_always_uses_page_solved_actions() -> None:
     assert "This projection does not overwrite manual action inputs." in source
 
 
+def test_design_section_commit_resolves_actions_from_analysis_arrays() -> None:
+    source = (RUNTIME_ROOT / "design_page_runtime.py").read_text(encoding="utf-8")
+
+    assert "committed_M_uls = _interp_at_x(x_uls, M_uls_vals, x_commit)" in source
+    assert "committed_V_uls = _interp_at_x(x_uls, V_uls_vals, x_commit)" in source
+    assert "committed_M_sls = _interp_at_x(x_sls, M_sls_vals, x_commit)" in source
+    assert "committed_V_sls = _interp_at_x(x_sls, V_sls_vals, x_commit)" in source
+    assert 'st.session_state.get("preview_M_uls_kNm"' not in source
+    assert 'st.session_state.get("preview_V_uls_kN"' not in source
+
+
 def test_explicit_no_load_summary_utilisation_cannot_fall_through_to_rows() -> None:
     model = build_final_summary_check_card_model(
         family="bending",
