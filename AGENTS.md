@@ -40,3 +40,31 @@ Classify the failure as exactly one primary category:
 - render_proof_mismatch
 
 Patch only the identified owner layer after that. Do not keep adding fallback guards across render, proof, payload, cache, or coherence paths until the owner layer is named.
+
+## Calculation-Page Performance UI Freeze
+
+Performance work on Bending, Shear, Creep, Shrinkage, Crack Control and
+Deflection is execution-only. It must not change any visible UI or formatting.
+
+Forbidden performance-driven changes include:
+
+- adding, removing, renaming, reordering or relocating visible controls;
+- changing headings, labels, help text, equations, calculation-box text or
+  explanatory wording;
+- changing cards, tabs, expanders, diagrams, icons, colours, borders, spacing,
+  typography, widths, heights or responsive layout;
+- replacing an existing visible interaction with a different control merely to
+  make rendering faster;
+- showing stale content as current while deferred work completes.
+
+Permitted changes are limited to measured execution behaviour behind the
+existing presentation: lazy computation for already-existing selections,
+module import deferral or warm-up, cache reuse with complete identities,
+removal of proven-dead execution paths, and fragment scoping that preserves the
+rendered output and interaction contract.
+
+Every performance slice must compare the same cold/warm scenario before and
+after, retain visual/formatting regression coverage, and pass calculation,
+state, Apply and page-architecture gates. If a proposed speed improvement needs
+a UI or formatting change, stop and obtain an explicit separate user request;
+do not bundle it into performance work.

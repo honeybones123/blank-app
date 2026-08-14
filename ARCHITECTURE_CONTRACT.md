@@ -159,6 +159,26 @@ Relevant strongly connected components must be zero at final acceptance.
 - Cache reuse is permitted only when revision/hash contracts prove freshness.
 - Performance work follows measured section timings and may not weaken freshness checks.
 
+### 9.1 Calculation-page presentation freeze
+
+Performance optimisation is an execution concern and has no presentation
+authority. For Bending, Shear, Creep, Shrinkage, Crack Control and Deflection:
+
+- the visible control set, control type, order and location remain unchanged;
+- headings, labels, help, equations, calculation-box text and explanations
+  remain unchanged;
+- cards, tabs, expanders, diagrams, icons, colours, borders, spacing,
+  typography, dimensions and responsive formatting remain unchanged;
+- deferred work may display only the existing loading treatment and cannot
+  expose a new shell, placeholder or stale result;
+- optimisation code may call an existing page renderer but cannot render UI,
+  inject CSS/HTML, alter widget state, publish results or own navigation;
+- UI or formatting changes require a separately authorised product change and
+  cannot be justified or bundled as a performance optimisation.
+
+Acceptance requires like-for-like cold and warm measurements plus unchanged
+visual/formatting, calculation, state-retention and Apply contracts.
+
 ## 10. Root-cause completion gate
 
 No symptom-only patch counts toward architecture completion. Each closed issue must include:
