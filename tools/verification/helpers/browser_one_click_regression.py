@@ -685,6 +685,7 @@ def main(argv: list[str] | None = None) -> int:
                         base_url,
                         {
                             "page": "inputs",
+                            "browser_test_mode": "1",
                             "browser_recipe": name,
                             "one_click_auto_invoke": (
                                 "1" if args.auto_invoke else None

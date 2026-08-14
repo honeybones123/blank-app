@@ -347,15 +347,6 @@ def render_inputs_page() -> None:
         active_beam_id=active_beam_id,
         copy_deepcopy_fn=copy.deepcopy,
     )
-    # A full-page rerun creates fresh Streamlit slots even when the committed
-    # input revision did not change.  The presented-revision markers are only
-    # valid for the lifetime of the previous shell: retaining them makes the
-    # polling fragments skip their first draw and leaves the new slots blank.
-    # Fragment-only reruns do not execute this shell, so they still reuse the
-    # visible summary/Design Guide until a new input revision is committed.
-    ss.pop("_inputs_calculation_workspace_presented_revision", None)
-    ss.pop("_inputs_design_brain_presented_revision", None)
-
     render_timing_mark("inputs_page.shell.setup.start")
     page_context = _INPUTS_PAGE_RUNTIME.render_page_setup(ss=ss)
     # Build one explicit context for all sibling regions.  Session state stays
@@ -366,9 +357,9 @@ def render_inputs_page() -> None:
         active_beam_id=page_context.get("active_beam_id"),
     )
     render_timing_mark("inputs_page.shell.setup.end")
-    # Static route chrome belongs to the page shell.  Keeping the title outside
-    # every polling fragment prevents calculation or Design Brain refreshes
-    # from marking the whole page identity as stale.
+    # Static route chrome belongs to the page shell. Keeping the title outside
+    # the unified workspace fragment preserves page identity during scoped
+    # widget and Apply transactions.
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 

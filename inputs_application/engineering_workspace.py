@@ -446,11 +446,10 @@ def prepare_engineering_workspace_transaction(
 ) -> dict[str, Any]:
     """Commit widget actions and refresh the one authoritative result.
 
-    The direct Inputs path follows the standalone V2 page: it asks the
-    authoritative V2 service for one revision-matched result that contains
-    both the engineering packs and Design Brain publication.  The legacy
-    sibling-fragment path passes ``False`` and keeps its historical two-stage
-    calculation/Design Brain hand-off for rollback and measurement.
+    The direct Inputs path asks the authoritative V2 service for one
+    revision-matched result containing both the engineering packs and Design
+    Brain publication. Result pages may request engineering-only refreshes;
+    both paths use this same transaction and result store.
     """
 
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
@@ -458,12 +457,11 @@ def prepare_engineering_workspace_transaction(
     workspace_store.set_reconciled_keys(reconciled_keys)
     workspace_revision = workspace_store.workspace_revision()
 
-    # Fragment polling can overlap a just-completed calculation.  Once the
+    # A fragment rerun can follow a just-completed calculation. Once the
     # committed revision already has a matching authoritative result, this
-    # transaction is complete and must be reused.  Re-entering the refresh
-    # path here used to make one widget edit look like several calculations
-    # and caused the summary/Design Brain siblings to flicker while they
-    # repeatedly rebuilt the same revision.
+    # transaction is complete and must be reused. Re-entering the refresh path
+    # would make one widget edit look like several calculations and expose
+    # intermediate summary/Design Brain projections.
     existing_result = services.engineering_results.current()
     calculation_state = workspace_store.calculation_status()
     if (
@@ -588,7 +586,7 @@ def prepare_engineering_workspace_transaction(
         )
     if authoritative_result is None:
         # An untouched beam with no actions or explicit design state is not a
-        # calculation failure and is not work that polling should retry. Clear
+        # calculation failure and is not work that should be retried. Clear
         # all result/publication authorities and publish the explicit idle
         # outcome for this committed input revision.
         services.engineering_results.clear()
@@ -832,26 +830,20 @@ def render_inputs_design_guide_fragment_section(
                 st_module.session_state.get("_inputs_design_brain_job_probe")
                 or {}
             ),
-            "fragment_polling_state": dict(
-                st_module.session_state.get(
-                    "_inputs_design_brain_workspace_polling_state"
-                )
-                or {}
-            ),
             "final_publication_hashes": {
                 "publication_hash": projected_publication_hash,
                 "authority_hash": projected_publication_hash,
             },
         }
-        poll_count = int(
-            st_module.session_state.get("_inputs_design_brain_probe_poll_count", 0)
+        render_count = int(
+            st_module.session_state.get("_inputs_design_brain_probe_render_count", 0)
             or 0
         ) + 1
-        st_module.session_state["_inputs_design_brain_probe_poll_count"] = poll_count
+        st_module.session_state["_inputs_design_brain_probe_render_count"] = render_count
         st_module.text_area(
             "Design Brain fragment state",
             value=json.dumps(probe, sort_keys=True, default=str),
-            key=f"_inputs_design_brain_fragment_probe_{poll_count}",
+            key=f"_inputs_design_brain_fragment_probe_{render_count}",
             height=80,
             disabled=True,
             label_visibility="collapsed",
