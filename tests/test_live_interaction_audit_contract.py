@@ -42,3 +42,10 @@ def test_live_select_audit_ignores_hidden_react_aria_option_trees() -> None:
 
     assert "'[role=\"option\"]:visible'" in select_audit
     assert 'page.get_by_role("option")' not in select_audit
+
+
+def test_full_live_audit_isolates_cold_page_contexts() -> None:
+    """A cold page audit must not inherit conditional widgets from another route."""
+
+    assert 'context = browser.new_context(viewport={"width": 1440, "height": 1000})' in AUDIT_SOURCE
+    assert "finally:\n                context.close()" in AUDIT_SOURCE

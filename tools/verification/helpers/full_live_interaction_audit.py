@@ -493,9 +493,12 @@ def run(base_url: str, cid: str, pages: tuple[str, ...] = PAGES) -> dict[str, An
             # The Runtime verification machines already provide Edge even
             # when Playwright's optional bundled Chromium is not installed.
             browser = playwright.chromium.launch(headless=True, channel="msedge")
-        context = browser.new_context(viewport={"width": 1440, "height": 1000})
-        page = context.new_page()
         for slug in pages:
+            # Cold-control evidence must not inherit conditional widget state
+            # from the preceding route. Cross-page persistence is exercised by
+            # the dedicated navigation/state fuzz harness instead.
+            context = browser.new_context(viewport={"width": 1440, "height": 1000})
+            page = context.new_page()
             try:
                 query = urlencode({"page": slug, "fresh": "1", "cid": cid})
                 page.goto(f"{base_url.rstrip('/')}/?{query}", wait_until="domcontentloaded")
@@ -520,6 +523,8 @@ def run(base_url: str, cid: str, pages: tuple[str, ...] = PAGES) -> dict[str, An
                 }
             except Exception as exc:
                 raise AssertionError(f"page {slug!r}: {exc}") from exc
+            finally:
+                context.close()
         browser.close()
     report["ok"] = all(item["ok"] for item in report["pages"].values())
     report["control_count"] = sum(item["control_count"] for item in report["pages"].values())
