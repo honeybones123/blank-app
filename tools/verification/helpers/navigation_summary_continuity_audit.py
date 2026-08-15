@@ -104,7 +104,7 @@ def run(base_url: str, cid: str) -> dict:
         toggle = page.get_by_label(toggle_label, exact=True).first
         if toggle.is_checked():
             raise AssertionError("fresh manual recipe unexpectedly selected Load Analysis")
-        toggle.locator("xpath=..").click(force=True)
+        toggle.click(force=True)
         _settle(page, "inputs")
         if not page.get_by_label(toggle_label, exact=True).first.is_checked():
             raise AssertionError("Load Analysis action source did not commit")
@@ -113,9 +113,7 @@ def run(base_url: str, cid: str) -> dict:
         evidence.append({"event": "analysis_source_reached_bending_summary", "ok": True})
 
         _navigate(page, "inputs", "Beam Inputs")
-        page.get_by_label(toggle_label, exact=True).first.locator("xpath=..").click(
-            force=True
-        )
+        page.get_by_label(toggle_label, exact=True).first.click(force=True)
         _settle(page, "inputs")
         if page.get_by_label(toggle_label, exact=True).first.is_checked():
             raise AssertionError("manual action source did not restore")

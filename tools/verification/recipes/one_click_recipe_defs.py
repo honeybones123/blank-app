@@ -26,15 +26,19 @@ def _manual_actions(mu: float, vu: float) -> dict[str, Any]:
         "Mu_star_manual": float(mu),
         "load_Mstar_neg_proxy": 0.0,
         "uls_Vstar": float(vu),
+        "manual_uls_Vstar": float(vu),
         "load_Vstar_proxy": float(vu),
         "Vu_star": float(vu),
         "Vu_star_manual": float(vu),
         "uls_Nstar": 0.0,
+        "manual_uls_Nstar": 0.0,
         "load_Nstar_proxy": 0.0,
         "N_star": 0.0,
         "sls_Mstar": 0.0,
         "sls_Vstar": 0.0,
+        "manual_sls_Vstar": 0.0,
         "sls_Nstar": 0.0,
+        "manual_sls_Nstar": 0.0,
     }
 
 
@@ -780,6 +784,7 @@ def _manual_actions_with_sls(mu: float, vu: float, sls_mu: float, sls_vu: float 
             "sls_Mstar_pos_manual": max(0.0, float(sls_mu)),
             "sls_Mstar_neg_manual": max(0.0, -float(sls_mu)),
             "sls_Vstar": float(sls_vu),
+            "manual_sls_Vstar": float(sls_vu),
         }
     )
     return actions
