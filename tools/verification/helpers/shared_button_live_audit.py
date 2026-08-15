@@ -48,14 +48,14 @@ def main() -> int:
             _settle(page)
             _healthy(page)
 
-            page.get_by_role("button", name="💾 Save", exact=True).click(force=True)
+            page.get_by_role("button").filter(has_text="Save").first.click(force=True)
             _settle(page)
             _healthy(page)
             evidence.append({"button": "Save", "ok": True})
 
             # The PDF path may download immediately or complete via the
             # browser's download event.  Either way the app must remain healthy.
-            page.get_by_role("button", name="📄 PDF Report", exact=True).click(force=True)
+            page.get_by_role("button").filter(has_text="PDF Report").first.click(force=True)
             _settle(page)
             _healthy(page)
             evidence.append({"button": "PDF Report", "ok": True})
@@ -68,7 +68,10 @@ def main() -> int:
                 "⚑ Ready for setup",
                 "◇ Constraints: none",
             ):
-                button = page.get_by_role("button", name=label, exact=True)
+                # The source file historically contained mojibake icon bytes;
+                # match the stable human label rather than the icon prefix.
+                stable_label = label.split(" ", 1)[-1]
+                button = page.get_by_role("button").filter(has_text=stable_label)
                 if not button.count():
                     raise AssertionError(f"missing batch button {label!r}")
                 button.click(force=True)
