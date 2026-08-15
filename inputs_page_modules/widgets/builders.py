@@ -749,7 +749,12 @@ def build_longitudinal_reinforcement_widget_payloads(
     valid_count_options = [
         int(option)
         for option in list(count_options or [])
-        if int(option) != 1
+        # Every row represented by this builder is active.  Zero belongs to
+        # the separate row-count control (row absent), while one bar violates
+        # the longitudinal-row engineering contract.  Keeping either value in
+        # this selectbox lets a transient invalid snapshot reach calculation
+        # and the Design Brain before the page can render its validation state.
+        if int(option) >= 2
     ]
     for row in list(row_values or ()):
         if not isinstance(row, dict):

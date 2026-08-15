@@ -81,6 +81,17 @@ def current_authoritative_check_pack(
 
     if source_revision is not None and source_revision != input_state.revision:
         return None
+    # Revision equality alone is insufficient after a superseded refresh: an
+    # older publication can share the same revision number while belonging to
+    # different resolved actions.  The input transaction binds the exact V2
+    # engineering hash as its authority hash, so presentation consumers must
+    # reject a mismatched publication and let the application coordinator
+    # refresh it atomically.
+    if (
+        input_state.authority_hash
+        and result.engineering_hash != input_state.authority_hash
+    ):
+        return None
 
     calculations = dict(result.current_calculations or {})
     packs = calculations.get("packs")
@@ -165,6 +176,11 @@ def current_authoritative_family(
     if result is None:
         return None
     if source_revision is not None and source_revision != input_state.revision:
+        return None
+    if (
+        input_state.authority_hash
+        and result.engineering_hash != input_state.authority_hash
+    ):
         return None
     calculations = dict(result.current_calculations or {})
     if calculations.get("source") != "inputs_v2":

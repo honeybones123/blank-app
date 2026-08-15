@@ -45,6 +45,31 @@ def test_general_result_pages_are_fragment_scoped() -> None:
     assert '"deflection": ("Deflection", _render_deflection_page_fragment)' in source
 
 
+def test_load_analysis_fragment_is_registered_by_the_eager_shell() -> None:
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    page_source = (ROOT / "design_page_runtime.py").read_text(encoding="utf-8-sig")
+
+    assert "@st.fragment\ndef _render_design_page_fragment():" in app_source
+    assert '"design": ("Load Analysis", _render_design_page_fragment)' in app_source
+    assert "@st.fragment\ndef render_sfd_bmd_page():" not in page_source
+
+
+def test_load_analysis_display_controls_commit_to_the_page_owned_draft() -> None:
+    source = (ROOT / "design_page_runtime.py").read_text(encoding="utf-8-sig")
+
+    source_callback = source.split("def _on_design_actions_source_change() -> None:", 1)[1].split(
+        "source_options =", 1
+    )[0]
+    slider_callback = source.split("def _on_design_section_slider_change() -> None:", 1)[1].split(
+        "def _on_design_section_input_change() -> None:", 1
+    )[0]
+    peak_widget = source.split('label="Show |M|max"', 1)[1].split(")", 1)[0]
+
+    assert "load_analysis_store.capture_widgets()" in source_callback
+    assert "load_analysis_store.capture_widgets()" in slider_callback
+    assert "on_change=load_analysis_store.capture_widgets" in peak_widget
+
+
 def test_shear_page_heading_has_one_shell_owner() -> None:
     app_source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
     shear_source = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8-sig")
@@ -62,9 +87,11 @@ def test_result_pages_use_one_neutral_refresh_contract() -> None:
     assert contract_source.count("_ensure_general_page_engineering_publication(slug)") == 1
     for slug in ("bending", "shear", "creep", "shrinkage", "crack", "deflection"):
         assert source.count(f'_render_result_page_fragment("{slug}",') == 1
-    # One function definition plus its single call from the neutral contract.
-    assert source.count("_refresh_result_page_fragment_calculations()") == 2
-    assert "inputs_page.hydrate_committed_design_action_widgets(force=True)" in source
+    assert "_refresh_result_page_fragment_calculations" not in source
+    assert "CODEX_DIAGNOSTIC_SKIP_LEGACY_RESULT_PROJECTION" not in source
+    assert "application.result_page_workspace" not in source
+    assert "inputs_page.hydrate_committed_design_action_widgets(" in source
+    assert "resolved_projection=True" in source
 
 
 def test_global_header_actions_are_fragment_scoped() -> None:
@@ -86,6 +113,26 @@ def test_result_pages_have_no_direct_app_rerun_authority() -> None:
         name: _direct_rerun_calls(ROOT / name)
         for name in pages
         if _direct_rerun_calls(ROOT / name)
+    }
+    assert offenders == {}
+
+
+def test_result_pages_do_not_write_debug_session_inventories_during_render() -> None:
+    """Page navigation must never perform diagnostic filesystem writes."""
+
+    pages = (
+        "bending_page_runtime.py",
+        "shear_page_runtime.py",
+        "creep.py",
+        "shrinkage.py",
+        "crack_page_runtime.py",
+        "deflection_page_runtime.py",
+    )
+    offenders = {
+        name: "dump_session_state_inventory"
+        for name in pages
+        if "dump_session_state_inventory"
+        in (ROOT / name).read_text(encoding="utf-8-sig")
     }
     assert offenders == {}
 
@@ -167,6 +214,49 @@ def test_inputs_widget_coordinator_has_no_second_rerun_authority() -> None:
     assert "_inputs_diagram_settle_revision" not in source
 
 
+def test_general_result_pages_project_committed_actions_before_refresh() -> None:
+    source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    start = source.index("def _prepare_result_page_workspace(")
+    end = source.index("\ndef _render_result_page_fragment(", start)
+    boundary = source[start:end]
+
+    projection = boundary.index(
+        "project_committed_action_source_for_result_page()"
+    )
+    widget_hydration = boundary.index(
+        "inputs_page.hydrate_committed_design_action_widgets("
+    )
+    assert projection < widget_hydration
+
+
+def test_explicit_page_routes_do_not_mount_guest_preference_component() -> None:
+    """A cold component response must not rerun an already selected route."""
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    call = source.index("guest_preference = render_guest_preference_bootstrap()")
+    guard = source.rfind(
+        'if st.session_state.get("_guest_opening_default_pending"):',
+        0,
+        call,
+    )
+
+    assert guard >= 0
+    assert call - guard < 500
+
+
+def test_navigation_adopts_query_page_once_then_keeps_widget_authority() -> None:
+    """A replaceState URL cannot become a stale second page selector."""
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    assert 'QUERY_PAGE_ADOPTED_KEY = "_router_initial_query_page_adopted"' in source
+    assert (
+        "if not st.session_state.get(QUERY_PAGE_ADOPTED_KEY) or jump_pending:"
+        in source
+    )
+    assert "if st.session_state.get(LAST_QP_KEY) != selected_slug:" in source
+    assert 'if st.query_params.get("page") != selected_slug:' not in source
+
+
 def test_calculation_coordinator_never_hydrates_live_inputs_widgets() -> None:
     """A calculation refresh may read a beam snapshot but cannot own widgets."""
 
@@ -197,9 +287,15 @@ def test_final_calculation_state_reapplies_selected_load_analysis_projection() -
     )
     boundary = source[committed_projection:final_rebuild]
 
-    assert "if uses_load_analysis_actions(st.session_state):" in boundary
+    assert (
+        "committed_projection = "
+        "_project_selected_action_source_current_coordinator(" in boundary
+    )
+    assert "if uses_load_analysis_actions(committed_projection):" in boundary
     assert "committed_projection.update(" in boundary
-    assert "authoritative_action_source_projection(st.session_state)" in boundary
+    assert (
+        "authoritative_action_source_projection(committed_projection)" in boundary
+    )
 
 
 def test_calculated_action_projection_participates_in_workspace_identity() -> None:
@@ -214,10 +310,14 @@ def test_calculated_action_projection_participates_in_workspace_identity() -> No
     end = source.index("\ndef _reconcile_initial_reinforcement_widget_state(", start)
     transaction_source = source[start:end]
 
-    assert "if uses_load_analysis_actions(st.session_state):" in transaction_source
+    assert (
+        "action_source_state = "
+        "_project_selected_action_source_current_coordinator(" in transaction_source
+    )
+    assert "if uses_load_analysis_actions(action_source_state):" in transaction_source
     assert "transaction.update(" in transaction_source
     assert (
-        "authoritative_action_source_projection(st.session_state)"
+        "authoritative_action_source_projection(action_source_state)"
         in transaction_source
     )
     # Derived action identity is included directly; it is never reassigned to
@@ -380,3 +480,82 @@ def test_each_result_page_has_one_workspace_refresh_authority() -> None:
             f'_render_result_page_fragment("{page}",'
         ) == 1
         assert "_refresh_result_page_fragment_calculations()" not in fragment_source
+
+
+def test_inputs_tail_has_no_implicit_scroll_on_widget_or_toggle_rerender() -> None:
+    tail_runtime = (ROOT / "inputs_application/page_runtime/tail.py").read_text(
+        encoding="utf-8-sig"
+    )
+    tail_coordinator = (ROOT / "inputs_page_modules/tail.py").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert "_inputs_inject_scroll_to_design_actions" not in tail_runtime
+    assert "inject_scroll_to_design_actions_fn" not in tail_coordinator
+    assert "scrollIntoView" not in tail_runtime
+
+
+def test_summary_tables_are_session_cached_authoritative_publication_projections() -> None:
+    cache_source = (
+        ROOT / "inputs_page_modules/summaries/state_cache.py"
+    ).read_text(encoding="utf-8-sig")
+
+    for family_key in ("_bend_pack", "_shear_pack", "_crack_pack", "_defl_pack"):
+        assert f'ss["{family_key}"]' in cache_source
+    assert "authoritative_packs" in cache_source
+    assert "copy.deepcopy(authoritative_packs" in cache_source
+
+
+def test_calculation_card_css_is_owned_by_shell_and_survives_fragment_clicks() -> None:
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+
+    assert "apply_step_summary_expander_css," in app_source
+    style_call = (
+        'hc_try("css.apply_step_summary_expander_css", '
+        "apply_step_summary_expander_css)"
+    )
+    assert style_call in app_source
+    assert app_source.index("begin_render_cycle()") < app_source.index(
+        style_call,
+        app_source.index("begin_render_cycle()"),
+    )
+
+
+def test_authoritative_summaries_publish_before_heavy_page_content() -> None:
+    """The first visible calculation result must not be a late-filled slot."""
+
+    contracts = {
+        "shear_page_runtime.py": (
+            'render_timing_mark("shear_page.runtime.summary.start")',
+            'render_timing_mark("shear_page.runtime.visualisation.start")',
+        ),
+        "creep.py": (
+            "summary_values = compute_creep_results(publish=True)",
+            "b_val = float(engineering_value(",
+        ),
+        "shrinkage.py": (
+            "summary_values = compute_shrinkage_results(publish=True)",
+            "b_val = float(engineering_value(",
+        ),
+        "crack_page_runtime.py": (
+            "crack_pack = build_crack_check_rows_from_state(st.session_state)",
+            'render_timing_mark("crack_page.runtime.inputs.start")',
+        ),
+        "deflection_page_runtime.py": (
+            'render_timing_mark("deflection_page.runtime.summary_checks.start")',
+            "def _seed_widget_from_shared(",
+        ),
+    }
+    entrypoints = {
+        "shear_page_runtime.py": "def render_shear():",
+        "creep.py": "def render_creep():",
+        "shrinkage.py": "def render_shrinkage():",
+        "crack_page_runtime.py": "def render_crack():",
+        "deflection_page_runtime.py": "def render_deflection():",
+    }
+
+    for filename, (summary_marker, heavy_marker) in contracts.items():
+        source = (ROOT / filename).read_text(encoding="utf-8-sig")
+        page_source = source[source.index(entrypoints[filename]) :]
+        assert page_source.index(summary_marker) < page_source.index(heavy_marker)
+        assert "top_summary_placeholder = st.empty()" not in page_source

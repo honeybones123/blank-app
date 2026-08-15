@@ -22,6 +22,7 @@ from inputs_application.page_runtime.mode import (
     render_inputs_design_mode_selector_coordinator,
 )
 from inputs_application.page_runtime.setup import (
+    project_committed_action_source_for_result_page,
     refresh_inputs_design_brain_result,
     refresh_inputs_engineering_result,
     refresh_inputs_authoritative_design_result,

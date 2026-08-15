@@ -452,18 +452,51 @@ def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: b
     w_fc = get_widget_key_for_shared("fc", prefix="inputs_") or "inputs_fc"
     fsy_val = float(st.session_state.get(w_fsy, get_param("fsy", 500.0)))
     fc_val = float(st.session_state.get(w_fc, get_param("fc", 40.0)))
+    supported_fsy = (400.0, 500.0, 600.0)
+    supported_fc = (20.0, 25.0, 32.0, 40.0, 50.0, 65.0, 80.0, 100.0)
+    base_fsy_callback = sync_callbacks.get(w_fsy)
+    base_fc_callback = sync_callbacks.get(w_fc)
+
+    def _commit_supported_fsy_only() -> None:
+        """Reject a transient non-contract steel grade before publication."""
+
+        entered = float(st.session_state.get(w_fsy, fsy_val) or fsy_val)
+        if entered not in supported_fsy:
+            previous = float(st.session_state.get("fsy", fsy_val) or fsy_val)
+            st.session_state[w_fsy] = (
+                previous if previous in supported_fsy else 500.0
+            )
+            return
+        if callable(base_fsy_callback):
+            base_fsy_callback()
+
+    def _commit_supported_fc_only() -> None:
+        """Reject a transient non-contract concrete grade before publication."""
+
+        entered = float(st.session_state.get(w_fc, fc_val) or fc_val)
+        if entered not in supported_fc:
+            previous = float(st.session_state.get("fc", fc_val) or fc_val)
+            st.session_state[w_fc] = previous if previous in supported_fc else 40.0
+            return
+        if callable(base_fc_callback):
+            base_fc_callback()
+
+    material_callbacks = dict(sync_callbacks)
+    material_callbacks[w_fsy] = _commit_supported_fsy_only
+    material_callbacks[w_fc] = _commit_supported_fc_only
     number_row(
         "Steel MPa",
         w_fsy,
         fsy_val,
-        sync_callbacks,
+        material_callbacks,
         help_text="Yield strength of reinforcement (fsy).",
+        step=100.0,
     )
     number_row(
         "Concrete MPa",
         w_fc,
         fc_val,
-        sync_callbacks,
+        material_callbacks,
         help_text="Characteristic compressive strength of concrete (f'c).",
     )
 
@@ -1079,7 +1112,9 @@ def _hydrate_design_action_widgets_from_shared(
 
 
 def hydrate_inputs_design_action_widgets_before_summary(
-    *, force: bool = False
+    *,
+    force: bool = False,
+    resolved_projection: bool = False,
 ) -> None:
     """Project the committed action set before any summary is rendered.
 
@@ -1096,7 +1131,13 @@ def hydrate_inputs_design_action_widgets_before_summary(
     _hydrate_design_action_widgets_from_shared(
         selected_prefix,
         force=force,
-        design_controls=is_design_governing(),
+        # Calculation pages edit the same underlying manual action command,
+        # but their card and summary must initially project the resolved
+        # authoritative action. Inputs itself keeps the manual-owner
+        # projection unless Load Analysis owns the controls.
+        design_controls=(
+            is_design_governing() or bool(resolved_projection)
+        ),
     )
 
 def _commit_design_action_widgets_to_shared(selected_prefix: str) -> None:

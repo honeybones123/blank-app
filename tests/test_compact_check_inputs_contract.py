@@ -40,15 +40,26 @@ class _FakeStreamlit:
         return nullcontext()
 
     def expander(self, label, **kwargs):
+        class _FakeExpander:
+            def __init__(self, open_state):
+                self.open = open_state
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
         self.expander_calls.append((label, kwargs))
-        return nullcontext()
+        return _FakeExpander(len(self.expander_calls) == 1)
 
 
-def test_renderer_adds_no_component_session_state_and_mounts_every_body():
+def test_renderer_adds_no_component_session_state_and_mounts_all_card_bodies():
     rendered = []
     fake = _FakeStreamlit()
     config = CheckInputPanelConfig(
         page_slug="creep",
+        mount_closed_bodies=True,
         categories=(
             CheckInputCategory("geometry", "Geometry", "250 × 450 mm", lambda: rendered.append("geometry")),
             CheckInputCategory("time", "Time", "365 days", lambda: rendered.append("time")),
@@ -67,6 +78,23 @@ def test_renderer_adds_no_component_session_state_and_mounts_every_body():
     assert fake.container_calls == [
         {"border": False, "key": "compact_check_inputs_creep"}
     ]
+
+
+def test_heavy_panel_keeps_closed_bodies_lazy_and_fragment_scoped():
+    rendered = []
+    fake = _FakeStreamlit()
+    config = CheckInputPanelConfig(
+        page_slug="shear",
+        categories=(
+            CheckInputCategory("actions", "Actions", "100 kN", lambda: rendered.append("actions")),
+            CheckInputCategory("geometry", "Geometry", "300 mm", lambda: rendered.append("geometry")),
+        ),
+    )
+
+    render_compact_check_inputs(fake, config)
+
+    assert rendered == ["actions"]
+    assert all(call[1]["on_change"] == "rerun" for call in fake.expander_calls)
 
 
 def test_duplicate_category_ids_are_rejected():

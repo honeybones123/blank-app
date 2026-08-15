@@ -1,4 +1,8 @@
 import inspect
+from pathlib import Path
+from types import SimpleNamespace
+
+from streamlit.testing.v1 import AppTest
 
 from inputs_application.action_source_control import (
     INPUTS_ACTION_SOURCE_TOGGLE_KEY,
@@ -31,7 +35,25 @@ from inputs_page_modules.widgets.render_coordinators import (
 )
 from inputs_application.page_runtime.setup import (
     _engineering_transaction_widget_keys,
+    _project_selected_action_source_current_coordinator,
+    project_committed_action_source_for_result_page,
 )
+from inputs_application.page_runtime import setup as _setup_runtime_module
+
+
+def test_streamlit_toggle_commits_canonical_action_source() -> None:
+    app = AppTest.from_file(
+        str(Path(__file__).with_name("streamlit_action_source_harness.py"))
+    )
+    app.run()
+
+    assert not app.toggle[0].value
+
+    app.toggle[0].set_value(True).run()
+
+    assert app.toggle[0].value
+    assert app.session_state["actions_mode"] == "design"
+    assert app.session_state["actions_source"] == LOAD_ANALYSIS_ACTIONS_SOURCE
 
 
 def test_manual_uls_widgets_enter_the_canonical_input_transaction() -> None:
@@ -65,6 +87,132 @@ def test_load_analysis_controls_do_not_overwrite_manual_action_owners() -> None:
 
     assert "uls_Mstar_pos_manual" not in mapping
     assert "uls_Vstar" not in mapping
+
+
+def test_result_page_projection_uses_committed_source_pointer(
+    monkeypatch,
+) -> None:
+    """A stale route flag cannot replace selected Load Analysis actions."""
+
+    monkeypatch.setattr(
+        _setup_runtime_module,
+        "st",
+        SimpleNamespace(
+            session_state={
+                # Simulate the transient result-page session projection that
+                # previously made Bending recalculate at zero.
+                "actions_mode": "manual",
+                "actions_source": MANUAL_ACTIONS_SOURCE,
+                "sfd_Mmax_abs_kNm": 180.0,
+                "sfd_Vmax_abs_kN": 90.0,
+            }
+        ),
+    )
+    committed = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+    }
+
+    projected = _project_selected_action_source_current_coordinator(committed)
+
+    assert projected["actions_mode"] == "design"
+    assert projected["actions_source"] == LOAD_ANALYSIS_ACTIONS_SOURCE
+    assert projected["sfd_Mmax_abs_kNm"] == 180.0
+    assert projected["sfd_Vmax_abs_kN"] == 90.0
+
+
+def test_result_page_boundary_publishes_committed_selected_actions(
+    monkeypatch,
+) -> None:
+    session = {
+        "active_beam_id": "B1",
+        "actions_mode": "manual",
+        "actions_source": MANUAL_ACTIONS_SOURCE,
+        "sfd_Mmax_abs_kNm": 180.0,
+        "sfd_Vmax_abs_kN": 90.0,
+    }
+    committed = SimpleNamespace(
+        snapshot={
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        }
+    )
+    services = SimpleNamespace(
+        input_snapshots=SimpleNamespace(
+            current_for_beam=lambda beam_id: committed
+        )
+    )
+    monkeypatch.setattr(
+        _setup_runtime_module,
+        "st",
+        SimpleNamespace(session_state=session),
+    )
+    monkeypatch.setattr(
+        _setup_runtime_module.InputsSessionServices,
+        "from_mapping",
+        lambda state: services,
+    )
+
+    projection = project_committed_action_source_for_result_page()
+
+    assert projection["actions_mode"] == "design"
+    assert session["actions_source"] == LOAD_ANALYSIS_ACTIONS_SOURCE
+    assert session["sfd_Mmax_abs_kNm"] == 180.0
+    assert session["sfd_Vmax_abs_kN"] == 90.0
+
+
+def test_result_page_boundary_reads_beam_owned_load_analysis_results(
+    monkeypatch,
+) -> None:
+    beam_id = "beam-load-analysis"
+    session = {
+        "active_beam_id": beam_id,
+        "_load_analysis_drafts_by_beam_v1": {
+            beam_id: {"design_actions_source_selector": "max"}
+        },
+        "_load_analysis_results_by_beam_v1": {
+            beam_id: {
+                "sfd_Mmax_abs_kNm": 275.0,
+                "sfd_Vmax_abs_kN": 135.0,
+                "sfd_Msls_max_kNm": 165.0,
+                "sfd_Vsls_max_kN": 81.0,
+                "M_pos_max_uls_kNm": 275.0,
+                "M_neg_min_uls_kNm": -40.0,
+                "M_pos_max_sls_kNm": 165.0,
+                "M_neg_min_sls_kNm": -24.0,
+            }
+        },
+    }
+    committed = SimpleNamespace(
+        snapshot={
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        }
+    )
+    services = SimpleNamespace(
+        input_snapshots=SimpleNamespace(
+            current_for_beam=lambda current_beam_id: committed
+        )
+    )
+    monkeypatch.setattr(
+        _setup_runtime_module,
+        "st",
+        SimpleNamespace(session_state=session),
+    )
+    monkeypatch.setattr(
+        _setup_runtime_module.InputsSessionServices,
+        "from_mapping",
+        lambda state: services,
+    )
+
+    projection = project_committed_action_source_for_result_page()
+
+    assert projection["sfd_Mmax_abs_kNm"] == 275.0
+    assert projection["sfd_Vmax_abs_kN"] == 135.0
+    assert projection["sfd_Msls_max_kNm"] == 165.0
+    assert projection["sfd_Vsls_max_kN"] == 81.0
+    assert session["M_pos_max_uls_kNm"] == 275.0
+    assert session["M_neg_min_uls_kNm"] == -40.0
 
 
 def test_inputs_toggle_selects_load_analysis_and_synchronizes_both_pages() -> None:

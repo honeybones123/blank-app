@@ -68,3 +68,8 @@ after, retain visual/formatting regression coverage, and pass calculation,
 state, Apply and page-architecture gates. If a proposed speed improvement needs
 a UI or formatting change, stop and obtain an explicit separate user request;
 do not bundle it into performance work.
+
+The cold-page target is an every-run gate, not a median-only target: each
+required isolated cold run for every calculation page must be below 1.0 second.
+Do not meet it by rendering less visible content, changing default open states,
+or replacing the current presentation with a lighter equivalent.

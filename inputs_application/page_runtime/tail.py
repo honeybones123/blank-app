@@ -8,8 +8,6 @@ import html
 
 import os
 
-import json
-
 import sys
 
 import time
@@ -280,9 +278,7 @@ from inputs_application.page_runtime.common import (
     RESULT_CACHE_KEY,
     _AGENT_DEBUG_LOG_PATH,
     _INPUTS_DEBUG_AUDIT,
-    _INPUTS_DESIGN_ACTIONS_ANCHOR_ID,
     _INPUTS_PENDING_NAV_PAGE_SLUG_KEY,
-    _INPUTS_SCROLL_DESIGN_ACTIONS_FLAG,
     _agent_debug_log,
     _append_design_guide_trace,
     _apply_canonical_convenience_resync,
@@ -372,36 +368,6 @@ def _auto_design_invoke_debug_snapshot() -> dict:
             "auto_design_invoke_pending": None,
         }
 
-def _inputs_inject_scroll_to_design_actions() -> None:
-    """Scroll main view to the Design Actions anchor (one-shot)."""
-    if not st.session_state.pop(_INPUTS_SCROLL_DESIGN_ACTIONS_FLAG, False):
-        return
-    import streamlit.components.v1 as components
-
-    aid = json.dumps(_INPUTS_DESIGN_ACTIONS_ANCHOR_ID)
-    components.html(
-        f"""
-<script>
-(function() {{
-  const doc = window.parent.document;
-  const id = {aid};
-  let tries = 0;
-  function tick() {{
-    const el = doc.getElementById(id);
-    if (el) {{
-      try {{ el.scrollIntoView({{ behavior: "smooth", block: "start" }}); }} catch (e) {{}}
-      return;
-    }}
-    tries += 1;
-    if (tries < 80) setTimeout(tick, 50);
-  }}
-  setTimeout(tick, 120);
-}})();
-</script>
-""",
-        height=0,
-    )
-
 def render_inputs_post_summary_actions_and_dev_audit_current_coordinator(
     *,
     inputs_render_audit: dict[str, str],
@@ -409,7 +375,6 @@ def render_inputs_post_summary_actions_and_dev_audit_current_coordinator(
     render_inputs_post_summary_actions_and_dev_audit_module(
         st_module=st,
         inputs_render_audit=inputs_render_audit,
-        inject_scroll_to_design_actions_fn=_inputs_inject_scroll_to_design_actions,
         apply_buttons_fn=_handle_inputs_apply_buttons_current_coordinator,
         auto_design_fn=_handle_inputs_auto_design_current_coordinator,
         agent_debug_log_fn=_agent_debug_log,

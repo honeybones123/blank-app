@@ -26,6 +26,7 @@ def __getattr__(name: str) -> Any:
     return getattr(_impl, name)
 
 
+@st.fragment
 def render_bending_side_view_diagram(
     state: Any,
     *,
@@ -55,32 +56,9 @@ def render_bending_side_view_diagram(
         show_strain_diagram=show_strain,
         show_stress_diagram=show_stress,
     )
-    refresh_values = (
-        meta.get("critical_x_m"),
-        state.get("bending_detail_view"),
-        state.get("bending_state"),
-        state.get("Ast_bot"),
-        state.get("Ast_top"),
-        state.get("d"),
-        state.get("do"),
-        state.get("bending_sls_dn"),
-        state.get("bending_sls_eps_top"),
-        state.get("bending_sls_eps_bot"),
-        state.get("bending_sls_kappa"),
-        state.get("nb_bot"),
-        state.get("nb_top"),
-        state.get("db_bot"),
-        state.get("db_top"),
-        bool(show_strain),
-        bool(show_stress),
-    )
-    refresh_key = "_".join(
-        f"{float(v):.6g}" if isinstance(v, (int, float)) else str(v)
-        for v in refresh_values
-    )
     render_plotly_diagram(
         fig,
-        key=f"bending_side_view_{refresh_key}",
+        key="bending_side_view",
         title="Beam side view (bending)",
         config={"displayModeBar": False},
     )

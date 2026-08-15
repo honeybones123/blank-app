@@ -57,13 +57,19 @@ def main() -> int:
     fail_shear = fail_result.families["shear"]
     assert fail_shear["transverse_max_leg_spacing_mm"] == 600.0
     assert fail_shear["transverse_spacing_limit_mm"] == 300.0
-    assert fail_shear["transverse_minimum_even_legs"] == 4
+    # Three-leg cages are now an explicitly supported, topology-verified
+    # arrangement; the minimum fitted count is therefore three, not the old
+    # even-only four-leg fallback.
+    assert fail_shear["transverse_minimum_even_legs"] == 3
     assert fail_shear["transverse_spacing_ok"] is False
     assert complete_compliance(fail_result) is False
     assert "transverse_shear_leg_spacing_failed" in compliance_rejection_codes(
         fail_result
     )
 
+    # The theoretical minimum count is three, but this particular cage aligns
+    # its internal leg with the longitudinal layout and leaves a 310 mm bay.
+    # Four legs are the first fitted arrangement satisfying the 300 mm limit.
     repaired = _inputs(width=690.0, depth=300.0, cover_side=40.0, legs=4)
     repaired_result = api["EngineeringCalculator"]().calculate(repaired)
     assert repaired_result.families["shear"]["transverse_spacing_ok"] is True

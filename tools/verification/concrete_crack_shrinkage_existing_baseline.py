@@ -1,4 +1,4 @@
-"""Regression lock for the existing AS 3600 crack-control and shrinkage path.
+"""Regression lock for the authoritative AS 3600 crack/shrinkage path.
 
 This verifier intentionally exercises the current pure calculation functions. It
 does not introduce method selection or change any production calculation path.
@@ -52,9 +52,12 @@ def main() -> None:
     _assert_close(thickness_table_mm, 200.0, name="shrinkage.notional_thickness_table_mm")
     _assert_close(k1, 0.979469462525669, name="shrinkage.k1")
     _assert_close(eps_cse * 1e6, 86.99996029732061, name="shrinkage.eps_cse_micro")
-    _assert_close(eps_csd_final * 1e6, 520.0, name="shrinkage.eps_csd_final_micro")
-    _assert_close(shrinkage["eps_csd_t"] * 1e6, 509.3241205133478, name="shrinkage.eps_csd_t_micro")
-    _assert_close(shrinkage["eps_cs_total_micro"], 596.3240808106684, name="shrinkage.eps_cs_total_micro")
+    # Clause 3.1.7.2 drying shrinkage is calculated from k4 * eps_csd.b;
+    # the old 520 microstrain table lookup was a total-design reference value
+    # and must not replace the equation-based drying component.
+    _assert_close(eps_csd_final * 1e6, 355.19999999999993, name="shrinkage.eps_csd_final_micro")
+    _assert_close(shrinkage["eps_csd_t"] * 1e6, 347.9075530891176, name="shrinkage.eps_csd_t_micro")
+    _assert_close(shrinkage["eps_cs_total_micro"], 434.90751338643815, name="shrinkage.eps_cs_total_micro")
 
     crack = compute_crack_control_values(
         b=300.0,
@@ -80,14 +83,14 @@ def main() -> None:
     _assert_close(crack["rho_eff"], 0.06283185306666667, name="crack.rho_eff")
     _assert_close(crack["sigma_allow_table"], 225.0, name="crack.sigma_allow_table")
     _assert_close(crack["utilisation_table"], 0.8888888888888888, name="crack.utilisation_table")
-    _assert_close(crack["eps_diff"], 0.0012306203909074344, name="crack.eps_diff")
+    _assert_close(crack["eps_diff"], 0.001069203823483204, name="crack.eps_diff")
     _assert_close(crack["sr_max"], 174.19718634517307, name="crack.sr_max")
-    _assert_close(crack["w_calc"], 0.2143706095550721, name="crack.w_calc")
-    _assert_close(crack["utilisation_w"], 0.714568698516907, name="crack.utilisation_w")
+    _assert_close(crack["w_calc"], 0.18625229768027524, name="crack.w_calc")
+    _assert_close(crack["utilisation_w"], 0.6208409922675842, name="crack.utilisation_w")
     if not crack["passes_table"] or not crack["passes_w"]:
         raise AssertionError("Existing AS 3600 crack-control baseline should pass")
 
-    print("PASS: existing AS 3600 crack-control and shrinkage baseline is unchanged")
+    print("PASS: authoritative AS 3600 crack-control and shrinkage baseline is unchanged")
 
 
 if __name__ == "__main__":

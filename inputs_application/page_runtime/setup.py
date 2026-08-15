@@ -36,9 +36,11 @@ from application.design_brain_port import DesignBrainRequest
 
 from inputs_application.action_source_control import (
     authoritative_action_source_projection,
+    load_analysis_action_projection,
     migrate_missing_manual_action_owners,
     uses_load_analysis_actions,
 )
+from inputs_application.load_analysis_state_store import LoadAnalysisStateStore
 
 from inputs_application.state_utils import application_guidance_context, bottom_reo_state_label, float_from_state, guidance_state_snapshot, shared_state_snapshot, shear_state_label, updates_match_state
 
@@ -481,6 +483,68 @@ def _build_live_engineering_input_snapshot_current_coordinator(state: dict) -> A
         calculation_versions={"summary_resolver": "resolved_inputs_summary_state.v1"},
     )
 
+
+def _project_selected_action_source_current_coordinator(state: dict) -> dict:
+    """Combine the snapshot-owned source pointer with live derived actions.
+
+    The beam transaction owns which action source is selected.  Load Analysis
+    owns the current derived ULS/SLS action values.  Route-local session
+    projections can briefly lag the committed pointer, so they may supply the
+    values but may not choose the source.
+    """
+
+    projected = dict(state or {})
+    source_state = dict(st.session_state)
+    for key in ("actions_mode", "actions_source", "design_actions_source"):
+        if key in projected:
+            source_state[key] = projected[key]
+    if uses_load_analysis_actions(source_state):
+        projected.update(authoritative_action_source_projection(source_state))
+    return projected
+
+
+def project_committed_action_source_for_result_page() -> dict[str, object]:
+    """Project one beam-owned action source before a general page refresh.
+
+    Result pages are read-only consumers of the committed Inputs transaction.
+    Their fragment can run without the Inputs fragment, so the visible widget
+    projection alone is insufficient: the canonical calculation keys must be
+    restored from the beam snapshot first.  Load Analysis values remain a
+    derived one-way projection and manual owner fields are never overwritten.
+    """
+
+    services = InputsSessionServices.from_mapping(st.session_state)
+    active_beam_id = str(
+        st.session_state.get("active_beam_id") or ""
+    ).strip()
+    if not active_beam_id:
+        return {}
+    committed = services.input_snapshots.current_for_beam(active_beam_id)
+    committed_state = dict(committed.snapshot or {})
+    if not committed_state:
+        return {}
+    resolved = _project_selected_action_source_current_coordinator(
+        committed_state
+    )
+    if uses_load_analysis_actions(resolved):
+        # A result page may be entered without rendering Inputs first. Read
+        # the derived ULS/SLS actions from their beam-owned store here instead
+        # of relying on transient route aliases. Session aliases remain a
+        # compatibility fallback for older saved sessions with no store.
+        load_analysis_store = LoadAnalysisStateStore(st.session_state)
+        stored_results = load_analysis_store.results(active_beam_id)
+        if stored_results:
+            resolved.update(
+                load_analysis_action_projection(
+                    draft=load_analysis_store.current(active_beam_id).to_dict(),
+                    results=stored_results,
+                )
+            )
+    projection = authoritative_action_source_projection(resolved)
+    for key, value in projection.items():
+        st.session_state[key] = copy.deepcopy(value)
+    return projection
+
 def _has_explicit_design_state_current_coordinator(state: dict) -> bool:
     """Recognize no-load detailing states that still require Design Guide proof."""
 
@@ -656,7 +720,10 @@ def _canonical_input_transaction_state_current_coordinator(
         )
         for key in BEAM_PROJECT_PARAM_KEYS
     }
-    if uses_load_analysis_actions(st.session_state):
+    action_source_state = _project_selected_action_source_current_coordinator(
+        state
+    )
+    if uses_load_analysis_actions(action_source_state):
         # A calculated-action workspace is identified by the selected derived
         # ULS/SLS projection as well as by the beam geometry/reinforcement.
         # These fields are immutable calculation inputs for this workspace,
@@ -666,10 +733,18 @@ def _canonical_input_transaction_state_current_coordinator(
         # workspace and reused its stale summaries and Design Brain result.
         transaction.update(
             copy.deepcopy(
-                authoritative_action_source_projection(st.session_state)
+                authoritative_action_source_projection(action_source_state)
             )
         )
     return transaction
+
+
+def _pending_revision_matches_committed_snapshot(
+    *, pending_revision: int, committed_revision: int
+) -> bool:
+    """Return whether the post-callback refresh already owns its transaction."""
+
+    return pending_revision > 0 and pending_revision == committed_revision
 
 
 def _reconcile_initial_reinforcement_widget_state(
@@ -752,13 +827,16 @@ def _ensure_authoritative_design_result_current_coordinator(
             "hydrated_widget_keys": [],
             "owner": "router_only",
         }
-    if uses_load_analysis_actions(st.session_state):
+    current_state = _project_selected_action_source_current_coordinator(
+        current_state
+    )
+    if uses_load_analysis_actions(current_state):
         # The beam snapshot owns the selected source, while the current Load
         # Analysis solve owns its derived ULS/SLS values. Reapply that typed
         # projection after navigation hydration so an older beam snapshot
         # cannot replace the selected analysis actions with zero manual ones.
         current_state.update(
-            authoritative_action_source_projection(st.session_state)
+            authoritative_action_source_projection(current_state)
         )
     committed_beam_id = str(
         st.session_state.get(
@@ -1046,30 +1124,30 @@ def _ensure_authoritative_design_result_current_coordinator(
         and int(beam_input_state.revision or 0) > 0
         and beam_committed_state
     ):
-        # The typed Apply transaction already committed this exact snapshot.
-        # Do not project derived widget aliases back through the store on the
-        # first rerun: that creates revision N+1 while the displayed Apply
-        # candidate is still bound to revision N, producing a false stale
-        # candidate rejection.  Reuse the transaction when its one-shot
-        # revision marker matches the beam-owned snapshot.
+        # The callback (ordinary widget edit or typed Apply) already committed
+        # this exact beam-owned revision.  Do not project older widget aliases
+        # back through the store on the following fragment render: that creates
+        # revision N+1, restores stale values and invalidates an Apply candidate
+        # still bound to revision N.  The pending revision marker is written at
+        # the same commit boundary, so an exact match is sufficient proof that
+        # this transaction is authoritative.
         pending_revision = int(
             st.session_state.get("_inputs_pending_input_revision") or 0
         )
-        typed_apply_transaction = bool(
-            pending_revision > 0
-            and pending_revision == int(beam_input_state.revision or 0)
-            and st.session_state.get("_typed_apply_input_transaction_probe")
+        committed_pending_transaction = _pending_revision_matches_committed_snapshot(
+            pending_revision=pending_revision,
+            committed_revision=int(beam_input_state.revision or 0),
         )
-        if typed_apply_transaction:
+        if committed_pending_transaction:
             input_transaction = beam_input_state
             current_state = copy.deepcopy(beam_committed_state)
         elif dict(beam_committed_state) == dict(canonical_input_state):
             input_transaction = beam_input_state
             current_state = copy.deepcopy(beam_committed_state)
         else:
-            # The widget callback normally owns this input transaction.  A
-            # historical action-widget path may commit only a proxy value, so
-            # reconcile that case when it is not the typed Apply transaction.
+            # A historical projection path without a matching committed
+            # revision can still require reconciliation.  It has no authority
+            # to replace an exact pending beam transaction above.
             input_transaction = input_store.commit_active_beam(
                 canonical_input_state,
                 changed_keys=overlay_keys,
@@ -1098,7 +1176,10 @@ def _ensure_authoritative_design_result_current_coordinator(
         if active_beam_id
         else input_store.committed()
     )
-    if uses_load_analysis_actions(st.session_state):
+    committed_projection = _project_selected_action_source_current_coordinator(
+        committed_projection
+    )
+    if uses_load_analysis_actions(committed_projection):
         # The beam snapshot owns geometry, reinforcement, the source pointer
         # and manual actions.  The current Load Analysis solve independently
         # owns the selected derived ULS/SLS projection.  Reapply that
@@ -1107,7 +1188,7 @@ def _ensure_authoritative_design_result_current_coordinator(
         # above, so disabled widgets displayed 9.7/19.5 while summaries,
         # calculations and the Design Brain evaluated zero actions.
         committed_projection.update(
-            authoritative_action_source_projection(st.session_state)
+            authoritative_action_source_projection(committed_projection)
         )
     current_state = rebuild_engineering_derived_state(committed_projection)
     st.session_state["_inputs_engineering_input_transaction_probe"] = {

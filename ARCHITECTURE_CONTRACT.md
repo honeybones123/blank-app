@@ -179,6 +179,14 @@ authority. For Bending, Shear, Creep, Shrinkage, Crack Control and Deflection:
 Acceptance requires like-for-like cold and warm measurements plus unchanged
 visual/formatting, calculation, state-retention and Apply contracts.
 
+The calculation-page performance target is strict: every measured cold page
+open must complete in less than 1.0 second. A median below 1.0 second does not
+pass when any required cold run exceeds the limit. The target cannot be met by
+removing, hiding, renaming, restyling, reordering or deferring visible content,
+or by substituting a lighter presentation. Before and after runs must render
+the same page, controls, expanded/collapsed defaults, summaries, diagrams,
+calculation boxes, wording and formatting from the same engineering snapshot.
+
 ## 10. Root-cause completion gate
 
 No symptom-only patch counts toward architecture completion. Each closed issue must include:

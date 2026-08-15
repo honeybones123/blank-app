@@ -8,6 +8,30 @@ from typing import Any
 from .contract import CheckInputPanelConfig
 
 
+class _MountedExpander:
+    """Expose an already-mounted body while delegating visual expansion.
+
+    Calculation-page input cards are small, stable widget groups. Mounting
+    their bodies in the owning page fragment lets browser-side expansion stay
+    instantaneous and prevents one card click from rerunning every summary,
+    diagram and calculation card on the page.
+    """
+
+    open = True
+
+    def __init__(self, expander: Any) -> None:
+        self._expander = expander
+
+    def __enter__(self):
+        return self._expander.__enter__()
+
+    def __exit__(self, *args):
+        return self._expander.__exit__(*args)
+
+    def __getattr__(self, name: str):
+        return getattr(self._expander, name)
+
+
 def _inject_styles(st_module: Any) -> None:
     """Render scoped CSS without adding any session-state identity."""
     st_module.markdown(
@@ -64,8 +88,8 @@ def compact_check_input_regions(st_module: Any, config: CheckInputPanelConfig):
     """Yield stable category regions for existing inline widget renderers.
 
     This adapter lets a page move its current widgets without rewriting their
-    implementation.  Every expander body remains part of the same page fragment
-    and therefore every established widget key remains continuously mounted.
+    implementation. Stateful expanders let callers avoid executing a visually
+    closed body while keeping the exact existing expander presentation.
     """
 
     _inject_styles(st_module)
@@ -87,8 +111,7 @@ def compact_check_input_regions(st_module: Any, config: CheckInputPanelConfig):
             warning = f"  ⚠ {category.warning}" if category.warning else ""
             icon = f"{category.icon}  " if category.icon else ""
             label = f"{icon}{category.label}    {category.summary}{warning}".strip()
-            regions.append(
-                st_module.expander(
+            expander = st_module.expander(
                     label,
                     expanded=False,
                     key=(
@@ -96,11 +119,14 @@ def compact_check_input_regions(st_module: Any, config: CheckInputPanelConfig):
                         f"{category.category_id}"
                     ),
                     type="compact",
-                    # Expansion is presentation-only. All bodies remain
-                    # mounted, and edits still use their established widget
-                    # callbacks, so opening a row must not rerun engineering.
-                    on_change="ignore",
+                    on_change=(
+                        "ignore" if config.mount_closed_bodies else "rerun"
+                    ),
                 )
+            regions.append(
+                _MountedExpander(expander)
+                if config.mount_closed_bodies
+                else expander
             )
         yield tuple(regions)
 
@@ -108,15 +134,16 @@ def compact_check_input_regions(st_module: Any, config: CheckInputPanelConfig):
 def render_compact_check_inputs(st_module: Any, config: CheckInputPanelConfig) -> None:
     """Render one compact panel without owning engineering state.
 
-    Streamlit expanders execute their bodies even while visually collapsed. This
-    is intentional: existing widgets remain mounted, so their established keys
-    cannot be cleaned up and later hydrated from an older value.
+    Closed bodies are not executed. Widgets rendered by the shared wrappers use
+    Streamlit's session persistence, so closing a category cannot clean up or
+    roll back its established value.
     """
 
     with compact_check_input_regions(st_module, config) as regions:
         for region, category in zip(regions, config.categories):
-            with region:
-                category.render_body()
+            if region.open:
+                with region:
+                    category.render_body()
 
 
 def compact_check_input_columns(st_module: Any, config: CheckInputPanelConfig):

@@ -4,7 +4,6 @@
 # ============================
 
 import math
-import pandas as pd
 import streamlit as st
 
 from state_runtime_gateway import (
@@ -13,14 +12,11 @@ from state_runtime_gateway import (
     update_results,  # kept for contract
 )
 from widgets_helpers import (
-    apply_global_widget_css,
     apply_result_page_css,
     number_row,
     info_i_button,
     v2_number_input,
     v2_selectbox,
-    v2_checkbox,
-    v2_radio,
     render_page_explainer_expander,
     render_result_page_title,
     render_section_title,
@@ -36,7 +32,6 @@ from jump_nav import scroll_to_jump_after_render
 from step_ui import render_expandable_step
 from ui.diagrams.bending_side_view_diagram import build_creep_side_view_figures
 from calculations.creep_shrinkage import (
-    CREEP_ENV_LABELS as _ENV_LABELS,
     basic_creep_coeff,
     calc_k2_creep,
     calc_k3,
@@ -46,7 +41,6 @@ from calculations.creep_shrinkage import (
     creep_alpha2_from_th,
     creep_coefficient_value,
     creep_strain_values,
-    creep_closest_fc_row as _closest_fc_row,
     creep_closest_th as _closest_th,
     exposed_perimeter_geometry_values,
     final_creep_coeff_table,
@@ -269,7 +263,6 @@ def compute_creep_results(publish: bool = True) -> dict:
 # ------------------------------------------------------------
 def render_creep():
     page_title_placeholder = st.empty()
-    apply_global_widget_css()
     apply_result_page_css()
     _inject_calcbox_css()
     sync_callbacks = get_sync_callbacks()  # keeps contract with Inputs page
@@ -309,7 +302,21 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     # --------------------------------------------------------
     # Reserve space for top summary table (will be filled after calculations)
     # --------------------------------------------------------
-    summary_placeholder = st.empty()
+    summary_values = compute_creep_results(publish=True)
+    summary_rows = build_creep_summary_rows(
+        phi_cc_t=float(summary_values.get("phi_cc_t") or 0.0),
+        phi_cc_star_table=float(summary_values.get("phi_cc_star_table") or 0.0),
+        eps_cc_micro=float(summary_values.get("eps_cc_micro") or 0.0),
+    )
+    render_page_explainer_expander(_render_creep_explainer)
+    render_clickable_summary_table(
+        summary_rows,
+        key_prefix="creep_page_summary",
+        columns=PARAMETRIC_RESULT_COLUMNS,
+    )
+    bind_summary_clicks()
+    page_divider()
+    side_view_placeholder = st.empty()
     
     # --------------------------------------------------------
     b_val = float(engineering_value("b", 400.0))
@@ -581,20 +588,7 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     # --------------------------------------------------------
     # Top-of-page clickable summary table (render in placeholder)
     # --------------------------------------------------------
-    with summary_placeholder.container():
-        ROWS = build_creep_summary_rows(
-            phi_cc_t=phi_cc_t,
-            phi_cc_star_table=phi_cc_star_table,
-            eps_cc_micro=eps_cc_micro,
-        )
-
-        render_page_explainer_expander(_render_creep_explainer)
-        render_clickable_summary_table(
-            ROWS, key_prefix="creep_page_summary", columns=PARAMETRIC_RESULT_COLUMNS
-        )
-        bind_summary_clicks()
-        page_divider()
-
+    with side_view_placeholder.container():
         inject_compact_side_view_spacing("creep-side-view-compact")
         st.markdown("**Concrete creep under sustained load**")
         st.markdown(

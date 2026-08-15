@@ -8,7 +8,6 @@ import os
 
 import numpy as np
 import streamlit as st
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -463,7 +462,7 @@ def plot_stress_strain_profiles(
             apply_section_axes(sec_fig, W=W, D=D)
             _normalise_bending_section_panel_styles(sec_fig)
 
-        _inject_figure_into_subplot(fig, sec_fig, row=1, col=1, xref="x1", yref="y1")
+        inject_figure_into_subplot(fig, sec_fig, row=1, col=1, xref="x1", yref="y1")
 
         # Enforce 1:1 aspect like your current plots
         fig.update_yaxes(scaleanchor="x", scaleratio=1, row=1, col=1)
@@ -1993,6 +1992,11 @@ def make_sls_32_stress_block_figure(D_mm, d_mm, dn_mm, layers_tension):
     only the visual stress-block figure.
     """
 
+    # Matplotlib is required only by this selected SLS detail.  Importing it at
+    # module load added roughly 250 ms to every cold Bending navigation even
+    # when the default ULS group was displayed.
+    import matplotlib.pyplot as plt
+
     if D_mm <= 0 or math.isnan(D_mm):
         D_mm = 600.0
     if dn_mm <= 0 or math.isnan(dn_mm):
@@ -2127,6 +2131,8 @@ def make_sls_strain_distribution_figure(strain_rows, dn_sls):
     ``strain_rows`` are prepared by the page/check logic; this function only
     renders the existing depth-vs-strain diagram.
     """
+    import matplotlib.pyplot as plt
+
     fig_eps, ax_eps = plt.subplots()
     ys = [row["Depth y (mm)"] for row in strain_rows]
     eps_vals = [

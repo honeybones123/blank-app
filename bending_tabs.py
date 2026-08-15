@@ -1,7 +1,6 @@
 ﻿import math
 from contextlib import contextmanager
 import pandas as pd
-import matplotlib.pyplot as plt
 import streamlit as st
 
 from bending_diagrams import (
@@ -11,7 +10,7 @@ from bending_diagrams import (
     _make_sls_stress_block_figure,  # still used elsewhere, untouched
 )
 from bending_core import _fmt, _layout_bars_in_rows, _stress_strain_state
-from state_and_helpers import get_param, update_results
+from state_and_helpers import get_param, update_results, render_timing_mark
 from ui.diagrams.stress_strain_diagram import (
     make_sls_32_stress_block_figure as _shared_make_sls_32_stress_block_figure,
     make_sls_strain_distribution_figure as _shared_make_sls_strain_distribution_figure,
@@ -264,6 +263,7 @@ stress-block provisions [2].
         ),
         diagram_fn=strain_diagram,
     )
+    render_timing_mark("bending_page.uls_check.1.end")
     step_expander_calcbox(
         uid="bending_uls_authoritative_3",
         summary_line=(
@@ -332,6 +332,7 @@ stresses, compression block, lever arm and calculated capacity.
             show_dn=True, show_lever_arm=False,
         ),
     )
+    render_timing_mark("bending_page.uls_check.2.end")
     step_expander_calcbox(
         uid="bending_uls_authoritative_4",
         summary_line=(
@@ -400,6 +401,7 @@ moment capacity.
         ),
         diagram_fn=force_diagram("bending_uls_authoritative_4_diagram", "Internal force resultants"),
     )
+    render_timing_mark("bending_page.uls_check.3.end")
     step_expander_calcbox(
         uid="bending_uls_authoritative_5",
         summary_line=(
@@ -453,6 +455,7 @@ subjected to bending.
 """,
         ),
     )
+    render_timing_mark("bending_page.uls_check.4.end")
     step_expander_calcbox(
         uid="bending_uls_authoritative_6",
         summary_line=(
@@ -544,6 +547,7 @@ reported as compliant.
             show_dn=True, show_lever_arm=True,
         ),
     )
+    render_timing_mark("bending_page.uls_check.5.end")
     capacity_ok = capacity > 0.0 and demand <= capacity
     step_expander_calcbox(
         uid="bending_uls_authoritative_7",
@@ -615,6 +619,7 @@ can be compared with the applied design action.
         ),
         diagram_fn=force_diagram("bending_uls_authoritative_7_diagram", "ULS force model and capacity"),
     )
+    render_timing_mark("bending_page.uls_check.6.end")
     step_expander_calcbox(
         uid="bending_uls_authoritative_8",
         summary_line=(

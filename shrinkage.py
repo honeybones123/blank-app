@@ -4,8 +4,6 @@
 # ============================
 
 import math
-import numpy as np
-import pandas as pd
 import streamlit as st
 
 from state_runtime_gateway import (
@@ -13,7 +11,7 @@ from state_runtime_gateway import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, page_divider, render_plotly_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
+from widgets_helpers import apply_result_page_css, number_row, v2_number_input, v2_selectbox, render_page_explainer_expander, render_result_page_title, render_section_title, page_divider, render_plotly_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
 from step_ui import render_expandable_step
 from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS
 from ui.summary_rows import build_shrinkage_summary_rows
@@ -309,7 +307,6 @@ def compute_shrinkage_components_for_crack_control() -> dict:
 # ------------------------------------------------------------
 def render_shrinkage():
     page_title_placeholder = st.empty()
-    apply_global_widget_css()
     apply_result_page_css()
     _inject_calcbox_css()
     inject_seamless_steps_css()  # For summary table + scroll functionality
@@ -359,7 +356,43 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # --------------------------------------------------------
     # Reserve space for the top summary table
     # --------------------------------------------------------
-    summary_placeholder = st.empty()
+    def _render_shrinkage_explainer() -> None:
+        st.markdown(
+            """
+**What shrinkage is**  
+Concrete shrinkage is the time-dependent reduction in volume that occurs mainly due to **loss of moisture** (drying shrinkage) and ongoing hydration/chemical effects. It occurs even with no external load.
+
+**Why it matters in design**  
+Shrinkage can cause:
+- **Cracking** where restraint exists (reinforcement, supports, joints, composite action, etc.)
+- **Additional curvature and long-term deflection**
+- **Stress redistribution** in reinforcement where restrained
+- **Durability impacts** through crack control requirements
+
+**Units**  
+Shrinkage is a **strain** (dimensionless): ΔL/L  
+Commonly shown as **microstrain (µε)** where 1 µε = 1×10⁻⁶.
+
+**Effect on design**  
+Shrinkage is not a force (kN). It is a time-dependent strain that can cause deformation and cracking in restrained members.
+"""
+        )
+
+    summary_values = compute_shrinkage_results(publish=True)
+    summary_rows = build_shrinkage_summary_rows(
+        eps_cse=float(summary_values.get("eps_cse") or 0.0),
+        eps_csd_t=float(summary_values.get("eps_csd_t") or 0.0),
+        eps_cs_total=float(summary_values.get("eps_cs_total") or 0.0),
+    )
+    render_page_explainer_expander(_render_shrinkage_explainer)
+    render_clickable_summary_table(
+        summary_rows,
+        key_prefix="shrinkage_summary",
+        columns=PARAMETRIC_RESULT_COLUMNS,
+    )
+    bind_summary_clicks()
+    page_divider()
+    side_view_placeholder = st.empty()
 
     # --------------------------------------------------------
     b_val = float(engineering_value("b", 400.0))
@@ -385,6 +418,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             format_func=lambda value: SHRINKAGE_METHOD_LABELS[value],
             key="sh_method",
             on_change=sync_callbacks["sh_method"],
+            persist_state="session",
         )
 
     def _render_shrinkage_geometry_inputs() -> None:
@@ -660,43 +694,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # --------------------------------------------------------
     # TOP SUMMARY TABLE (clickable, like bending/shear)
     # --------------------------------------------------------
-    with summary_placeholder.container():
-        def _render_shrinkage_explainer() -> None:
-            st.markdown(
-                """
-**What shrinkage is**  
-Concrete shrinkage is the time-dependent reduction in volume that occurs mainly due to **loss of moisture** (drying shrinkage) and ongoing hydration/chemical effects. It occurs even with no external load.
-
-**Why it matters in design**  
-Shrinkage can cause:
-- **Cracking** where restraint exists (reinforcement, supports, joints, composite action, etc.)
-- **Additional curvature and long-term deflection**
-- **Stress redistribution** in reinforcement where restrained
-- **Durability impacts** through crack control requirements
-
-**Units**  
-Shrinkage is a **strain** (dimensionless): ΔL/L  
-Commonly shown as **microstrain (µε)** where 1 µε = 1×10⁻⁶.
-
-**Effect on design**  
-Shrinkage is not a force (kN). It is a time-dependent strain that can cause deformation and cracking in restrained members.
-"""
-            )
-
-        render_page_explainer_expander(_render_shrinkage_explainer)
-        
-        ROWS = build_shrinkage_summary_rows(
-            eps_cse=eps_cse,
-            eps_csd_t=eps_csd_t,
-            eps_cs_total=eps_cs_total,
-        )
-
-        render_clickable_summary_table(
-            ROWS, key_prefix="shrinkage_summary", columns=PARAMETRIC_RESULT_COLUMNS
-        )
-        bind_summary_clicks()
-        page_divider()
-
+    with side_view_placeholder.container():
         inject_compact_side_view_spacing("shrinkage-side-view-compact")
         st.markdown("**Drying shrinkage — beam side view**")
         shrinkage_section_result = build_shrinkage_side_view_result(

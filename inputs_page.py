@@ -142,10 +142,17 @@ def build_inputs_calculation_explainer_view_model(*args: Any, **kwargs: Any) -> 
     return builder(*args, **kwargs)
 
 
-def hydrate_committed_design_action_widgets(*, force: bool = False) -> None:
+def hydrate_committed_design_action_widgets(
+    *,
+    force: bool = False,
+    resolved_projection: bool = False,
+) -> None:
     """Project committed ULS/SLS actions into their shared page widgets."""
 
-    _INPUTS_PAGE_RUNTIME.hydrate_design_action_widgets(force=force)
+    _INPUTS_PAGE_RUNTIME.hydrate_design_action_widgets(
+        force=force,
+        resolved_projection=resolved_projection,
+    )
 
 
 def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:

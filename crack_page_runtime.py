@@ -16,7 +16,6 @@ from state_and_helpers import (
     render_timing_mark,
 )
 from widgets_helpers import (
-    apply_global_widget_css,
     apply_result_page_css,
     number_row,
     calcbox,
@@ -457,7 +456,6 @@ def render_crack():
     from jump_nav import get_jump_uid
     get_jump_uid()
     
-    apply_global_widget_css()
     apply_result_page_css()
     _inject_calcbox_css()
     apply_step_summary_expander_css()
@@ -628,9 +626,19 @@ You can:
         return
 
     # --------------------------------------------------------
-    # Reserve space for top summary then diagram (filled after calculations)
+    # Publish the current authoritative AS 3600 summary before the heavier
+    # inputs and diagrams.  The page boundary has already refreshed this pack.
     # --------------------------------------------------------
-    summary_placeholder = st.empty()
+    render_page_explainer_expander(_render_crack_explainer)
+    crack_pack = build_crack_check_rows_from_state(st.session_state)
+    rows = build_crack_summary_rows(crack_pack.get("rows") or [])
+    governing_row = pick_governing_check_row(rows)
+    rows = mark_primary_summary_row(rows, (governing_row or {}).get("uid"))
+    update_results("crack", {"rows": rows})
+    clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")
+    if clicked_uid:
+        st.session_state[f"step_open_{clicked_uid}"] = True
+    bind_summary_clicks()
     diagram_placeholder = st.empty()
 
     # --------------------------------------------------------
@@ -963,29 +971,6 @@ You can:
     w_calc = crack_values["w_calc"]
     utilisation_w = crack_values["utilisation_w"]
     passes_w = crack_values["passes_w"]
-
-    # --------------------------------------------------------
-    # TOP SUMMARY TABLE
-    # --------------------------------------------------------
-    with summary_placeholder.container():
-        # Same top-of-summary pattern as creep.py: explainer row, then table.
-        render_page_explainer_expander(_render_crack_explainer)
-
-        crack_pack = build_crack_check_rows_from_state(st.session_state)
-        rows = build_crack_summary_rows(crack_pack.get("rows") or [])
-        gov = pick_governing_check_row(rows)
-        gov_uid = (gov or {}).get("uid")
-        rows = mark_primary_summary_row(rows, gov_uid)
-        update_results("crack", {"rows": rows})
-        
-        clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")
-        
-        # Handle clicked summary row: expand step and set pending scroll
-        if clicked_uid:
-            open_key = f"step_open_{clicked_uid}"
-            st.session_state[open_key] = True
-        
-        bind_summary_clicks()
 
     with diagram_placeholder.container():
         st.markdown(

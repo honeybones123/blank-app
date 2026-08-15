@@ -68,6 +68,10 @@ from application.engineering_snapshot import build_engineering_input_snapshot_fr
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
 from inputs_application.session_services import InputsSessionServices
 from application.v2_runtime_warmup import start_v2_runtime_warmup
+from application.visualization_runtime_warmup import (
+    start_visualization_runtime_warmup,
+    wait_for_visualization_runtime_warmup,
+)
 
 st.set_page_config(
     page_title="Concrete Beam Design",
@@ -80,6 +84,11 @@ st.set_page_config(
 # user's first engineering edit without performing any engineering work or
 # touching Streamlit session state.
 start_v2_runtime_warmup()
+start_visualization_runtime_warmup()
+# The opening shell is not declared ready until the neutral plotting runtime
+# is stable.  This prevents the first calculation page from racing the import
+# worker and paying a nondeterministic 0.3-1.7 s penalty.
+wait_for_visualization_runtime_warmup()
 
 
 def _apply_sharp_embed_css() -> None:
@@ -163,11 +172,18 @@ def _apply_sharp_embed_css() -> None:
 
 _apply_sharp_embed_css()
 
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, info_i_button
+from widgets_helpers import (
+    apply_global_widget_css,
+    apply_calcbox_css,
+    apply_step_summary_expander_css,
+    info_i_button,
+    install_shared_plotly_fullscreen_support,
+)
 from state_and_helpers import hc_try
 
 hc_try("css.apply_global_widget_css", apply_global_widget_css)
 hc_try("css.apply_calcbox_css", apply_calcbox_css)
+hc_try("ui.install_shared_plotly_fullscreen_support", install_shared_plotly_fullscreen_support)
 
 from state_and_helpers import (
     init_shared_session_state,
@@ -5133,53 +5149,40 @@ def _record_result_page_fragment_render(slug: str) -> None:
     st.session_state["_result_page_fragment_render_counts"] = counts
 
 
-def _refresh_result_page_fragment_calculations() -> None:
-    """Commit one coherent legacy-result projection for a page-local edit.
+def _prepare_result_page_workspace(page_slug: str) -> None:
+    """Project committed action widgets before the authoritative page refresh.
 
-    The detailed result pages still consume the shared ``RESULT_KEYS`` view.
-    Keep that projection and its cache together so a later shell navigation
-    cannot restore the result that preceded the fragment edit.
+    Calculation and publication belong to
+    ``_ensure_general_page_engineering_publication``.  Result pages must not
+    run the retired all-results legacy projection before that authority.
     """
 
-    ensure_state_runtime_gateway_configured()
-    recalc_derived_values()
-    compute_all_results()
-    update_results()
-    result_values = {
-        key: copy.deepcopy(st.session_state.get(key))
-        for key in RESULT_KEYS
-        if key in st.session_state
-    }
-    result_buckets = copy.deepcopy(st.session_state.get("results") or {})
-    st.session_state["_cached_compute_results"] = {
-        "result_values": result_values,
-        "result_buckets": result_buckets,
-    }
-    st.session_state["cached_results"] = copy.deepcopy(result_buckets)
-    st.session_state["inputs_dirty"] = False
-    st.session_state["_inputs_dirty"] = False
-    st.session_state["run_design_clicked"] = False
-
-
-def _prepare_result_page_workspace(page_slug: str) -> None:
-    """Refresh once for engineering edits and never for display-only reruns."""
-
-    from application.result_page_workspace import resolve_result_page_workspace
-
-    decision = resolve_result_page_workspace(page_slug, st.session_state)
+    slug = str(page_slug or "").strip().lower()
+    if not slug:
+        raise ValueError("page_slug is required")
     audit = dict(st.session_state.get("_result_page_workspace_audit") or {})
-    page_audit = dict(audit.get(decision.page_slug) or {})
+    page_audit = dict(audit.get(slug) or {})
     page_audit["renders"] = int(page_audit.get("renders", 0) or 0) + 1
-    page_audit["last_reason"] = decision.reason
-    page_audit["last_required_calculation"] = bool(decision.requires_calculation)
-    if decision.requires_calculation:
-        _refresh_result_page_fragment_calculations()
-        page_audit["calculations"] = int(page_audit.get("calculations", 0) or 0) + 1
+    page_audit["last_reason"] = "authoritative_publication_owned"
+    page_audit["last_required_calculation"] = False
+    # Restore the selected beam-owned source before either widget hydration or
+    # calculation refresh.  This is one shared result-page boundary for every
+    # engineering page; individual pages do not select or reinterpret actions.
+    from inputs_application.page_runtime import (
+        project_committed_action_source_for_result_page,
+    )
+
+    project_committed_action_source_for_result_page()
     # Result pages reuse the same action widgets as Inputs.  Project the
     # committed owner after any refresh so a correct new summary is never
     # displayed beside a stale pre-edit widget value.
-    inputs_page.hydrate_committed_design_action_widgets(force=True)
-    audit[decision.page_slug] = page_audit
+    render_timing_mark("app.result_page.workspace.widget_projection.start")
+    inputs_page.hydrate_committed_design_action_widgets(
+        force=True,
+        resolved_projection=True,
+    )
+    render_timing_mark("app.result_page.workspace.widget_projection.end")
+    audit[slug] = page_audit
     st.session_state["_result_page_workspace_audit"] = audit
 
 
@@ -5187,9 +5190,30 @@ def _render_result_page_fragment(slug: str, renderer):
     """Run the one repeated fragment contract for every result page."""
 
     _record_result_page_fragment_render(slug)
+    render_timing_mark("app.result_page.workspace.start", selected_slug=slug)
     _prepare_result_page_workspace(slug)
+    render_timing_mark("app.result_page.workspace.end", selected_slug=slug)
+    render_timing_mark("app.result_page.publication.start", selected_slug=slug)
     _ensure_general_page_engineering_publication(slug)
-    return renderer()
+    render_timing_mark("app.result_page.publication.end", selected_slug=slug)
+    render_timing_mark("app.result_page.renderer.start", selected_slug=slug)
+    try:
+        return renderer()
+    finally:
+        from application.page_module_registry import calculation_page_render_status
+
+        render_timing_mark(
+            "app.result_page.renderer.end",
+            selected_slug=slug,
+            **calculation_page_render_status(slug),
+        )
+
+
+@st.fragment
+def _render_design_page_fragment():
+    """Own the Load Analysis fragment before any lazy page import occurs."""
+
+    return _render_design_page()
 
 
 @st.fragment
@@ -5241,7 +5265,9 @@ def _ensure_general_page_engineering_publication(selected_slug: str) -> None:
         return
     from inputs_application.page_runtime import refresh_inputs_engineering_result
 
+    render_timing_mark("app.result_page.authoritative_refresh.start", selected_slug=slug)
     result = refresh_inputs_engineering_result()
+    render_timing_mark("app.result_page.authoritative_refresh.end", selected_slug=slug)
     st.session_state["_general_page_engineering_publication_probe"] = {
         "page": slug,
         "engineering_hash": getattr(result, "engineering_hash", None),
@@ -5253,7 +5279,7 @@ def _ensure_general_page_engineering_publication(selected_slug: str) -> None:
 PAGES = {
     "start": ("Start", _render_start_page),
     "inputs": ("Beam Inputs", inputs_page.render_inputs),
-    "design": ("Load Analysis", _render_design_page),
+    "design": ("Load Analysis", _render_design_page_fragment),
     "bending": ("Bending", _render_bending_page_fragment),
     "shear": ("Shear", _render_shear_page_fragment),
     "creep": ("Creep", _render_creep_page_fragment),
@@ -5302,6 +5328,7 @@ LABELS = [PAGES[s][0] for s in SLUGS]
 
 NAV_KEY = "nav_page_slug"  # stores the slug, e.g. "shear"
 LAST_QP_KEY = "last_qp_page_seen"   # local-only UI state
+QUERY_PAGE_ADOPTED_KEY = "_router_initial_query_page_adopted"
 # Set from pages rendered after the top nav radio; consumed at start of main() before that widget.
 PENDING_NAV_PAGE_SLUG_KEY = "_pending_nav_page_slug"
 
@@ -5318,6 +5345,40 @@ def set_query_params_merge(**updates):
                 pass
         else:
             st.query_params[k] = v
+
+
+def _render_browser_query_param_sync(**updates) -> None:
+    """Replace the browser URL without scheduling another Streamlit run.
+
+    Navigation is already authoritative in ``NAV_KEY``.  Mutating
+    ``st.query_params`` while handling that widget event can ask Streamlit to
+    execute the same page a second time, which is visible as an intermittent
+    cold-page flash.  A zero-height browser bridge keeps refresh/deep-link
+    behaviour while leaving the current transaction single-dispatch.
+    """
+    import streamlit.components.v1 as components
+
+    encoded_updates = json.dumps(updates, sort_keys=True)
+    components.html(
+        f"""
+<script>
+(() => {{
+  try {{
+    const parentWindow = window.parent;
+    const url = new URL(parentWindow.location.href);
+    const updates = {encoded_updates};
+    for (const [key, value] of Object.entries(updates)) {{
+      if (value === null) url.searchParams.delete(key);
+      else url.searchParams.set(key, String(value));
+    }}
+    parentWindow.history.replaceState({{}}, '', url.toString());
+  }} catch (error) {{}}
+}})();
+</script>
+""",
+        height=0,
+        scrolling=False,
+    )
 
 
 def _get_user_id() -> str:
@@ -5492,8 +5553,9 @@ def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     _browser_test_mode_for_run = bool(_browser_test_mode_active())
     st.session_state.setdefault("_dev_mode", bool(_browser_test_mode_for_run or _EXPLICIT_DEV_MODE))
-    # Preserve the wide responsive layout across route and hot-reload renders.
-    _apply_sharp_embed_css()
+    # The wide responsive layout is emitted once above during normal script
+    # composition. Re-emitting the identical style block here doubled the
+    # websocket payload on every route change without changing the UI.
     _apply_normal_user_page_zoom_css()
     reset_speed_profile_last_run()
     reset_rerun_pure_caches()
@@ -5783,7 +5845,13 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
             if isinstance(initial_query_page, list):
                 initial_query_page = initial_query_page[0] if initial_query_page else None
             st.session_state["_guest_opening_default_pending"] = initial_query_page not in PAGES
-        guest_preference = render_guest_preference_bootstrap()
+        guest_preference = None
+        if st.session_state.get("_guest_opening_default_pending"):
+            # The browser-local preference bridge is asynchronous. Mounting it
+            # for an already explicit ``?page=`` route adds no information and
+            # its first cold response causes an unrelated second full app run
+            # after navigation. Only the no-page bootstrap path owns it.
+            guest_preference = render_guest_preference_bootstrap()
         if (
             isinstance(guest_preference, dict)
             and guest_preference.get("ready") is True
@@ -5818,13 +5886,16 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     # ?jump= is present and nav still disagrees (summary link landed while radio lagged).
     # Never adopt on nav_slug != qp_page alone: after a tab change the widget updates
     # before step 3 rewrites ?page=, and we'd overwrite the new selection with the old URL.
-    if qp_page in PAGES:
-        last_seen = st.session_state.get(LAST_QP_KEY)
-        nav_slug = st.session_state.get(NAV_KEY)
-        jump_pending = "jump" in st.query_params
-        if last_seen != qp_page or (jump_pending and nav_slug != qp_page):
+    # The browser URL is adopted once per Streamlit session.  Navigation then
+    # owns the active page.  URL synchronization below uses replaceState to
+    # avoid a second execution, so server-side st.query_params can legitimately
+    # retain the previous page and must not overwrite the next nav selection.
+    jump_pending = "jump" in st.query_params
+    if not st.session_state.get(QUERY_PAGE_ADOPTED_KEY) or jump_pending:
+        if qp_page in PAGES:
             st.session_state[NAV_KEY] = qp_page
             st.session_state[LAST_QP_KEY] = qp_page
+        st.session_state[QUERY_PAGE_ADOPTED_KEY] = True
 
     # âœ… If no valid page in URL, still ensure defaults exist
     if NAV_KEY not in st.session_state:
@@ -5859,9 +5930,9 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     # âœ… If a jump is present, DO NOT touch query params at all.
     render_timing_mark("app.pre_dispatch.query_param_sync.start", selected_slug=selected_slug)
     if "jump" not in st.query_params:
-        if st.query_params.get("page") != selected_slug:
+        if st.session_state.get(LAST_QP_KEY) != selected_slug:
             render_timing_mark("app.pre_dispatch.query_param_sync.set_query_params", selected_slug=selected_slug)
-            set_query_params_merge(page=selected_slug)
+            _render_browser_query_param_sync(page=selected_slug)
             st.session_state[LAST_QP_KEY] = selected_slug
     render_timing_mark("app.pre_dispatch.query_param_sync.end", selected_slug=selected_slug)
 
@@ -6074,10 +6145,13 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     except Exception:
         pass
     render_timing_mark("app.pre_dispatch.page_content_slot.create.start", page_changed=page_changed)
-    page_content_slot = st.empty()
-    if page_changed:
-        with page_content_slot.container():
-            st.info(f"Loading {PAGES[selected_slug][0]}...")
+    # Publish one resolved page tree per navigation.  The previous two-phase
+    # path first sent a temporary full-page alert, then cleared that tree and
+    # sent the real page.  That doubled browser reconciliation, caused visible
+    # page movement, and could let a slower first tree briefly overtake the
+    # authoritative result.  The Design Brain retains its own scoped loading
+    # shell; ordinary page navigation stays atomic.
+    page_content_slot = st.container(key="shared_page_content_slot")
     render_timing_mark("app.pre_dispatch.page_content_slot.create.end", page_changed=page_changed)
     if page_changed and selected_slug == "inputs":
         st.session_state["_inputs_route_return_pending"] = {
@@ -6430,6 +6504,10 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     render_timing_mark("app.pre_dispatch.begin_render_cycle.start")
     clear_rendered_widget_keys()
     begin_render_cycle()
+    # Calculation-card styling is shell-owned so fragment interactions cannot
+    # remove it. Emit it after the per-run style registry reset, allowing page
+    # renderers to reuse the same style without duplicating its payload.
+    hc_try("css.apply_step_summary_expander_css", apply_step_summary_expander_css)
     render_timing_mark("app.pre_dispatch.begin_render_cycle.end")
 
     # Step 5: Render selected page (widgets register themselves during render)
@@ -6483,7 +6561,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
                 "app.page_dispatch.inputs_root_stable_shell.start",
                 selected_slug=selected_slug,
             )
-            with page_content_slot.container():
+            with page_content_slot:
                 root_shell_slot = st.empty()
                 with root_shell_slot.container():
                     _render_inputs_root_dispatch_stable_shell()
@@ -6501,10 +6579,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
                 selected_slug=selected_slug,
             )
             return
-        render_timing_mark("app.page_dispatch.page_content_slot.clear.start", selected_slug=selected_slug)
-        page_content_slot.empty()
-        render_timing_mark("app.page_dispatch.page_content_slot.clear.end", selected_slug=selected_slug)
-        with page_content_slot.container():
+        with page_content_slot:
             _render_page_beneath_shared_title()
 
     if _browser_test_mode_for_run:

@@ -3,14 +3,6 @@ import streamlit as st
 import os
 import json
 from contextlib import contextmanager
-from state_runtime_gateway import _debug_log_path
-
-# Debug log path used by optional widget debug blocks
-log_path = os.devnull
-try:
-    log_path = _debug_log_path()
-except Exception:
-    pass
 import streamlit.components.v1 as components
 import re
 import html
@@ -238,6 +230,135 @@ def _plotly_fullscreen_figure(fig: Any, fullscreen_height: int) -> Any:
     return dialog_fig
 
 
+def _render_shared_plotly_doubleclick_fullscreen_hook() -> None:
+    """Install one delegated fullscreen handler for every Plotly chart."""
+
+    session_state = getattr(st, "session_state", None)
+    if session_state is not None:
+        # This listener and its stylesheet are installed on the parent browser
+        # document, so they survive Streamlit element reconciliation.  Keep a
+        # persistent session marker instead of the per-render style registry;
+        # otherwise every page navigation creates another iframe and repeats
+        # the same browser work.
+        hook_key = "_shared_plotly_fullscreen_hook_installed"
+        if bool(session_state.get(hook_key)):
+            return
+        session_state[hook_key] = True
+
+    components.html(
+        r"""
+<script>
+(function() {
+  let doc;
+  try { doc = window.parent && window.parent.document; } catch (err) { return; }
+  if (!doc) return;
+
+  const styleId = "beam-plotly-hidden-fullscreen-style";
+  if (!doc.getElementById(styleId)) {
+    const style = doc.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      [data-beam-plotly-pseudo-fullscreen="1"] {
+        position: fixed !important;
+        left: var(--beam-plotly-shell-left, 0px) !important;
+        top: var(--beam-plotly-shell-top, 0px) !important;
+        width: var(--beam-plotly-shell-width, 100vw) !important;
+        height: var(--beam-plotly-shell-height, 100vh) !important;
+        max-width: none !important;
+        max-height: none !important;
+        z-index: 2147483000 !important;
+        padding: 1rem !important;
+        box-sizing: border-box !important;
+        background: #fff !important;
+        display: flex !important;
+        align-items: stretch !important;
+        justify-content: stretch !important;
+        overflow: hidden !important;
+      }
+      [data-beam-plotly-pseudo-fullscreen="1"] [data-testid="stPlotlyChart"],
+      [data-beam-plotly-pseudo-fullscreen="1"] .js-plotly-plot {
+        width: 100% !important;
+        height: 100% !important;
+      }
+    `;
+    doc.head.appendChild(style);
+  }
+
+  if (doc.documentElement.dataset.beamPlotlyDelegatedFullscreenBound === "1") return;
+  doc.documentElement.dataset.beamPlotlyDelegatedFullscreenBound = "1";
+
+  function resize(host) {
+    const view = doc.defaultView || window.parent;
+    try { view.dispatchEvent(new Event("resize")); } catch (err) {}
+    const plot = host && host.querySelector(".js-plotly-plot");
+    try {
+      if (plot && view.Plotly && view.Plotly.Plots) view.Plotly.Plots.resize(plot);
+    } catch (err) {}
+  }
+
+  function activeHost() {
+    return doc.querySelector('[data-beam-plotly-pseudo-fullscreen="1"]');
+  }
+
+  function close() {
+    const host = activeHost();
+    if (!host) return;
+    host.removeAttribute("data-beam-plotly-pseudo-fullscreen");
+    doc.documentElement.style.overflow = host.dataset.beamPlotlyPreviousRootOverflow || "";
+    doc.body.style.overflow = host.dataset.beamPlotlyPreviousBodyOverflow || "";
+    setTimeout(() => resize(host), 80);
+    setTimeout(() => resize(host), 300);
+  }
+
+  function open(host) {
+    if (!host || activeHost()) return;
+    const mainShell = doc.querySelector('[data-testid="stMain"]') ||
+      doc.querySelector('[data-testid="stAppViewContainer"]') || doc.body;
+    const blockShell = doc.querySelector('[data-testid="stMainBlockContainer"]') ||
+      doc.querySelector('.block-container') || mainShell;
+    const mainRect = mainShell.getBoundingClientRect();
+    const blockRect = blockShell.getBoundingClientRect();
+    const blockStyle = doc.defaultView.getComputedStyle(blockShell);
+    const padLeft = parseFloat(blockStyle.paddingLeft || "0") || 0;
+    const padRight = parseFloat(blockStyle.paddingRight || "0") || 0;
+    const shellLeft = Math.max(mainRect.left, blockRect.left + padLeft);
+    const shellRight = Math.min(mainRect.right, (blockRect.right || mainRect.right) - padRight);
+    host.style.setProperty("--beam-plotly-shell-left", `${shellLeft}px`);
+    host.style.setProperty("--beam-plotly-shell-top", `${mainRect.top}px`);
+    host.style.setProperty("--beam-plotly-shell-width", `${Math.max(320, shellRight - shellLeft)}px`);
+    host.style.setProperty("--beam-plotly-shell-height", `${Math.max(320, mainRect.height)}px`);
+    host.dataset.beamPlotlyPreviousRootOverflow = doc.documentElement.style.overflow || "";
+    host.dataset.beamPlotlyPreviousBodyOverflow = doc.body.style.overflow || "";
+    doc.documentElement.style.overflow = "hidden";
+    doc.body.style.overflow = "hidden";
+    host.setAttribute("data-beam-plotly-pseudo-fullscreen", "1");
+    setTimeout(() => resize(host), 80);
+    setTimeout(() => resize(host), 300);
+  }
+
+  doc.addEventListener("dblclick", function(event) {
+    const plot = event.target && event.target.closest && event.target.closest(".js-plotly-plot");
+    if (!plot) return;
+    const host = plot.closest('[data-testid="stElementContainer"]') || plot.parentElement;
+    open(host);
+  }, true);
+  doc.addEventListener("keydown", function(event) {
+    if (event.key === "Escape") close();
+  }, true);
+})();
+</script>
+""",
+        height=0,
+        scrolling=False,
+    )
+
+
+def install_shared_plotly_fullscreen_support() -> None:
+    """Install the process-neutral browser hook during shared-shell startup."""
+
+    _render_shared_plotly_doubleclick_fullscreen_hook()
+
+
 def render_plotly_diagram(
     fig: Any,
     *,
@@ -284,7 +405,7 @@ def render_plotly_diagram(
             **plotly_kwargs,
         )
         if allow_fullscreen:
-            _render_plotly_doubleclick_fullscreen_hook(anchor_id)
+            _render_shared_plotly_doubleclick_fullscreen_hook()
 
 
 COMPACT_SIDE_VIEW_HEIGHT_PX = 280
@@ -296,9 +417,19 @@ def compact_side_view_figure(
     height_px: int = COMPACT_SIDE_VIEW_HEIGHT_PX,
 ) -> Any:
     """Apply the shared compact canvas used by longitudinal side-view diagrams."""
+    # Plotly otherwise creates a fresh random UID for every trace on every
+    # Streamlit mount.  Stable trace identities let Plotly reconcile the same
+    # cold and warm figure directly instead of briefly treating it as new
+    # content and rerasterising it through an intermediate state.
+    for trace_index, trace in enumerate(getattr(fig, "data", ()) or ()):
+        try:
+            trace.uid = f"compact-side-view-{trace_index}"
+        except (AttributeError, TypeError, ValueError):
+            pass
     fig.update_layout(
         height=int(height_px),
         margin=dict(l=10, r=10, t=8, b=8),
+        uirevision="compact-side-view-v1",
     )
     return fig
 
@@ -1119,6 +1250,13 @@ div[data-testid="stExpander"] + div[data-testid="stExpander"] {
 
 def apply_step_summary_expander_css():
     """Apply CSS to make expander header look like calcbox in summary mode."""
+    session_state = getattr(st, "session_state", None)
+    if session_state is not None:
+        rendered_styles = session_state.setdefault("_rendered_style_keys", set())
+        style_key = "step_summary_expander_css"
+        if style_key in rendered_styles:
+            return
+        rendered_styles.add(style_key)
     st.markdown(
         """
 <style>
@@ -1237,13 +1375,51 @@ div[data-testid="stExpander"] details:has(span.step-fail) > summary {
     )
 
 
+@st.fragment
+def _render_page_explainer_fragment(render_fn, label: str, key: str) -> None:
+    """Render one stateful explainer; its closed body owns no hidden work."""
+    if key not in st.session_state:
+        st.session_state[key] = False
+    popover = st.popover(label, key=key, on_change="rerun")
+    with popover:
+        if popover.open:
+            render_fn()
+
+
 def render_page_explainer_expander(render_fn, label: str = "ℹ️ INFO") -> None:
     """Render a right-aligned page explainer without displacing the summary."""
+    module_key = _safe_dom_id(getattr(render_fn, "__module__", "page"))
+    function_key = _safe_dom_id(getattr(render_fn, "__name__", "explainer"))
     with st.container(key="page_explainer_float"):
         _, info_col = st.columns([8, 1], vertical_alignment="center")
         with info_col:
-            with st.popover(label):
-                render_fn()
+            _render_page_explainer_fragment(
+                render_fn,
+                label,
+                f"page_explainer_{module_key}_{function_key}",
+            )
+
+
+@st.fragment
+def render_lazy_expander(
+    label: str,
+    render_fn,
+    *,
+    key: str,
+    expanded: bool = False,
+) -> None:
+    """Render an ordinary expander without constructing a closed body."""
+    if key not in st.session_state:
+        st.session_state[key] = bool(expanded)
+    expander = st.expander(
+        label,
+        expanded=expanded,
+        key=key,
+        on_change="rerun",
+    )
+    with expander:
+        if expander.open:
+            render_fn()
 
 
 # Optional left-border / background accents for calc steps (Design / SFD page, etc.)
@@ -1294,6 +1470,7 @@ def _has_non_empty_card_text(value) -> bool:
     return len(text) >= 3
 
 
+@st.fragment
 def step_expander_calcbox(
     uid: str,
     summary_line: str,
@@ -1312,10 +1489,13 @@ def step_expander_calcbox(
     """
     apply_step_summary_expander_css()
 
-    # Anchor for scrolling with deterministic marker
-    st.markdown(f"<div id='calc_{uid}'></div>", unsafe_allow_html=True)
-    # marker that JS uses to find the next expander
-    st.markdown(f"<div data-calc-uid='{uid}'></div>", unsafe_allow_html=True)
+    # One zero-height element owns both the scroll anchor and the deterministic
+    # expander marker.  The former implementation emitted two separate
+    # Streamlit deltas for every card even though neither element is visible.
+    st.markdown(
+        f"<div id='calc_{uid}' data-calc-uid='{uid}'></div>",
+        unsafe_allow_html=True,
+    )
 
     # Auto-expand when step_open_{uid} is set (from jump_nav or manual toggle)
     # Allow explicit expanded parameter to override
@@ -1369,11 +1549,29 @@ def step_expander_calcbox(
         else:
             return
 
-    with st.expander(label, expanded=is_expanded):
-        # Inner target for flash highlight
-        st.markdown(f"<div id='inner_{uid}'>", unsafe_allow_html=True)
+    open_key = f"step_open_{uid}"
+    if open_key not in st.session_state:
+        st.session_state[open_key] = bool(is_expanded)
+    expander = st.expander(
+        label,
+        expanded=bool(is_expanded),
+        key=open_key,
+        on_change="rerun",
+    )
+    with expander:
+        # Closed calculation cards are visually represented entirely by their
+        # summary.  Do not build their hidden equations, INFO content, columns
+        # and diagrams until the user opens the stateful expander.  Because
+        # this helper is its own nested fragment, opening or closing one card
+        # redraws only that card rather than the page or application shell.
+        if not expander.open:
+            return
+        # Keep both selectors in one invisible marker.  Separate opening and
+        # closing HTML calls cannot wrap later Streamlit elements, so the old
+        # three-delta sequence added transport/DOM work without changing the
+        # actual layout.
         st.markdown(
-            f"<span class='{status_class}'></span>{accent_html}",
+            f"<div id='inner_{uid}'><span class='{status_class}'></span>{accent_html}</div>",
             unsafe_allow_html=True,
         )
 
@@ -1403,9 +1601,6 @@ def step_expander_calcbox(
         
         if content_after:
             content_after()
-        
-        # Close inner div for flash highlight
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def apply_step_summary_card_css():
@@ -1542,25 +1737,12 @@ def number_row(
                 protected = (shared_key in NONZERO_REQUIRED_SHARED_KEYS) and (not zero_allowed(shared_key))
                 if protected:
                     effective_default = default
-                    # #region agent log
-                    try:
-                        with open(log_path, "a") as f:
-                            f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Detected corrupted shared state (no write)", "data": {"key": original_key, "shared_key": shared_key, "old_shared": shared_val, "suggested_default": default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "N"}) + "\n")
-                    except: pass
-                    # #endregion
                 else:
                     effective_default = shared_val
             else:
                 effective_default = shared_val
         else:
             effective_default = default
-
-        # #region agent log
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Shared key lookup", "data": {"original_key": original_key, "shared_key": shared_key, "shared_value": st.session_state.get(shared_key) if shared_key else None, "effective_default": effective_default, "key_in_session": original_key in st.session_state, "session_value": st.session_state.get(original_key)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
-        except: pass
-        # #endregion
 
         # Determine min_value based on key type
         min_val = None
@@ -1607,34 +1789,12 @@ def number_row(
                 cur = st.session_state.get(original_key)
                 st.session_state[original_key] = float(fix_value)
                 _audit("WIDGET_GUARD forced widget", shared_key, original_key, old=cur, new=fix_value)
-                # Also fix shared state if it's 0 but default is meaningful
-                if not shared_is_meaningful and default_is_meaningful and shared_key:
-                    old_shared = st.session_state.get(shared_key)
-                # #region agent log
-                try:
-                    with open(log_path, "a") as f:
-                        f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Fixed stale zero widget", "data": {"key": original_key, "shared_key": shared_key, "old_value": value_before_seed, "new_value": fix_value, "would_fix_shared": not shared_is_meaningful and default_is_meaningful}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "M"}) + "\n")
-                except: pass
-                # #endregion
         
         if original_key not in st.session_state:
             try:
                 st.session_state[original_key] = float(effective_default)
             except Exception:
                 st.session_state[original_key] = effective_default
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Seeded widget key", "data": {"key": original_key, "seeded_value": st.session_state[original_key], "effective_default": effective_default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-            except: pass
-            # #endregion
-        else:
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Widget key already exists", "data": {"key": original_key, "existing_value": st.session_state[original_key], "effective_default": effective_default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-            except: pass
-            # #endregion
 
         # ---- V2: DO NOT pass value= every rerun (lets session_state persist) ----
         # Safety net: never render a number input with a None session value
@@ -1664,7 +1824,6 @@ def number_row(
                 if shared_key:
                     st.session_state[shared_key] = seeded_depth
         
-        session_value_before_widget = st.session_state.get(original_key)
         _safe_label = _nonempty_label(str(label), f"_{original_key}_label")
         # Session state is seeded above; with key=, Streamlit reads the value from
         # st.session_state[original_key]. Do not pass value= — it competes with the
@@ -1681,15 +1840,12 @@ def number_row(
             ni_kwargs["step"] = step
         else:
             ni_kwargs["step"] = 1.0
-        value = st.number_input(_safe_label, key=original_key, **ni_kwargs)
-        session_value_after_widget = st.session_state.get(original_key)
-
-        # #region agent log
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Widget created", "data": {"key": original_key, "returned_value": value, "session_value_before": session_value_before_widget, "session_value_after": session_value_after_widget, "value_changed": session_value_before_widget != session_value_after_widget}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
-        except: pass
-        # #endregion
+        value = st.number_input(
+            _safe_label,
+            key=original_key,
+            persist_state="session",
+            **ni_kwargs,
+        )
 
     return value
 
@@ -1854,6 +2010,7 @@ def select_row(
                 key=render_key,
                 label_visibility="collapsed",
                 disabled=disabled,
+                persist_state="session",
                 **selectbox_kwargs,
             )
     if help_text:
@@ -1890,6 +2047,7 @@ def select_row(
         key=render_key,
         label_visibility="collapsed",
         disabled=disabled,
+        persist_state="session",
         **selectbox_kwargs,
     )
 
@@ -1917,7 +2075,10 @@ def _render_reo_row_controls(
         valid_count_options = [
             int(option)
             for option in list(count_options or [])
-            if int(option) != 1
+            # The row exists because it is within the authoritative active-row
+            # count.  An active row therefore cannot publish either zero bars
+            # (inactive) or one bar (invalid longitudinal detailing).
+            if int(option) >= 2
         ]
         select_row(
             "Bars",
@@ -2243,36 +2404,64 @@ def calcbox(
     else:
         blockquote_md = "\n".join([f"> {l}" if l.strip() else ">" for l in lines])
     
-    # Inject scoped CSS for status / accent
+    # Resolve the finite visual tone.  The stylesheet is shared once per
+    # rerun; emitting a unique <style> element for every calculation card was
+    # identical visually but expensive for Streamlit transport and browser
+    # style recalculation.
     accent_key = _normalize_calc_accent(accent)
     if status == "pass":
-        border_color = "#28a745"
-        bg_color = "rgba(40, 167, 69, 0.1)"
+        tone_key = "pass"
     elif status == "fail":
-        border_color = "#dc3545"
-        bg_color = "rgba(220, 53, 69, 0.1)"
+        tone_key = "fail"
     elif accent_key and accent_key in _CALC_ACCENTS:
-        border_color, bg_color = _CALC_ACCENTS[accent_key]
+        tone_key = f"accent-{accent_key}"
     else:
-        border_color = "#1f77b4"
-        bg_color = "rgba(31, 119, 180, 0.08)"
-    
-    css = f"""
+        tone_key = "neutral"
+
+    session_state = getattr(st, "session_state", None)
+    rendered_styles = (
+        session_state.setdefault("_rendered_style_keys", set())
+        if session_state is not None
+        else set()
+    )
+    calcbox_style_key = "calcbox_tone_css"
+    if calcbox_style_key not in rendered_styles:
+        rendered_styles.add(calcbox_style_key)
+        accent_rules = "\n".join(
+            f"""div.element-container:has(span.calcbox-tone-accent-{name}) blockquote {{
+  border-left-color: {colours[0]} !important;
+  background-color: {colours[1]} !important;
+}}"""
+            for name, colours in _CALC_ACCENTS.items()
+        )
+        st.markdown(
+            f"""
 <style>
-/* Style the blockquote that lives in the same element-container as our marker span */
-div.element-container:has(span#{uid}) blockquote {{
-  border-left: 4px solid {border_color} !important;
-  background-color: {bg_color} !important;
+div.element-container:has(span[class^="calcbox-tone-"]) blockquote {{
+  border-left: 4px solid #1f77b4 !important;
+  background-color: rgba(31, 119, 180, 0.08) !important;
   padding: 0.75rem 1rem !important;
   border-radius: 10px !important;
 }}
+div.element-container:has(span.calcbox-tone-pass) blockquote {{
+  border-left-color: #28a745 !important;
+  background-color: rgba(40, 167, 69, 0.1) !important;
+}}
+div.element-container:has(span.calcbox-tone-fail) blockquote {{
+  border-left-color: #dc3545 !important;
+  background-color: rgba(220, 53, 69, 0.1) !important;
+}}
+{accent_rules}
 </style>
-"""
-    
-    st.markdown(css, unsafe_allow_html=True)
+""",
+            unsafe_allow_html=True,
+        )
     
     # Marker + markdown MUST be in the same st.markdown call
-    st.markdown(f"<span id='{uid}'></span>\n\n{blockquote_md}", unsafe_allow_html=True)
+    st.markdown(
+        f"<span id='{uid}' class='calcbox-tone-{tone_key}'></span>\n\n{blockquote_md}",
+        unsafe_allow_html=True,
+    )
 
 
 def clickable_calcbox(
@@ -2735,6 +2924,7 @@ def v2_number_input(*, label, key, default, min_value=None, max_value=None, step
         disabled=disabled,
         label_visibility=label_visibility,
         on_change=on_change,
+        persist_state="session",
     )
 
 
@@ -2754,6 +2944,7 @@ def v2_checkbox(*, label, key, default=False, help=None, disabled=False, label_v
         disabled=disabled,
         label_visibility=label_visibility,
         on_change=on_change,
+        persist_state="session",
     )
 
 
@@ -2775,6 +2966,7 @@ def v2_selectbox(*, label, key, options, default_index=0, format_func=None,
         "disabled": disabled,
         "label_visibility": label_visibility,
         "on_change": on_change,
+        "persist_state": "session",
     }
     if format_func is not None:
         kwargs["format_func"] = format_func
@@ -2798,6 +2990,7 @@ def v2_radio(*, label, key, options, default_index=0, format_func=None,
         "horizontal": horizontal,
         "label_visibility": label_visibility,
         "on_change": on_change,
+        "persist_state": "session",
     }
     if format_func is not None:
         kwargs["format_func"] = format_func

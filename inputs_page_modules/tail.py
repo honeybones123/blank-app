@@ -9,13 +9,10 @@ def render_inputs_post_summary_actions_and_dev_audit(
     *,
     st_module: Any,
     inputs_render_audit: dict[str, str],
-    inject_scroll_to_design_actions_fn: Callable[[], None],
     apply_buttons_fn: Callable[[], None],
     auto_design_fn: Callable[[], None],
     agent_debug_log_fn: Callable[..., None],
 ) -> None:
-    inject_scroll_to_design_actions_fn()
-
     # Apply and auto-design callbacks remain behavior-critical; the route
     # dispatchers are extracted while solver/apply dependencies stay injected.
     apply_buttons_fn()

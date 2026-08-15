@@ -1391,7 +1391,6 @@ def render_derivation(case, L, params, results):
 # ---------------------------------------------------
 # MAIN PAGE RENDER FUNCTION
 # ---------------------------------------------------
-@st.fragment
 def render_sfd_bmd_page():
     """
     Standalone SFD/BMD teaching page in the beam app.
@@ -2292,8 +2291,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     def _on_design_actions_source_change() -> None:
         source_value = str(st.session_state.get("design_actions_source_selector", "max") or "max")
-        st.session_state["design_actions_source_selector"] = source_value
         if source_value != "section":
+            load_analysis_store.capture_widgets()
             return
         committed_x = float(st.session_state.get("design_section_x_m", 0.0) or 0.0)
         current_x = float(st.session_state.get("design_section_x_slider", 0.0) or 0.0)
@@ -2306,6 +2305,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         init_x = _clamp_x(init_x, beam_length_seed) if beam_length_seed > 0 else 0.0
         st.session_state["design_section_x_slider"] = init_x
         st.session_state["design_section_x_input"] = init_x
+        load_analysis_store.capture_widgets()
 
     source_options = ["max", "section"]
     current_source = str(st.session_state.get("design_actions_source_selector", "max") or "max")
@@ -2458,8 +2458,11 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     def _on_design_section_slider_change() -> None:
         x_new = _clamp_x(float(st.session_state.get("design_section_x_slider", 0.0) or 0.0), beam_length)
-        st.session_state["design_section_x_slider"] = x_new
+        # The slider owns this bounded widget key. Rewriting the same key from
+        # its callback produces a competing Streamlit state delta; only mirror
+        # the committed value to the hidden numeric projection.
         st.session_state["design_section_x_input"] = x_new
+        load_analysis_store.capture_widgets()
 
     def _on_design_section_input_change() -> None:
         x_new = _clamp_x(float(st.session_state.get("design_section_x_input", 0.0) or 0.0), beam_length)
@@ -2487,6 +2490,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             design_V_sls_kN=float(committed_V_sls),
         )
         st.session_state["_design_section_commit_msg"] = f"Design actions set from x = {x_commit:.3f} m"
+        load_analysis_store.capture_widgets()
 
     if design_actions_source == "section" and beam_length > 0:
         initial_cursor_x = float(st.session_state.get("design_section_x_slider", 0.0) or 0.0)
@@ -2994,6 +2998,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             key="sfd_bmd_show_m_peak_marker",
             default=False,
             help="Marker at the station of maximum |M| along the span.",
+            on_change=load_analysis_store.capture_widgets,
         )
     fig_bmd = _figure_bmd_from_state(sfd_bmd_plot_st, show_m_peak=bool(show_m_peak_marker))
     st.caption("Moment M(x); hogging (M < 0) is drawn above the baseline (ordinate −M).")

@@ -1,8 +1,6 @@
 # deflection_page.py
 import math
-import pandas as pd
 import streamlit as st
-from pathlib import Path
 
 from inputs_application.session_services import InputsSessionServices
 
@@ -22,9 +20,7 @@ from state_and_helpers import (
     render_timing_mark,
 )
 from widgets_helpers import (
-    apply_global_widget_css,
     apply_result_page_css,
-    apply_calcbox_css,
     apply_step_summary_expander_css,
     render_result_page_title,
     render_page_explainer_expander,
@@ -230,9 +226,7 @@ def render_deflection():
     from jump_nav import get_jump_uid
     get_jump_uid()
 
-    apply_global_widget_css()
     apply_result_page_css()
-    apply_calcbox_css()
     apply_step_summary_expander_css()
     sync_callbacks = get_sync_callbacks()  # not used yet but kept for contract
 
@@ -275,8 +269,22 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     with page_title_placeholder.container():
         render_result_page_title("Beam Deflection")
 
-    # Reserve space for the top summary table
-    summary_placeholder = st.empty()
+    # Render the current authoritative summary first.  The application
+    # boundary has already refreshed this publication, so delaying it until
+    # after diagrams and local calculations only makes the page feel slower.
+    render_timing_mark("deflection_page.runtime.summary_checks.start")
+    render_page_explainer_expander(_render_deflection_explainer)
+    defl_pack = build_deflection_check_rows_from_state(st.session_state)
+    rows = build_deflection_summary_rows(defl_pack.get("rows", []))
+    update_results("deflection", {"rows": rows, "summary": defl_pack})
+    render_clickable_summary_table(
+        rows,
+        key_prefix="defl_summary",
+        columns=DEFLECTION_CHECK_SUMMARY_COLUMNS,
+    )
+    bind_summary_clicks()
+    page_divider()
+    render_timing_mark("deflection_page.runtime.summary_checks.end")
 
     # --- Hydrate deflection page widget keys from shared (only if missing/None) ---
     def _seed_widget_from_shared(
@@ -788,6 +796,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     ):
         compute_deflection_results(publish=True)
         st.session_state["_deflection_core_cache_key"] = _deflection_cache_key
+    render_timing_mark("deflection_page.runtime.compute.publication.end")
 
     # --------------------------------------------------------
     # SINGLE COMPUTED VALUES BLOCK (compute once, use everywhere)
@@ -855,6 +864,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         Ast=float(Ast),
         Asc=float(Asc),
     )
+    render_timing_mark("deflection_page.runtime.compute.multispan.end")
     support_resolution = get_deflection_diagram_support_condition(st.session_state)
     support_type = support_resolution["support_type"]
 
@@ -923,6 +933,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         Ast=Ast,
         Asc=Asc,
     )
+    render_timing_mark("deflection_page.runtime.compute.as3600.end")
 
     if results is None or (
         isinstance(results, dict) and results.get("ok") is False
@@ -949,6 +960,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     k2 = results["k2"]
 
     # Deflected shape (rendered in slot above reinforcement; same computed values)
+    render_timing_mark("deflection_page.runtime.diagram.start")
     with diagram_placeholder.container():
         inject_compact_side_view_spacing("deflection-side-view-compact")
         st.markdown("**Deflected shape**")
@@ -1000,6 +1012,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
                 config={"displayModeBar": False},
             )
         page_divider()
+    render_timing_mark("deflection_page.runtime.diagram.end")
 
     L_over_delta_short = format_L_over_delta(delta_short_total, L_mm)
     L_over_delta_long_add = format_L_over_delta(delta_long_add, L_mm)
@@ -1017,7 +1030,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         support_type=support_type,
         defl_limit_ratio=defl_limit_ratio,
     )
-
     # Closed-form deflection (with unit fix: convert L to mm, P to N)
     delta_max = None
     formula_latex = None
@@ -1045,24 +1057,9 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             E=E_mpa,
             I=I_mm4,
         )
+    render_timing_mark("deflection_page.runtime.post_diagram_compute.end")
 
     # --------------------------------------------------------
-    render_timing_mark("deflection_page.runtime.summary_checks.start")
-    # Summary + stacked calculation sections (Crack-style vertical flow)
-    # --------------------------------------------------------
-    with summary_placeholder.container():
-        render_page_explainer_expander(_render_deflection_explainer)
-        defl_pack = build_deflection_check_rows_from_state(st.session_state)
-        ROWS = build_deflection_summary_rows(defl_pack.get("rows", []))
-        update_results("deflection", {"rows": ROWS, "summary": defl_pack})
-        render_clickable_summary_table(
-            ROWS,
-            key_prefix="defl_summary",
-            columns=DEFLECTION_CHECK_SUMMARY_COLUMNS,
-        )
-        bind_summary_clicks()
-        page_divider()
-
     use_simplified_ief_checkbox = v2_checkbox(
         label="Use simplified reinforced-member Iₑf (AS 3600 Cl. 8.5.3.1(2),(3))",
         key="defl_use_simplified_ief",

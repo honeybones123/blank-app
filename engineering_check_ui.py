@@ -69,6 +69,14 @@ BENDING_ROW_UID_TO_CALC_STEP_ID: dict[str, str] = {
     "bend_min_strength": "bending_min_2_4",
     "bend_duct": "bending_uls_1_5",
     "bend_service_moment": "bending_sls_3_4",
+    # Installed V2 authoritative summary rows project onto the same retained
+    # detailed calculation cards.  Keep the translation here so summary
+    # publication remains factual and the page owns only its anchor names.
+    "v2_bending_capacity": "bending_uls_1_7",
+    "v2_bending_minimum_tensile": "bending_min_2_5",
+    "v2_bending_ductility": "bending_uls_1_5",
+    "v2_bending_service_moment": "bending_sls_3_4",
+    "v2_bending_minimum_capacity": "bending_min_2_4",
 }
 
 # Tab labels for Streamlit tab switching on summary row click (canonical uid -> tab label).
@@ -80,6 +88,11 @@ BENDING_ROW_UID_TO_TAB: dict[str, str] = {
     "bend_min_strength": "Minimum strength checks",
     "bend_duct": "ULS Checks",
     "bend_service_moment": "SLS Checks",
+    "v2_bending_capacity": "ULS Checks",
+    "v2_bending_minimum_tensile": "Minimum strength checks",
+    "v2_bending_ductility": "ULS Checks",
+    "v2_bending_service_moment": "SLS Checks",
+    "v2_bending_minimum_capacity": "Minimum strength checks",
 }
 
 SHEAR_ROW_UID_TO_TAB: dict[str, str] = {

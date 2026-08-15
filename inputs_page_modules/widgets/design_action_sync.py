@@ -223,6 +223,16 @@ def hydrate_design_action_widgets_from_shared(
     design_controls: bool = False,
 ) -> None:
     specs = design_action_widget_specs_fn(selected_prefix)
+    # Resolve the selected action contract once for this hydration transaction.
+    # The previous per-field lookup repeated the same ULS/SLS resolution while
+    # building the signature and again while assigning every widget.  Result
+    # pages share one immutable action projection, so repeated resolution added
+    # cold-start cost without producing different engineering values.
+    resolved_actions = (
+        resolve_design_actions_from_state(dict(st_module.session_state))
+        if design_controls
+        else None
+    )
 
     def _display_value(spec: dict) -> float:
         shared_key = str(spec["shared_key"])
@@ -232,9 +242,7 @@ def hydrate_design_action_widgets_from_shared(
         # In Load Analysis mode the manual ULS/SLS fields remain untouched.
         # Render the resolved, derived action contract instead of the saved
         # manual fields so switching the source off restores those values.
-        resolved = resolve_design_actions_from_state(
-            dict(st_module.session_state)
-        )
+        resolved = dict(resolved_actions or {})
         is_sls = str(selected_prefix).strip().lower() == "sls"
         if shared_key.endswith("_Mstar_pos_manual"):
             key = "SLS_M_pos" if is_sls else "Mu_pos"

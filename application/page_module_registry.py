@@ -8,6 +8,8 @@ or preloading paths.
 from __future__ import annotations
 
 import importlib
+import os
+import sys
 import threading
 import time
 from collections.abc import Iterable
@@ -35,22 +37,54 @@ _warm_started = False
 _warm_finished = False
 _warm_timings_ms: dict[str, float] = {}
 _warm_errors: dict[str, str] = {}
+_render_lock = threading.Lock()
+_render_timings_ms: dict[str, dict[str, Any]] = {}
 
 
 def render_module_page(module_name: str, renderer_name: str) -> Any:
     """Import and render one registered page, with one hot-reload recovery."""
 
+    import_started = time.perf_counter()
+    module_was_loaded = module_name in sys.modules
     module = importlib.import_module(module_name)
+    import_ms = (time.perf_counter() - import_started) * 1000.0
     renderer = getattr(module, renderer_name, None)
     if callable(renderer):
-        return renderer()
+        render_started = time.perf_counter()
+        try:
+            return renderer()
+        finally:
+            with _render_lock:
+                _render_timings_ms[module_name] = {
+                    "module_was_loaded": bool(module_was_loaded),
+                    "import_ms": round(import_ms, 3),
+                    "render_ms": round(
+                        (time.perf_counter() - render_started) * 1000.0,
+                        3,
+                    ),
+                }
+    reload_started = time.perf_counter()
     refreshed = importlib.reload(module)
+    reload_ms = (time.perf_counter() - reload_started) * 1000.0
     renderer = getattr(refreshed, renderer_name, None)
-    if callable(renderer):
+    if not callable(renderer):
+        raise AttributeError(
+            f"module {module_name!r} has no callable {renderer_name!r}"
+        )
+    render_started = time.perf_counter()
+    try:
         return renderer()
-    raise AttributeError(
-        f"module {module_name!r} has no callable {renderer_name!r}"
-    )
+    finally:
+        with _render_lock:
+            _render_timings_ms[module_name] = {
+                "module_was_loaded": bool(module_was_loaded),
+                "import_ms": round(import_ms, 3),
+                "reload_ms": round(reload_ms, 3),
+                "render_ms": round(
+                    (time.perf_counter() - render_started) * 1000.0,
+                    3,
+                ),
+            }
 
 
 def render_calculation_page(page_slug: str) -> Any:
@@ -91,6 +125,14 @@ def warm_calculation_pages_in_background() -> bool:
     worker imports modules but never reads or writes Streamlit session state.
     """
 
+    if str(os.environ.get("CODEX_DISABLE_CALC_PAGE_WARMUP") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False
+
     global _warm_started
     with _warm_lock:
         if _warm_started:
@@ -118,10 +160,22 @@ def calculation_page_warmup_status() -> dict[str, Any]:
         }
 
 
+def calculation_page_render_status(page_slug: str) -> dict[str, Any]:
+    """Return timing facts for the last registered page render."""
+
+    slug = str(page_slug or "").strip().lower()
+    spec = CALCULATION_PAGE_MODULES.get(slug)
+    if spec is None:
+        raise ValueError(f"unknown calculation page: {page_slug!r}")
+    with _render_lock:
+        return dict(_render_timings_ms.get(spec.module_name) or {})
+
+
 __all__ = [
     "CALCULATION_PAGE_MODULES",
     "PageModuleSpec",
     "calculation_page_warmup_status",
+    "calculation_page_render_status",
     "render_calculation_page",
     "render_module_page",
     "warm_calculation_pages_in_background",

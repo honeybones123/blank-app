@@ -120,6 +120,7 @@ _UX_LATENCY_PROBE_ENV = "CODEX_BROWSER_TEST_MODE"
 _RENDER_TIMING_EVENTS_KEY = "_render_timing_events"
 _RENDER_TIMING_STATE_KEY = "_render_timing_state"
 _RENDER_TIMING_TRACE_PATH_KEY = "_render_timing_trace_path"
+_RENDER_TIMING_FLUSHED_COUNT_KEY = "_render_timing_flushed_count"
 _RENDER_TIMING_ENV = "CODEX_RENDER_TIMING_TRACE"
 
 
@@ -314,6 +315,14 @@ def _render_timing_trace_path() -> str | None:
 
 
 def render_timing_begin_rerun(**meta) -> None:
+    if not render_timing_trace_enabled():
+        # Product runs do not need to copy and rewrite an ever-growing timing
+        # event list for every instrumentation mark. Diagnostics opt in via
+        # the explicit trace/browser-test flags.
+        st.session_state.pop(_RENDER_TIMING_STATE_KEY, None)
+        st.session_state.pop(_RENDER_TIMING_EVENTS_KEY, None)
+        st.session_state.pop(_RENDER_TIMING_FLUSHED_COUNT_KEY, None)
+        return
     now_perf = time.perf_counter()
     rerun_seq = int(st.session_state.get("_render_timing_rerun_seq") or 0) + 1
     st.session_state["_render_timing_rerun_seq"] = rerun_seq
@@ -325,10 +334,40 @@ def render_timing_begin_rerun(**meta) -> None:
         "meta": dict(meta or {}),
     }
     st.session_state[_RENDER_TIMING_EVENTS_KEY] = []
+    st.session_state[_RENDER_TIMING_FLUSHED_COUNT_KEY] = 0
     render_timing_mark("render.rerun_start", **meta)
 
 
+def _flush_render_timing_events() -> None:
+    """Persist one completed trace batch without timing every disk open.
+
+    Timing instrumentation used to open and append the JSONL file for every
+    mark. A normal calculation-page render emits dozens of marks, so the
+    verifier itself inflated the cold path it was measuring. Keep the exact
+    same event evidence in memory and write the completed batch once at the
+    page-dispatch boundary.
+    """
+
+    path = _render_timing_trace_path()
+    if not path:
+        return
+    events = list(st.session_state.get(_RENDER_TIMING_EVENTS_KEY) or [])
+    flushed_count = int(
+        st.session_state.get(_RENDER_TIMING_FLUSHED_COUNT_KEY) or 0
+    )
+    pending = events[max(0, flushed_count) :]
+    if not pending:
+        return
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.writelines(
+            json.dumps(event, default=str) + "\n" for event in pending
+        )
+    st.session_state[_RENDER_TIMING_FLUSHED_COUNT_KEY] = len(events)
+
+
 def render_timing_mark(name: str, **meta) -> None:
+    if not render_timing_trace_enabled():
+        return
     label = str(name or "").strip()
     if not label:
         return
@@ -362,10 +401,8 @@ def render_timing_mark(name: str, **meta) -> None:
         events = list(st.session_state.get(_RENDER_TIMING_EVENTS_KEY) or [])
         events.append(event)
         st.session_state[_RENDER_TIMING_EVENTS_KEY] = events[-300:]
-        path = _render_timing_trace_path()
-        if path:
-            with open(path, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(event, default=str) + "\n")
+        if label == "app.page_dispatch.end":
+            _flush_render_timing_events()
     except Exception:
         pass
 
@@ -4515,6 +4552,7 @@ def _resolve_snapshot_path() -> Path:
 
 
 SNAPSHOT_PATH = _resolve_snapshot_path()
+_last_saved_snapshot_signature: str | None = None
 
 
 def _snapshot_path_for_read() -> Path:
@@ -4669,18 +4707,23 @@ def save_shared_snapshot(
     ):
         origin = WORKSPACE_ORIGIN_RESUMED_SESSION
     identity = workspace_identity if workspace_identity is not None else get_workspace_identity_for_persist()
+    global _last_saved_snapshot_signature
     payload = {
         "schema": SNAPSHOT_FILE_SCHEMA_V2,
         "workspace_origin": origin,
         "workspace_identity": identity,
         "shared": shared,
     }
+    signature = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    if signature == _last_saved_snapshot_signature:
+        return
     try:
         SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = SNAPSHOT_PATH.with_suffix(SNAPSHOT_PATH.suffix + ".tmp")
         with temporary_path.open("w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         os.replace(temporary_path, SNAPSHOT_PATH)
+        _last_saved_snapshot_signature = signature
     except Exception:
         pass
 
@@ -4776,7 +4819,9 @@ def persist_state_snapshot(*, reset_manual_action_touch_latch: bool = False):
     the same run (callbacks execute before the script body).
     """
     _sync_longitudinal_row_model_from_legacy_state()
-    prev = load_shared_snapshot()
+    prev = st.session_state.get("_last_persisted_shared_snapshot")
+    if not isinstance(prev, dict):
+        prev = load_shared_snapshot()
     if not isinstance(prev, dict):
         prev = {}
     touched = st.session_state.get("_shared_keys_touched_this_run")
@@ -4808,6 +4853,7 @@ def persist_state_snapshot(*, reset_manual_action_touch_latch: bool = False):
 
     # Save to file (survives server restarts)
     save_shared_snapshot(shared, workspace_origin=get_workspace_origin())
+    st.session_state["_last_persisted_shared_snapshot"] = dict(shared)
 
     if reset_manual_action_touch_latch:
         st.session_state["_shared_keys_touched_this_run"] = set()
@@ -4929,6 +4975,10 @@ def begin_render_cycle():
     Ensures rendered widget gating is per-run, not cumulative across runs.
     """
     st.session_state["_rendered_widget_keys"] = set()
+    # CSS helpers may be reached by every repeated calculation card.  Track
+    # their emission per rerun so identical style payloads are sent once while
+    # still being re-sent after Streamlit replaces the page DOM.
+    st.session_state["_rendered_style_keys"] = set()
     diag_log_widget_vs_shared_high_risk("begin_render_cycle")
 
 
@@ -4989,6 +5039,11 @@ def debug_log(tag: str, data: dict):
 
 def log_shared_diff(tag: str):
     """Log any changes to shared keys since last run."""
+    if not (
+        st.session_state.get("_debug_state_tripwire", False)
+        or st.session_state.get("_dev_mode", False)
+    ):
+        return
     prev = st.session_state.get("_prev_shared_snapshot", {})
     now = {k: st.session_state.get(k) for k in SHARED_DEFAULTS.keys()}
 
@@ -5275,11 +5330,14 @@ def init_shared_session_state():
             # Skip cache restoration (already handled above), check for other sources
             if restored_value is None:
                 # Check if there's an inputs_* widget for this shared key that still exists
-                inputs_widget_key = None
-                for wk, sk in TAB_KEYS.items():
-                    if sk == shared_key and wk.startswith("inputs_") and wk in st.session_state:
-                        inputs_widget_key = wk
-                        break
+                canonical_widget_key = _SHARED_TO_CANONICAL_WIDGET.get(shared_key)
+                inputs_widget_key = (
+                    canonical_widget_key
+                    if canonical_widget_key
+                    and canonical_widget_key.startswith("inputs_")
+                    and canonical_widget_key in st.session_state
+                    else None
+                )
                 
                 if inputs_widget_key:
                     # Prefer the inputs_* widget value (it's more authoritative)
@@ -5719,7 +5777,6 @@ def sync_shared_from_widgets_once_per_run():
     active_slug = st.session_state.get("_active_page_slug", "inputs")
     active_prefix = f"{active_slug}_"
     
-    sync_operations = []
     try:
         skip_shear_widget_backflow_runs = int(st.session_state.get("_skip_shear_widget_backflow_runs", 0) or 0)
     except Exception:
@@ -5782,40 +5839,15 @@ def sync_shared_from_widgets_once_per_run():
 
         # Only sync widgets that were rendered THIS RUN
         if widget_key not in rendered:
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Skipped non-rendered key", "data": {"widget_key": widget_key, "shared_key": shared_key, "rendered_keys_count": len(rendered)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
-            except: pass
-            # #endregion
             continue
 
         # REO LOCK: Only inputs_* is allowed to author reinforcement shared keys
         if shared_key in LOCKED_REO_SHARED_KEYS and not widget_key.startswith("inputs_"):
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Skipped non-inputs widget for locked reo key", "data": {"widget_key": widget_key, "shared_key": shared_key}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "R"}) + "\n")
-            except: pass
-            # #endregion
             continue
 
         widget_value = st.session_state.get(widget_key)
         if widget_value is None:
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Skipped missing key", "data": {"widget_key": widget_key, "shared_key": shared_key}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
-            except: pass
-            # #endregion
             continue
-
-        # #region agent log
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Adding widget to sync", "data": {"widget_key": widget_key, "shared_key": shared_key, "widget_value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
-        except: pass
-        # #endregion
 
         widgets_by_shared.setdefault(shared_key, []).append((widget_key, widget_value))
     
@@ -5827,25 +5859,11 @@ def sync_shared_from_widgets_once_per_run():
     for shared_key, widget_list in widgets_by_shared.items():
         current_shared = st.session_state.get(shared_key)
 
-        # #region agent log
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "state_and_helpers.py:742", "message": "Processing shared key", "data": {"shared_key": shared_key, "current_shared": current_shared, "widget_list": widget_list}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-        except: pass
-        # #endregion
-        
         # Find widgets that differ from current shared value (these are "recently changed")
         differing_widgets = [(wk, wv) for wk, wv in widget_list if current_shared != wv]
         
         # Note: Locked reo keys are already filtered earlier - only inputs_* widgets
         # are allowed to sync for LOCKED_REO_SHARED_KEYS (see REO LOCK check above)
-        
-        # #region agent log
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "state_and_helpers.py:750", "message": "Differing widgets found", "data": {"shared_key": shared_key, "differing_widgets": differing_widgets}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-        except: pass
-        # #endregion
         
         if current_shared is None:
             # Shared key missing - prefer inputs_* widget if available, otherwise use first
@@ -5855,13 +5873,6 @@ def sync_shared_from_widgets_once_per_run():
             else:
                 widget_key, widget_value = widget_list[0]
             set_shared(shared_key, widget_value, source="sync_init")
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Initialized shared key", "data": {"widget_key": widget_key, "shared_key": shared_key, "value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
-            except: pass
-            sync_operations.append((widget_key, shared_key, widget_value, "init", None))
-            # #endregion
         elif differing_widgets:
             # At least one widget differs - prefer inputs_* widgets among the differing ones
             inputs_differing = [(wk, wv) for wk, wv in differing_widgets if wk.startswith("inputs_")]
@@ -5879,20 +5890,8 @@ def sync_shared_from_widgets_once_per_run():
                         differing_widgets = filtered_differing
                         # Recompute inputs_differing after filtering
                         inputs_differing = [(wk, wv) for wk, wv in differing_widgets if wk.startswith("inputs_")]
-                        # #region agent log
-                        try:
-                            with open(log_path, "a") as f:
-                                f.write(json.dumps({"location": "state_and_helpers.py:protect_zero", "message": "Filtered out zero widgets from protected key", "data": {"shared_key": shared_key, "current_shared": current_shared, "filtered_count": len(filtered_differing), "original_count": len(differing_widgets)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "L"}) + "\n")
-                        except: pass
-                        # #endregion
                     else:
                         # All widgets are 0 - skip sync to preserve meaningful shared value
-                        # #region agent log
-                        try:
-                            with open(log_path, "a") as f:
-                                f.write(json.dumps({"location": "state_and_helpers.py:protect_zero", "message": "Skipped sync - all widgets are zero for protected key", "data": {"shared_key": shared_key, "current_shared": current_shared}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "L"}) + "\n")
-                        except: pass
-                        # #endregion
                         continue
             
             # Check if there's a cached inputs_* value for this shared key
@@ -5906,12 +5905,6 @@ def sync_shared_from_widgets_once_per_run():
                     cached_key = f"_cached_{wk}"
                     if cached_key in st.session_state:
                         cached_inputs_value = st.session_state[cached_key]
-                        # #region agent log
-                        try:
-                            with open(log_path, "a") as f:
-                                f.write(json.dumps({"location": "state_and_helpers.py:815", "message": "Found cached inputs value", "data": {"shared_key": shared_key, "cached_key": cached_key, "cached_value": cached_inputs_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-                        except: pass
-                        # #endregion
                         break
             
             # Filter out non-inputs_* widgets that would overwrite a cached inputs_* value
@@ -5924,20 +5917,6 @@ def sync_shared_from_widgets_once_per_run():
                     differing_widgets = filtered_differing
                     # Recompute inputs_differing after filtering
                     inputs_differing = [(wk, wv) for wk, wv in differing_widgets if wk.startswith("inputs_")]
-                    
-                    # #region agent log
-                    try:
-                        with open(log_path, "a") as f:
-                            f.write(json.dumps({"location": "state_and_helpers.py:825", "message": "Filtered out stale widgets", "data": {"shared_key": shared_key, "cached_value": cached_inputs_value, "filtered_count": len(filtered_differing), "original_count": len(differing_widgets)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-                    except: pass
-                    # #endregion
-            
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "state_and_helpers.py:768", "message": "Selecting widget to sync", "data": {"shared_key": shared_key, "inputs_differing": inputs_differing, "all_differing": differing_widgets, "cached_inputs_value": cached_inputs_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-            except: pass
-            # #endregion
             
             if inputs_differing:
                 widget_key, widget_value = inputs_differing[0]
@@ -5950,25 +5929,7 @@ def sync_shared_from_widgets_once_per_run():
                 # All differing widgets were filtered out - skip sync
                 continue
             old_shared_value = current_shared
-            # CRITICAL: Log when we're about to overwrite a meaningful shared value with 0
-            # BUT allow 0 for zero-allowed keys
-            widget_is_zero = widget_value in (0, 0.0)
-            shared_is_meaningful = old_shared_value not in (None, "", 0, 0.0)
-            if shared_is_meaningful and widget_is_zero and shared_key in PROTECTED_FROM_ZERO_SHARED_KEYS and not zero_allowed(shared_key):
-                # #region agent log
-                try:
-                    with open(log_path, "a") as f:
-                        f.write(json.dumps({"location": "state_and_helpers.py:sync_write", "message": "WARNING: About to overwrite meaningful shared with zero", "data": {"widget_key": widget_key, "shared_key": shared_key, "old_shared": old_shared_value, "new_widget_value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "O"}) + "\n")
-                except: pass
-                # #endregion
             set_shared(shared_key, widget_value, source="sync_update")
-            
-            # #region agent log
-            try:
-                with open(log_path, "a") as f:
-                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Wrote to shared key", "data": {"widget_key": widget_key, "shared_key": shared_key, "old_value": old_shared_value, "new_value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
-            except: pass
-            # #endregion
             
             # --- MINIMAL FIX: If a bending_* reinforcement widget updates a shared key,
             # also update the cached inputs_* value for the same shared key.
@@ -5984,26 +5945,7 @@ def sync_shared_from_widgets_once_per_run():
                     if sk == shared_key and wk.startswith("inputs_"):
                         st.session_state[f"_cached_{wk}"] = widget_value
             
-            # #region agent log
-            sync_operations.append((widget_key, shared_key, widget_value, "update", old_shared_value))
-            # #endregion
         # else: all widgets match shared value, no sync needed
-    
-    # #region agent log
-    if sync_operations:
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "state_and_helpers.py:688", "message": "sync_shared_from_widgets sync operations", "data": {"sync_count": len(sync_operations), "sample_syncs": sync_operations[:5]}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
-        except: pass
-    
-    # Summary log - track widget values after sync completes
-    sample_widgets = ["inputs_b", "inputs_D", "inputs_fc", "inputs_fsy", "bending_nb_or_s_bot_1", "shear_lig_d"]
-    widget_values_at_sync_end = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
-    try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"location": "state_and_helpers.py:sync_exit", "message": "Sync function exit", "data": {"widget_values": widget_values_at_sync_end, "sync_operations_count": len(sync_operations)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}) + "\n")
-    except: pass
-    # #endregion
     if skip_shear_widget_backflow_once:
         st.session_state.pop("_skip_shear_widget_backflow_once", None)
         if skip_shear_widget_backflow_runs > 0:
@@ -7046,6 +6988,34 @@ def _compose_sync_callback(widget_key: str, shared_key: str):
             # Browser widget state can arrive one rerun after route selection.
             # Only the page that rendered the widget may publish its value.
             return
+        # Material grades are a single engineering contract shared by every
+        # page. Number inputs can briefly produce an in-between value (for
+        # example 40 -> 41 MPa) before the user finishes editing. Reject that
+        # transient at the common command boundary so no page can publish an
+        # unsupported calculation snapshot or crash the Design Brain.
+        supported_material_values = {
+            "fc": (20.0, 25.0, 32.0, 40.0, 50.0, 65.0, 80.0, 100.0),
+            "fsy": (400.0, 500.0, 600.0),
+        }
+        default_material_values = {"fc": 40.0, "fsy": 500.0}
+        material_options = supported_material_values.get(str(shared_key or ""))
+        if material_options and widget_key in st.session_state:
+            try:
+                entered_material = float(st.session_state.get(widget_key))
+            except (TypeError, ValueError):
+                entered_material = float("nan")
+            if entered_material not in material_options:
+                previous_material = st.session_state.get(shared_key)
+                try:
+                    previous_material = float(previous_material)
+                except (TypeError, ValueError):
+                    previous_material = None
+                st.session_state[widget_key] = (
+                    previous_material
+                    if previous_material in material_options
+                    else default_material_values[str(shared_key)]
+                )
+                return
         mark_user_edit(widget_key, shared_key)
         assign_callback()
         atomic_shear_changed_keys: list[str] = []
@@ -8204,98 +8174,6 @@ def end_of_render_cleanup(active_page: str | None = None) -> None:
     # If you already have snapshot persistence / debug hooks, call them here.
     # Keep this function NO-OP safe for now.
     return
-
-
-def _safe_repr(v):
-    """Safe representation for debug dumps (rounds floats, handles exceptions)."""
-    try:
-        if isinstance(v, float):
-            return round(v, 6)
-        return v
-    except Exception:
-        return str(v)
-
-
-def dump_session_state_inventory(page_name: str, sync_callbacks: dict | None = None, out_dir: str = "."):
-    """
-    Debug-only: dump actual session-state and widget/shared mapping consistency.
-    Does not write to any shared keys.
-    """
-    import json
-    from pathlib import Path
-    from datetime import datetime
-    from widgets_helpers import get_rendered_widget_keys
-
-    rendered = get_rendered_widget_keys()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Collect session keys
-    sess_keys = sorted(list(st.session_state.keys()))
-
-    # Build widget->shared pairs
-    pairs = []
-    missing_shared = []
-    for wk in rendered:
-        sk = TAB_KEYS.get(wk)
-        wv = st.session_state.get(wk, None)
-        sv = st.session_state.get(sk, None) if sk else None
-
-        pairs.append({
-            "widget_key": wk,
-            "widget_val": _safe_repr(wv),
-            "widget_type": type(wv).__name__,
-            "shared_key": sk,
-            "shared_val": _safe_repr(sv),
-            "shared_type": type(sv).__name__ if sk else None,
-        })
-
-        if sk and sk not in st.session_state:
-            missing_shared.append(sk)
-
-    # Detect unknown/stray keys
-    shared_defaults = set(SHARED_DEFAULTS.keys())
-    mapped_shared = set([p["shared_key"] for p in pairs if p["shared_key"]])
-
-    stray_session_keys = [
-        k for k in sess_keys
-        if k not in shared_defaults
-        and k not in rendered
-        and k not in mapped_shared
-        and not k.startswith("_")  # ignore internal
-    ]
-
-    # Text report
-    report = {
-        "timestamp": now,
-        "page": page_name,
-        "boot_id": st.session_state.get("_boot_id"),
-        "fresh_boot": st.session_state.get("_fresh_boot"),
-        "restored_from_snapshot": st.session_state.get("_restored_from_snapshot"),
-        "rendered_widget_count": len(rendered),
-        "session_key_count": len(sess_keys),
-        "missing_shared_for_rendered": sorted(list(set(missing_shared))),
-        "stray_session_keys": stray_session_keys[:200],  # cap output
-        "pairs": pairs,
-    }
-
-    # Write txt + csv-like pairs
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    txt_path = out_dir / f"session_state_inventory_{page_name}.txt"
-    with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps(report, indent=2, ensure_ascii=False))
-
-    csv_path = out_dir / f"widget_shared_pairs_{page_name}.csv"
-    with open(csv_path, "w", encoding="utf-8") as f:
-        f.write("widget_key,widget_val,widget_type,shared_key,shared_val,shared_type\n")
-        for p in pairs:
-            f.write(
-                f"{p['widget_key']},{p['widget_val']},{p['widget_type']},"
-                f"{p['shared_key']},{p['shared_val']},{p['shared_type']}\n"
-            )
-
-    return str(txt_path), str(csv_path)
 
 
 def _write_sync_trace_line(line: str, filename: str = "sync_callback_trace.txt") -> None:

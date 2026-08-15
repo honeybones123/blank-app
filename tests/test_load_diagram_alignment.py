@@ -59,4 +59,14 @@ def test_design_section_slider_uses_the_action_diagram_width() -> None:
 
     assert "st.columns([0.08, 0.84, 0.08], gap=None)" in source
     assert ".st-key-design_section_x_slider" in source
+
+
+def test_design_section_slider_has_one_widget_state_owner() -> None:
+    source = (ROOT / "design_page_runtime.py").read_text(encoding="utf-8")
+    callback = source.split("def _on_design_section_slider_change() -> None:", 1)[1].split(
+        "def _on_design_section_input_change() -> None:", 1
+    )[0]
+
+    assert 'st.session_state["design_section_x_slider"] =' not in callback
+    assert 'st.session_state["design_section_x_input"] = x_new' in callback
     assert "width: 90.91% !important" in source

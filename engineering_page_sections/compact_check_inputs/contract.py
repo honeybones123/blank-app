@@ -38,6 +38,9 @@ class CheckInputCategory:
 class CheckInputPanelConfig:
     page_slug: str
     categories: tuple[CheckInputCategory, ...]
+    # Small panels may mount closed bodies so expansion is browser-only.
+    # Heavier pages keep lazy bodies to protect the cold-start budget.
+    mount_closed_bodies: bool = False
 
     def __post_init__(self) -> None:
         if not self.page_slug.strip():

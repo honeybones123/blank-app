@@ -80,6 +80,20 @@ def test_authoritative_pack_rejects_a_stale_input_revision() -> None:
     assert current_authoritative_check_pack(state, "bending") is None
 
 
+def test_authoritative_pack_rejects_same_revision_with_wrong_authority_hash() -> None:
+    state = _state_with_pack()
+    input_store = InputSnapshotStore(state)
+    current = input_store.current_for_beam("beam-a")
+    input_store.bind_authority_hash(
+        "beam-a",
+        revision=current.revision,
+        authority_hash="different-engineering-hash",
+    )
+
+    assert current_authoritative_check_pack(state, "bending") is None
+    assert current_authoritative_family(state, "creep") is None
+
+
 def test_authoritative_pack_rejects_non_v2_sources() -> None:
     state = _state_with_pack()
     result = EngineeringResultStore(state).current()
