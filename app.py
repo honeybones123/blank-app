@@ -5168,7 +5168,7 @@ def _prepare_result_page_workspace(page_slug: str) -> None:
     # Restore the selected beam-owned source before either widget hydration or
     # calculation refresh.  This is one shared result-page boundary for every
     # engineering page; individual pages do not select or reinterpret actions.
-    from inputs_application.page_runtime import (
+    from inputs_application.page_runtime.setup import (
         project_committed_action_source_for_result_page,
     )
 

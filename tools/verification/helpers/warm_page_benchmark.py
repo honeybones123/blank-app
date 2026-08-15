@@ -53,14 +53,19 @@ def _wait_for_new_dispatch(
     output_root: Path,
     slug: str,
     previous_count: int,
-    timeout_s: float = 60.0,
-) -> None:
+    timeout_s: float = 2.0,
+) -> bool:
     deadline = time.perf_counter() + timeout_s
     while time.perf_counter() < deadline:
         if _dispatch_count(output_root, slug) > previous_count:
-            return
+            return True
         time.sleep(0.01)
-    raise RuntimeError(f"timed out waiting for a new {slug} dispatch")
+    # Warm navigation may be satisfied entirely by the page's scoped
+    # fragment, so no new app.page_dispatch.end event is required.  The caller
+    # separately waits for the destination heading and checks exceptions; keep
+    # this trace signal as evidence instead of treating its absence as a
+    # navigation failure.
+    return False
 
 
 def _summary(values: list[float]) -> dict[str, Any]:
@@ -163,7 +168,7 @@ def run(root: Path, *, port: int, cycles: int) -> dict[str, Any]:
                         page.get_by_role(
                             "heading", name=PAGE_TITLES[slug], exact=False
                         ).first.wait_for(state="visible", timeout=60_000)
-                        _wait_for_new_dispatch(output_root, slug, before)
+                        dispatch_seen = _wait_for_new_dispatch(output_root, slug, before)
                         page.evaluate(
                             "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
                         )
@@ -172,9 +177,13 @@ def run(root: Path, *, port: int, cycles: int) -> dict[str, Any]:
                             {
                                 "cycle": cycle,
                                 "page_open_ms": round(elapsed_ms, 3),
+                                "dispatch_trace_seen": dispatch_seen,
                                 "exception_count": page.locator(
                                     "[data-testid='stException']"
                                 ).count(),
+                                "exception_texts": page.locator(
+                                    "[data-testid='stException']"
+                                ).all_inner_texts(),
                             }
                         )
                 context.close()
