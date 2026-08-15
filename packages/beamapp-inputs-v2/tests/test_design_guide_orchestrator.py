@@ -1174,6 +1174,34 @@ def test_serviceability_repair_preserves_committed_two_row_gap_and_is_applyable(
     assert decision.proposed_result.families["serviceability"]["status"] == "PASS"
 
 
+def test_serviceability_apply_accepts_the_new_committed_revision() -> None:
+    """Apply validates content identity after the input revision advances."""
+
+    current = BeamInputs(
+        width_mm=300.0,
+        depth_mm=500.0,
+        span_mm=8000.0,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=24),
+        actions=ActionInputs(bending_moment_knm=100.0),
+        serviceability=ServiceabilityInputs(
+            moment_knm=500.0,
+            permanent_udl_knm_per_m=1.0,
+            equivalent_udl_knm_per_m=1.0,
+        ),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+    assert decision.family is DesignFamily.SERVICEABILITY_GOVERNS
+    assert decision.apply_allowed
+    assert decision.proposed_result is not None
+
+    outcome = DesignBrainService().apply_decision(current, decision)
+
+    assert outcome.applied
+    assert outcome.inputs.revision == current.revision + 1
+    assert outcome.inputs.content_hash == decision.proposed_result.source_hash
+
+
 def test_geometry_failure_returns_one_verified_atomic_repair() -> None:
     current = BeamInputs(
         width_mm=200.0,
