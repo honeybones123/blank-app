@@ -351,12 +351,17 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
         _ensure_compact_input_cards_open(page, page_slug)
         if aria_label:
             restored_controls = page.get_by_role("combobox", name=aria_label, exact=True)
-            try:
-                restored_controls.nth(label_occurrence).wait_for(
-                    state="visible", timeout=30_000
-                )
-            except Exception:
-                pass
+            deadline = time.monotonic() + 60.0
+            while time.monotonic() < deadline:
+                try:
+                    if restored_controls.count() > label_occurrence:
+                        restored_controls.nth(label_occurrence).wait_for(
+                            state="visible", timeout=2_000
+                        )
+                        break
+                except Exception:
+                    pass
+                page.wait_for_timeout(150)
             if label_occurrence >= restored_controls.count():
                 available_labels = page.get_by_role("combobox").evaluate_all(
                     "els => els.map(el => el.getAttribute('aria-label'))"
