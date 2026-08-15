@@ -31,3 +31,14 @@ def test_navigation_summary_audit_clicks_the_semantic_action_source_input() -> N
     assert "toggle.click(force=True)" in source
     assert "first.click(force=True)" in source
     assert 'locator("xpath=..").click' not in source
+
+
+def test_live_select_audit_ignores_hidden_react_aria_option_trees() -> None:
+    """The verifier must choose options from the active popup only."""
+
+    start = AUDIT_SOURCE.index("def _audit_selectboxes(")
+    end = AUDIT_SOURCE.index("\ndef _audit_number_inputs(", start)
+    select_audit = AUDIT_SOURCE[start:end]
+
+    assert "'[role=\"option\"]:visible'" in select_audit
+    assert 'page.get_by_role("option")' not in select_audit

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from typing import Any
 from urllib.parse import urlencode
@@ -279,7 +280,10 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
         label = str(aria_label or f"combobox[{index}]")
         original_value = str(control.input_value() or control.inner_text()).strip()
         control.click(force=True)
-        options = page.get_by_role("option")
+        # React Aria retains hidden option trees for previously opened
+        # selects. Audit only the currently visible popup so an identically
+        # named stale option cannot be addressed ahead of the live one.
+        options = page.locator('[role="option"]:visible')
         if options.count() < 2:
             page.keyboard.press("Escape")
             continue
@@ -307,7 +311,9 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
             page.keyboard.press("Escape")
             continue
         alternate = option_texts[alternate_index]
-        alternate_option = page.get_by_role("option", name=alternate, exact=True)
+        alternate_option = page.locator('[role="option"]:visible').filter(
+            has_text=re.compile(rf"^\s*{re.escape(alternate)}\s*$")
+        )
         if alternate_option.count() == 0:
             raise AssertionError(f"{label!r} lost alternate option {alternate!r}")
         alternate_option.first.click(force=True)
@@ -356,8 +362,8 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
                 if not candidate.is_visible() or not candidate.is_enabled():
                     continue
                 candidate.click(force=True)
-                candidate_original = page.get_by_role(
-                    "option", name=original, exact=True
+                candidate_original = page.locator('[role="option"]:visible').filter(
+                    has_text=re.compile(rf"^\s*{re.escape(original)}\s*$")
                 )
                 if candidate_original.count():
                     restored_control = candidate
@@ -371,7 +377,9 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
         if aria_label:
             page.keyboard.press("Escape")
             restored_control.click(force=True)
-        original_option = page.get_by_role("option", name=original, exact=True)
+        original_option = page.locator('[role="option"]:visible').filter(
+            has_text=re.compile(rf"^\s*{re.escape(original)}\s*$")
+        )
         try:
             original_option.first.wait_for(state="visible", timeout=10_000)
         except Exception:
@@ -385,7 +393,7 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
             except Exception:
                 pass
         if original_option.count() == 0:
-            available_options = page.get_by_role("option").evaluate_all(
+            available_options = page.locator('[role="option"]:visible').evaluate_all(
                 "els => els.map(el => (el.innerText || '').trim())"
             )
             raise AssertionError(
