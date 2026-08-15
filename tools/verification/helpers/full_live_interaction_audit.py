@@ -342,7 +342,10 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
         # compact-card widgets (Layout -> Bars/Spacing) a deterministic mount
         # boundary instead of addressing a subtree while Streamlit replaces
         # it.
-        page.reload(wait_until="domcontentloaded")
+        # A cold Render worker can take longer than Playwright's default
+        # navigation timeout while preserving the committed widget state.
+        # This is an audit wait only; it does not alter Runtime rerun logic.
+        page.reload(wait_until="domcontentloaded", timeout=90_000)
         _ready(page, page_slug)
         _assert_healthy(page, page_slug)
         _ensure_compact_input_cards_open(page, page_slug)
