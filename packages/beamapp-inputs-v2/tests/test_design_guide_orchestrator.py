@@ -567,7 +567,11 @@ def test_shear_overdesign_selects_nearest_minimum_reinforcement_compliant_cleanu
     assert decision.apply_allowed
     assert proposed_shear["min_shear_ok"] is True
     assert proposed_shear["spacing_ok"] is True
-    assert decision.candidate.proposal.shear_spacing_mm == 200.0
+    # The verified one-row arrangement now participates in both preview and
+    # post-Apply calculations.  With that exact effective depth, the nearest
+    # compliant cleanup retains the existing 175 mm spacing; increasing it to
+    # 200 mm is no longer the closest contract-ranked solution.
+    assert decision.candidate.proposal.shear_spacing_mm == 175.0
     assert decision.candidate.proposal.shear_spacing_mm != 600.0
 
 

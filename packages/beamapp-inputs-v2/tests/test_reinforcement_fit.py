@@ -2,13 +2,19 @@ from dataclasses import replace
 
 import pytest
 
-from inputs_v2.domain.beam_inputs import BeamInputs
+from inputs_v2.domain.beam_inputs import (
+    ActionInputs,
+    BeamInputs,
+    KvMethod,
+    ShearReinforcement,
+)
 from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement, practical_row_counts
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.presentation.view_models.input_diagram import build_input_diagram_view_model
 from inputs_v2.application.design_brain_apply import Candidate, apply_candidate, propose_neutral_candidate
 from inputs_v2.application.ranking_policy import CandidateEvidence
 from inputs_v2.application.design_brain.family_owners import RankingPolicy
+from inputs_v2.application.design_guide_orchestrator import DesignGuideOrchestrator
 
 def test_single_row_fit_and_effective_depth():
     result = evaluate_arrangement(BeamInputs(), (3,))
@@ -119,7 +125,7 @@ def test_apply_persists_exact_mixed_diameter_two_row_arrangement():
         for row in diagram.bottom_rows
     ) == ((20.0, 20.0, 20.0), (16.0, 16.0))
 
-def test_any_canonical_edit_invalidates_stale_arrangement():
+def test_any_canonical_edit_replaces_stale_arrangement_with_verified_fit():
     inputs = BeamInputs(depth_mm=500.0)
     arrangement = evaluate_arrangement(inputs, (3, 3)).arrangement
     stored = replace(inputs, bottom_arrangement=arrangement)
@@ -127,7 +133,44 @@ def test_any_canonical_edit_invalidates_stale_arrangement():
     proposal = replace(seed.proposal, bottom_bars=stored.bottom.bars + 1)
     changed = apply_candidate(stored, Candidate(seed.candidate_id, stored.revision, stored.content_hash, proposal, seed.rationale))
     assert changed.applied
-    assert changed.inputs.bottom_arrangement is None
+    assert changed.inputs.bottom_arrangement is not None
+    assert changed.inputs.bottom_arrangement is not arrangement
+    assert changed.inputs.bottom_arrangement.total_bar_count == stored.bottom.bars + 1
+
+
+def test_shear_candidate_preview_matches_fresh_post_apply_calculation():
+    current = BeamInputs(
+        width_mm=300.0,
+        depth_mm=400.0,
+        span_mm=2000.0,
+        bottom=replace(BeamInputs().bottom, bars=4, diameter_mm=16),
+        shear=ShearReinforcement(
+            diameter_mm=10,
+            legs=2,
+            spacing_mm=150.0,
+            kv_method=KvMethod.GENERAL,
+        ),
+        actions=ActionInputs(shear_force_kn=400.0),
+    ).validated()
+    initial_fit = evaluate_arrangement(current, (4,))
+    current = replace(current, bottom_arrangement=initial_fit.arrangement).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+
+    assert decision.apply_allowed is True
+    assert decision.candidate is not None
+    assert decision.proposed_result is not None
+    applied = apply_candidate(current, decision.candidate)
+    assert applied.applied is True
+    assert applied.inputs.bottom_arrangement is not None
+
+    fresh = EngineeringCalculator().calculate(applied.inputs)
+    preview_shear = decision.proposed_result.families["shear"]
+    fresh_shear = fresh.families["shear"]
+    assert preview_shear["kv_method"] == fresh_shear["kv_method"] == "general"
+    assert preview_shear["d_v"] == pytest.approx(fresh_shear["d_v"])
+    assert preview_shear["phi_Vu"] == pytest.approx(fresh_shear["phi_Vu"])
+    assert 400.0 / fresh_shear["phi_Vu"] <= 1.0
 
 def test_ranking_rejects_invalid_before_target_distance():
     invalid_near_target = CandidateEvidence("invalid", False, False, target_distance=0.01)

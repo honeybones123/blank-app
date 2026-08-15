@@ -97,6 +97,10 @@ DESIGN_SETTING_INPUT_KEYS: tuple[str, ...] = (
     "exposure_class",
     "ductility_class",
     "design_code",
+    # The selected AS 3600 shear k_v method changes both shear capacity and
+    # Design Brain candidate verification.  It must therefore be carried by
+    # the immutable engineering snapshot and participate in its cache key.
+    "k_v_method",
     # Crack-control method changes the authoritative calculation branch and
     # therefore must participate in the engineering identity/cache key.
     "crack_control_method",

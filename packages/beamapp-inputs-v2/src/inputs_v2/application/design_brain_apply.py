@@ -164,6 +164,18 @@ def apply_candidate(
         )
     if not fit.accepted:
         return ApplyOutcome(False, "reinforcement_fit_failed", current)
-    if candidate.row_counts:
-        updated = replace(updated, bottom_arrangement=fit.arrangement).validated()
+    # An unchanged neutral seed is a retained-design proof, not an edit.  Do
+    # not attach derived arrangement data or create any observable mutation
+    # when the typed input command resolved to the existing immutable input.
+    if updated is current:
+        return ApplyOutcome(True, "applied", current)
+    # The calculation that verifies a candidate and the calculation performed
+    # after Apply must use the same fitted reinforcement arrangement.  A
+    # one-row candidate used to discard ``fit.arrangement`` here, causing its
+    # preview to omit the link diameter from effective-depth geometry while
+    # the committed Runtime calculation restored it.  That could turn a
+    # verified shear repair into a post-Apply failure and require a second
+    # click.  Persist the exact accepted fit for every candidate, not only
+    # candidates carrying an explicit multi-row layout.
+    updated = replace(updated, bottom_arrangement=fit.arrangement).validated()
     return ApplyOutcome(True, "applied", updated)
