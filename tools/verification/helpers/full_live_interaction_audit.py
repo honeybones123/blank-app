@@ -89,7 +89,11 @@ def _ready(page: Page, page_slug: str) -> None:
         "heading", name=PAGE_HEADINGS[page_slug], exact=False
     ).last
     try:
-        heading.wait_for(state="visible", timeout=20_000)
+        # Render cold starts can expose the shared shell heading before the
+        # route fragment heading is mounted.  Give the authoritative page
+        # heading the same cold-start budget as the running indicator instead
+        # of treating that normal mount window as a false failure.
+        heading.wait_for(state="visible", timeout=60_000)
     except Exception as exc:
         headings = page.get_by_role("heading").all_inner_texts()
         exceptions = page.locator("[data-testid='stException']").all_inner_texts()
@@ -97,7 +101,7 @@ def _ready(page: Page, page_slug: str) -> None:
             f"expected heading {PAGE_HEADINGS[page_slug]!r}; "
             f"available={headings!r}; exceptions={exceptions!r}"
         ) from exc
-    _stable(page, timeout_ms=20_000)
+    _stable(page, timeout_ms=60_000)
     # Fragment children may mount just after the route heading and status
     # indicator settle.  A short quiet window makes the control inventory
     # deterministic without contributing to the page-speed measurement.
