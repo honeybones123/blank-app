@@ -882,7 +882,14 @@ class DesignBrainService:
         displayed = decision.proposed_result
         if recalculated is None or displayed is None:
             return ApplyOutcome(False, "proposed_result_unavailable", current)
-        if recalculated.source_hash != displayed.source_hash or recalculated.source_revision != displayed.source_revision:
+        # Applying a candidate creates the next committed input revision.  The
+        # displayed proposal was evaluated against the source revision, while
+        # the post-Apply calculation is intentionally tagged with that new
+        # committed revision.  Revision equality here therefore rejects every
+        # valid Apply (most visibly serviceability repairs).  The candidate's
+        # source revision/hash was already checked before mutation; after the
+        # mutation, engineering-content identity is the immutable hash.
+        if recalculated.source_hash != displayed.source_hash:
             return ApplyOutcome(False, "displayed_proposal_mismatch", current)
         if not _complete_compliance(recalculated):
             return ApplyOutcome(False, "proposal_no_longer_compliant", current)
