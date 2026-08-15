@@ -284,6 +284,14 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
         # selects. Audit only the currently visible popup so an identically
         # named stale option cannot be addressed ahead of the live one.
         options = page.locator('[role="option"]:visible')
+        # Render can take a few frames to replace the compact widget popup.
+        # Reading the first transient option tree makes a valid select look
+        # like it lost an option (notably Bars=2) and can also shift the
+        # restore walk. Wait for the visible popup to settle before deciding
+        # that the control is single-valued or malformed.
+        deadline = time.monotonic() + 10.0
+        while options.count() < 2 and time.monotonic() < deadline:
+            page.wait_for_timeout(150)
         if options.count() < 2:
             page.keyboard.press("Escape")
             continue
