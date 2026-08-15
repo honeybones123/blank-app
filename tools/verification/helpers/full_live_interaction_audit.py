@@ -187,16 +187,18 @@ def _audit_switches(page: Page, page_slug: str, evidence: list[dict[str, Any]]) 
         if not control.is_enabled() or not control.is_visible():
             continue
         original = control.is_checked()
-        # Streamlit replaces the switch subtree as the fragment commits. A
-        # semantic forced click mirrors the user's single click without
-        # Playwright retrying against the superseded node for 30 seconds.
-        control.locator("xpath=..").click(force=True, timeout=5_000)
+        # Click the semantic checkbox itself. Current Streamlit renders a
+        # decorative parent around the input; clicking that parent can leave
+        # the browser glyph changed without dispatching the widget value to
+        # the server. The input click is the same state transition a keyboard
+        # or label activation ultimately performs.
+        control.click(force=True, timeout=5_000)
         _wait_checked(page, label, not original)
         _stable(page)
         _assert_healthy(page, page_slug)
         restored_control = page.get_by_label(label, exact=True).first
         if restored_control.is_checked() != original:
-            restored_control.locator("xpath=..").click(force=True, timeout=5_000)
+            restored_control.click(force=True, timeout=5_000)
         _wait_checked(page, label, original)
         _stable(page)
         _assert_healthy(page, page_slug)
