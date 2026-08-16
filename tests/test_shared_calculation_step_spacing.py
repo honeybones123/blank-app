@@ -23,7 +23,7 @@ def test_shared_calculation_stacks_use_one_compact_gap_contract(monkeypatch) -> 
     assert "gap: 0 !important" in css
     assert "margin-bottom: 0 !important" in css
     assert "margin-top: 0 !important" in css
-    assert "min-height: 42px !important" in css
+    assert "min-height: 58px !important" in css
     assert "font-size: 14px !important" in css
 
 
