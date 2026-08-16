@@ -2578,12 +2578,28 @@ def clickable_calcbox(
         details_html: Markdown/HTML for expanded details (with LaTeX)
         height: Expanded height in pixels (default 520)
     """
-    # Determine colors based on status
-    if status == "pass":
+    # Use the same finite status contract as ``calcbox``. Result builders
+    # commonly provide uppercase labels (PASS/FAIL) or boolean checks; those
+    # must not silently fall back to the neutral blue tone.
+    if isinstance(status, bool):
+        normalized_status = "pass" if status else "fail"
+    elif isinstance(status, str):
+        normalized_text = status.strip().lower()
+        if normalized_text in ("pass", "ok", "✅", "true"):
+            normalized_status = "pass"
+        elif normalized_text in ("fail", "check", "ng", "❌", "false"):
+            normalized_status = "fail"
+        else:
+            normalized_status = None
+    else:
+        normalized_status = None
+
+    # Determine colors based on the normalized status.
+    if normalized_status == "pass":
         border_color = "#28a745"
         bg_color = "rgba(40, 167, 69, 0.1)"
         css_class = "calcbox-pass"
-    elif status == "fail":
+    elif normalized_status == "fail":
         border_color = "#dc3545"
         bg_color = "rgba(220, 53, 69, 0.1)"
         css_class = "calcbox-fail"
