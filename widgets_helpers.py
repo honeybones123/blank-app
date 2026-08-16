@@ -1585,12 +1585,11 @@ def step_expander_calcbox(
             unsafe_allow_html=True,
         )
 
-        if content_before:
-            content_before()
-
         if diagram_fn:
             col_calc, col_fig = st.columns([2.0, 1.0], gap="large")
             with col_calc:
+                if content_before:
+                    content_before()
                 calcbox(
                     details_md,
                     status=status,
@@ -1602,6 +1601,8 @@ def step_expander_calcbox(
                 with plot:
                     diagram_fn()
         else:
+            if content_before:
+                content_before()
             calcbox(
                 details_md,
                 status=status,
