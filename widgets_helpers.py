@@ -1317,9 +1317,12 @@ div[data-testid="stVerticalBlock"]:has(
 /* Make expander header look like your calcbox summary */
 div[data-testid="stExpander"] details summary {
   border-left: 4px solid #1f77b4 !important;
+  border-top: 1px solid rgba(49,51,63,0.15) !important;
+  border-right: 1px solid rgba(49,51,63,0.15) !important;
+  border-bottom: 1px solid rgba(49,51,63,0.15) !important;
   background: rgba(31,119,180,0.08) !important;
-  margin: 0 !important;
-  padding: 0.40rem 0.50rem !important;
+  margin: 0.15rem 0 !important;
+  padding: 0.65rem 0.85rem !important;
   min-height: 58px !important;
   box-sizing: border-box !important;
   display: flex !important;
@@ -1327,7 +1330,8 @@ div[data-testid="stExpander"] details summary {
   font-family: inherit !important;
   font-size: 14px !important;
   line-height: 1.35 !important;
-  border-radius: 0 6px 6px 0 !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
   color: #222 !important;
   cursor: pointer !important;
   list-style: none !important;
