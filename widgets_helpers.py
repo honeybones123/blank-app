@@ -1066,6 +1066,10 @@ h2, h3, h4 {
     margin-top: 0.25rem !important;
     margin-bottom: 0.85rem !important;
 }
+h2:not(#design-guide), h3, h4 {
+    font-size: 1.15rem !important;
+    line-height: 1.35 !important;
+}
 
 /* Tighten expanders */
 .streamlit-expanderHeader {
@@ -1075,7 +1079,7 @@ h2, h3, h4 {
 
 /* Clean section titles */
 .section-title {
-    font-size: var(--sb-heading-size) !important;
+    font-size: 1.15rem !important;
     font-weight: 600;
     line-height: 1.35 !important;
     margin: 0.25rem 0 0.85rem !important;

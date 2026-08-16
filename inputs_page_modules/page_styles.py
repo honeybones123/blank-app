@@ -143,7 +143,7 @@ def apply_inputs_page_css():
         .stApp .stMarkdown h2 {
             color: #182230 !important;
             font-family: inherit !important;
-            font-size: 1.05rem !important;
+            font-size: 1.15rem !important;
             font-weight: 700 !important;
             line-height: 1.35 !important;
             border-bottom: 1px solid #dce3ec !important;
@@ -153,7 +153,7 @@ def apply_inputs_page_css():
         .stApp .stMarkdown h3 {
             color: #182230 !important;
             font-family: inherit !important;
-            font-size: 1.1rem !important;
+            font-size: 1.15rem !important;
             font-weight: 700 !important;
             line-height: 1.35 !important;
             margin: 0.25rem 0 0.85rem !important;
@@ -161,7 +161,7 @@ def apply_inputs_page_css():
         /* V2 renders Design Guide as an overview subheader. Batch design uses
            the normal underlined section-heading treatment in Runtime. */
         .stApp .stMarkdown h2#design-guide {
-            font-size: 1.1rem !important;
+            font-size: 1.15rem !important;
             border-bottom: 0 !important;
             padding-bottom: 0 !important;
         }
