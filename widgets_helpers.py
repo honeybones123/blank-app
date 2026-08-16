@@ -1249,7 +1249,12 @@ div[data-testid="stExpander"] + div[data-testid="stExpander"] {
 
 
 def apply_step_summary_expander_css():
-    """Apply CSS to make expander header look like calcbox in summary mode."""
+    """Apply the shared compact calculation-card presentation contract.
+
+    This is presentation-only: it must not alter card titles, INFO content,
+    equations, calculation order, or the state keys that own open/closed
+    cards.  Bending uses this same contract as the compact slab-style cards.
+    """
     session_state = getattr(st, "session_state", None)
     if session_state is not None:
         rendered_styles = session_state.setdefault("_rendered_style_keys", set())
@@ -1297,7 +1302,7 @@ div[data-testid="stVerticalBlock"]:has(
 ) > div[data-testid="stLayoutWrapper"]:has(
   > div[data-testid="stExpander"]
 ) {
-  margin-bottom: 2.3rem !important;
+  margin-bottom: 0.8rem !important;
 }
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
@@ -1314,11 +1319,16 @@ div[data-testid="stExpander"] details summary {
   border-left: 4px solid #1f77b4 !important;
   background: rgba(31,119,180,0.08) !important;
   margin: 0 !important;
-  padding: 0.03rem 0.40rem !important;
+  padding: 0.38rem 0.65rem !important;
   border-radius: 0 6px 6px 0 !important;
   color: #222 !important;
   cursor: pointer !important;
   list-style: none !important;
+}
+div[data-testid="stExpander"] details summary,
+div[data-testid="stExpander"] details summary p {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
 }
 div[data-testid="stExpander"] details > div { padding-top: 0.02rem !important; }
 
