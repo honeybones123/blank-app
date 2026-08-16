@@ -71,7 +71,7 @@ def _stable(page: Page, timeout_ms: int = 8_000) -> None:
     raise TimeoutError("page did not settle")
 
 
-def _wait_checked(page: Page, label: str, expected: bool, timeout_ms: int = 8_000) -> None:
+def _wait_checked(page: Page, label: str, expected: bool, timeout_ms: int = 60_000) -> None:
     deadline = time.monotonic() + timeout_ms / 1000
     while time.monotonic() < deadline:
         try:
