@@ -10,11 +10,11 @@ def _inject_calcbox_css():
 <style>
 .calcbox-wrapper {
   margin-top: 0.5rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--sb-card-gap, 0.55rem);
 }
 .calcbox-inner {
-  padding: 0.75rem 1.0rem;
-  border-radius: 0.35rem;
+  padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem);
+  border-radius: var(--sb-card-radius, 8px);
   border-left: 4px solid #1f77b4;
   background-color: rgba(31, 119, 180, 0.06);
   font-size: 0.9rem;
