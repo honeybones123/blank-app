@@ -1316,10 +1316,8 @@ div[data-testid="stVerticalBlock"]:has(
 
 /* Make expander header look like your calcbox summary */
 div[data-testid="stExpander"] details summary {
+  border: none !important;
   border-left: 4px solid #1f77b4 !important;
-  border-top: 1px solid rgba(49,51,63,0.15) !important;
-  border-right: 1px solid rgba(49,51,63,0.15) !important;
-  border-bottom: 1px solid rgba(49,51,63,0.15) !important;
   background: rgba(31,119,180,0.08) !important;
   margin: 0.15rem 0 !important;
   padding: 0.45rem 0.65rem !important;
