@@ -39,8 +39,9 @@ def _inject_styles(st_module: Any) -> None:
 <style>
 .compact-check-inputs-heading {
   color: #10234a;
-  /* Match the Slab page's shared h2 treatment. */
-  font-size: 1.6rem;
+  /* Lower-level section labels share one hierarchy; the page H1 remains
+     larger and is intentionally unaffected by this rule. */
+  font-size: 1rem;
   font-weight: 700;
   line-height: 1.35;
   margin: 0.25rem 0 0.85rem;
