@@ -1049,7 +1049,8 @@ def apply_result_page_css():
 :root {
     --sb-heading-size: 1.45rem;
     --sb-body-size: 0.92rem;
-    --sb-card-gap: 0.55rem;
+    /* One vertical rhythm for input summaries and calculation cards. */
+    --sb-card-gap: 1.25rem;
     --sb-card-radius: 8px;
     --sb-card-padding-y: 0.72rem;
     --sb-card-padding-x: 1rem;
@@ -1164,7 +1165,7 @@ hr {
 .calc-details,
 .step-card {
     border-radius: var(--sb-card-radius) !important;
-    margin: 0.18rem 0 var(--sb-card-gap) !important;
+    margin: 0 0 var(--sb-card-gap) !important;
     box-sizing: border-box;
     font-size: var(--sb-body-size) !important;
     line-height: 1.35 !important;
@@ -1222,7 +1223,7 @@ blockquote {
   border-left: 4px solid #1f77b4 !important;
   background-color: rgba(31, 119, 180, 0.08) !important;
   padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
-  margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+  margin: 0 0 var(--sb-card-gap, 1.25rem) !important;
   border-radius: 0 var(--sb-card-radius, 8px) var(--sb-card-radius, 8px) 0 !important;
   color: #1a1a1a !important;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -1233,7 +1234,7 @@ blockquote p, blockquote * { color: #1a1a1a !important; }
 
 /* Seamless calc system styles */
 .calc-details {
-  margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+  margin: 0 0 var(--sb-card-gap, 1.25rem) !important;
   border-radius: var(--sb-card-radius, 8px) !important;
   box-sizing: border-box;
   font-size: 0.92rem !important;
@@ -1397,7 +1398,7 @@ div[data-testid="stExpander"] details summary {
   border: none !important;
   border-left: 4px solid #1f77b4 !important;
   background: rgba(31,119,180,0.08) !important;
-  margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+  margin: 0 0 var(--sb-card-gap, 1.25rem) !important;
   padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
   min-height: 59px !important;
   box-sizing: border-box !important;
@@ -1715,7 +1716,7 @@ div[data-testid="stButton"] > button.step-summary-card {
   border-left: 4px solid #1f77b4;
   background: rgba(31,119,180,0.08);
   padding: 0.72rem 1rem !important;
-  margin: 0.18rem 0 0.55rem 0 !important;
+  margin: 0 0 var(--sb-card-gap, 1.25rem) !important;
   border-radius: 8px !important;
   box-sizing: border-box;
   color: #1a1a1a;
@@ -2736,7 +2737,7 @@ def clickable_calcbox(
         /* Keep legacy clickable calcboxes on the same geometry contract as
            the shared step-card renderer used by bending and slab. */
         padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
-        margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+        margin: 0 0 var(--sb-card-gap, 1.25rem) !important;
         border-radius: var(--sb-card-radius, 8px) !important;
         color: #222 !important;
     }}

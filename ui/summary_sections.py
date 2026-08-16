@@ -154,7 +154,7 @@ def _summary_icon_svg(kind: str) -> str:
 def summary_card_css() -> str:
     return """
 <style>
-.summary-card-stack { display: grid; gap: 0.55rem; margin: 0.18rem 0 1rem; contain: layout paint; }
+.summary-card-stack { display: grid; gap: var(--sb-card-gap, 1.25rem); margin: 0 0 1rem; contain: layout paint; }
 .summary-card-stack,
 .summary-card-stack * { font-family: inherit; }
 .summary-check-card {
