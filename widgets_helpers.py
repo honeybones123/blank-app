@@ -1221,9 +1221,9 @@ def apply_calcbox_css():
 blockquote {
   border-left: 4px solid #1f77b4 !important;
   background-color: rgba(31, 119, 180, 0.08) !important;
-  padding: 0.75rem 1rem !important;
-  margin: 0.5rem 0 0.75rem 0 !important;
-  border-radius: 0 6px 6px 0 !important;
+  padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
+  margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+  border-radius: 0 var(--sb-card-radius, 8px) var(--sb-card-radius, 8px) 0 !important;
   color: #1a1a1a !important;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
@@ -1233,8 +1233,8 @@ blockquote p, blockquote * { color: #1a1a1a !important; }
 
 /* Seamless calc system styles */
 .calc-details {
-  margin: 0.18rem 0 0.55rem 0 !important;
-  border-radius: 8px !important;
+  margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+  border-radius: var(--sb-card-radius, 8px) !important;
   box-sizing: border-box;
   font-size: 0.92rem !important;
   line-height: 1.35 !important;
@@ -1243,11 +1243,11 @@ blockquote p, blockquote * { color: #1a1a1a !important; }
 .calc-details summary {
   cursor: pointer;
   min-height: 0 !important;
-  padding: 0.72rem 1rem !important;
+  padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
   font-weight: 600;
   border-left: 4px solid #1f77b4;
   background-color: rgba(31, 119, 180, 0.08);
-  border-radius: 8px !important;
+  border-radius: var(--sb-card-radius, 8px) !important;
   font-size: 0.92rem !important;
   line-height: 1.35 !important;
 }
