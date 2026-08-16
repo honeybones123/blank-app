@@ -30,7 +30,6 @@ from state_and_helpers import (
     render_timing_mark,
 )
 from widgets_helpers import (
-    apply_global_widget_css,
     apply_result_page_css,
     apply_calcbox_css,
     render_result_page_title,
@@ -1409,7 +1408,6 @@ def render_sfd_bmd_page():
     from jump_nav import get_jump_uid
     get_jump_uid()
 
-    apply_global_widget_css()
     apply_result_page_css()
     apply_calcbox_css()
 
