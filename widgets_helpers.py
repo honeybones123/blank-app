@@ -1070,6 +1070,12 @@ h2:not(#design-guide), h3, h4 {
     font-size: 1.15rem !important;
     line-height: 1.35 !important;
 }
+h1 {
+    /* Slab reference uses a 44px page heading; use px here because the
+       Runtime shell deliberately sets the browser root to 14px. */
+    font-size: 44px !important;
+    line-height: 1.14 !important;
+}
 
 /* Tighten expanders */
 .streamlit-expanderHeader {
@@ -1079,7 +1085,7 @@ h2:not(#design-guide), h3, h4 {
 
 /* Clean section titles */
 .section-title {
-    font-size: 1.15rem !important;
+    font-size: 16px !important;
     font-weight: 600;
     line-height: 1.35 !important;
     margin: 0.25rem 0 0.85rem !important;

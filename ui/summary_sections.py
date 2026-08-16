@@ -244,7 +244,7 @@ def summary_card_css() -> str:
   overflow-x: auto;
 }
 .summary-detail-title { font-weight: 800; color: #0f172a; margin: 0 0 0.65rem; }
-.summary-detail-table { width: 100%; border-collapse: collapse; min-width: 760px; font-size: 0.95rem; }
+.summary-detail-table { width: 100%; border-collapse: collapse; min-width: 760px; font-size: 1rem; }
 .summary-detail-table th {
   background: rgba(248,250,252,0.96);
   color: #334155;
