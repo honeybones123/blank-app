@@ -21,7 +21,7 @@ def test_shared_calculation_stacks_use_one_compact_gap_contract(monkeypatch) -> 
     css = "\n".join(capture.values)
     assert "[data-calc-uid]" in css
     assert "gap: 0 !important" in css
-    assert "margin-bottom: 2.3rem !important" in css
+    assert "margin-bottom: 0 !important" in css
     assert "margin-top: 0 !important" in css
 
 

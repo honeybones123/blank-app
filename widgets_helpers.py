@@ -1302,7 +1302,7 @@ div[data-testid="stVerticalBlock"]:has(
 ) > div[data-testid="stLayoutWrapper"]:has(
   > div[data-testid="stExpander"]
 ) {
-  margin-bottom: 0.8rem !important;
+  margin-bottom: 0 !important;
 }
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
@@ -1319,16 +1319,11 @@ div[data-testid="stExpander"] details summary {
   border-left: 4px solid #1f77b4 !important;
   background: rgba(31,119,180,0.08) !important;
   margin: 0 !important;
-  padding: 0.38rem 0.65rem !important;
+  padding: 0.03rem 0.40rem !important;
   border-radius: 0 6px 6px 0 !important;
   color: #222 !important;
   cursor: pointer !important;
   list-style: none !important;
-}
-div[data-testid="stExpander"] details summary,
-div[data-testid="stExpander"] details summary p {
-  font-size: 13px !important;
-  line-height: 1.35 !important;
 }
 div[data-testid="stExpander"] details > div { padding-top: 0.02rem !important; }
 
