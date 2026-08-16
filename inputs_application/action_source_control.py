@@ -121,9 +121,21 @@ def seed_action_source_toggle(
     state: MutableMapping[str, Any],
     widget_key: str,
 ) -> bool:
-    """Project the canonical source into one not-yet-rendered widget key."""
+    """Project the canonical source into every page widget projection.
+
+    Navigation can leave the other page's widget key in session state.  Seeding
+    only the currently rendered key lets that stale mirror win during the next
+    Streamlit widget reconciliation, which is visible as a toggle that will
+    not settle after a cold route change.  The canonical action source remains
+    the only authority; all widget keys are refreshed from it before either
+    page renders.
+    """
 
     selected = uses_load_analysis_actions(state)
+    for mirror_key in _ACTION_SOURCE_WIDGET_KEYS:
+        state[mirror_key] = selected
+    # Keep the explicit key in the contract even if a future page uses a new
+    # projection not listed in the compatibility tuple above.
     state[widget_key] = selected
     return selected
 
