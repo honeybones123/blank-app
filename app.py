@@ -5684,6 +5684,9 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
   box-shadow: none !important;
   cursor: pointer !important;
   font-weight: 500 !important;
+  font-family: inherit !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
 }
 
 /* remove the radio circle/control (robust across Streamlit builds) */
