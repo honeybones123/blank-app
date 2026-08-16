@@ -1,7 +1,7 @@
 # shear_steps.py
 import streamlit as st
 from shear_core import ShearResults
-from widgets_helpers import calcbox
+from widgets_helpers import step_expander_calcbox
 
 
 def _inject_calcbox_css():
@@ -49,7 +49,7 @@ def render_step_1(results: ShearResults, T_star: float, phi: float):
         f"$0.25 φ T_{{cr}} = {results.torsion_required_limit:,.1f}\\ \\text{{kNm}}$  \n\n"
         f"**Conclusion:** torsion design is **{step1_text}**.\n"
     )
-    calcbox(md, status=torsion_status, uid="shear_step1_torsion")
+    step_expander_calcbox(uid="shear_step1_torsion", summary_line="Step 1 — Does torsion crack the section? (AS 3600 Cl. 8.3.4)", details_md=md, status=torsion_status)
 
 
 # ---------------- Step 2 – equivalent shear ----------------
@@ -63,7 +63,7 @@ def render_step_2(results: ShearResults, V_star: float):
         f"- $V_{{eq}}^* = {results.V_eq:.1f}\\ \\text{{kN}}$  \n\n"
         "This $V_{eq}^*$ is used for the sectional shear and web-crushing checks.\n"
     )
-    calcbox(md)
+    step_expander_calcbox(uid="shear_step2_equivalent_shear", summary_line="Step 2 — Convert torsion into an equivalent shear (AS 3600 Cl. 8.2.3)", details_md=md)
 
 
 # ---------------- Step 3 – shear-resisting section ---------
@@ -85,7 +85,7 @@ def render_step_3(results: ShearResults, b: float, D: float, d: float, b_v: floa
         f"- $A_{{sv}} = {results.Asv:,.1f}\\ \\text{{mm}}^2$  \n\n"
         "These values define the concrete “shear zone” used in the MCFT shear model.\n"
     )
-    calcbox(md)
+    step_expander_calcbox(uid="shear_step3_resisting_section", summary_line="Step 3 — Determine shear-resisting section and ligs (AS 3600 Cl. 8.2.2)", details_md=md)
 
 
 # ---------------- Step 4 – longitudinal strain -------------
@@ -97,7 +97,7 @@ def render_step_4(results: ShearResults):
         f"- Resulting strain: $\\varepsilon_x = {results.eps_x:.5f}$  \n\n"
         "This strain is then used to determine $k_v$ and $\\theta_v$ for shear.\n"
     )
-    calcbox(md)
+    step_expander_calcbox(uid="shear_step4_longitudinal_strain", summary_line="Step 4 — Calculate longitudinal strain for MCFT (AS 3600 Cl. 8.2.4.2.3)", details_md=md)
 
 
 # ---------------- Step 5 – MCFT parameters -----------------
@@ -120,7 +120,7 @@ def render_step_5(results: ShearResults):
         "$\\theta_v$ defines the angle of the concrete compression struts "
         "used in both the shear model and strut-and-tie visualisation.\n"
     )
-    calcbox(md)
+    step_expander_calcbox(uid="shear_step5_mcft_parameters", summary_line="Step 5 — Compression field parameters (MCFT) (AS 3600 Cl. 8.2.4)", details_md=md)
 
 
 # ---------------- Step 6 – sectional shear -----------------
@@ -142,7 +142,7 @@ def render_step_6(results: ShearResults, V_eq: float):
         f"- $V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$  \n\n"
         f"**Sectional shear check:** {status}.\n"
     )
-    calcbox(md, status=shear_status, uid="shear_step6_capacity")
+    step_expander_calcbox(uid="shear_step6_capacity", summary_line="Step 6 — Calculate concrete and steel shear strength (AS 3600 Cl. 8.2.3 & 8.2.4)", details_md=md, status=shear_status)
 
 
 # ---------------- Step 7 – web crushing --------------------
@@ -159,4 +159,4 @@ def render_step_7(results: ShearResults):
         f"- RHS $= {results.RHS:,.1f}$  \n\n"
         f"**Web-crushing check:** {status}.\n"
     )
-    calcbox(md, status=web_status, uid="shear_step7_web_crushing")
+    step_expander_calcbox(uid="shear_step7_web_crushing", summary_line="Step 7 — Check web-crushing strength (AS 3600 Cl. 8.2.6)", details_md=md, status=web_status)
