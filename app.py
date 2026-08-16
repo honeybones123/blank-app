@@ -123,8 +123,8 @@ def _apply_sharp_embed_css() -> None:
   }
 
   .stApp h1 {
-    font-size: 2rem !important;
-    line-height: 1.15 !important;
+    font-size: 2.75rem !important;
+    line-height: 1.14 !important;
   }
 
   .stApp h2 {
@@ -5676,7 +5676,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]{
 /* tab label */
 div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label{
   margin:0 !important;
-  padding: 6px 2px !important;
+  padding: 8.8px 2px 11.2px !important;
   background: transparent !important;
   border: none !important;
   border-bottom: 2px solid transparent !important;
@@ -5685,8 +5685,8 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
   cursor: pointer !important;
   font-weight: 500 !important;
   font-family: inherit !important;
-  font-size: 14px !important;
-  line-height: 1.4 !important;
+  font-size: 16px !important;
+  line-height: 1.6 !important;
 }
 
 /* remove the radio circle/control (robust across Streamlit builds) */
