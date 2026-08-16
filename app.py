@@ -105,9 +105,12 @@ def _apply_sharp_embed_css() -> None:
   }
 
   .stApp [data-testid="stMainBlockContainer"],
-  .stApp .block-container {
+  .stApp .block-container,
+  .stApp [data-testid="stAppViewContainer"] .main .block-container {
     width: calc(100% - 2rem) !important;
     max-width: 1180px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
     padding-top: 2rem !important;
     padding-right: 2.25rem !important;
     padding-left: 2.25rem !important;
@@ -116,7 +119,8 @@ def _apply_sharp_embed_css() -> None:
 
   @media (max-width: 1100px) {
     .stApp [data-testid="stMainBlockContainer"],
-    .stApp .block-container {
+    .stApp .block-container,
+    .stApp [data-testid="stAppViewContainer"] .main .block-container {
       padding-right: 1.5rem !important;
       padding-left: 1.5rem !important;
     }
