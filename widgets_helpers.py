@@ -2536,8 +2536,8 @@ def calcbox(
 div.element-container:has(span[class^="calcbox-tone-"]) blockquote {{
   border-left: 4px solid #1f77b4 !important;
   background-color: rgba(31, 119, 180, 0.08) !important;
-  padding: 0.75rem 1rem !important;
-  border-radius: 10px !important;
+  padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
+  border-radius: var(--sb-card-radius, 8px) !important;
 }}
 div.element-container:has(span.calcbox-tone-pass) blockquote {{
   border-left-color: #28a745 !important;
