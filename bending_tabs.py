@@ -20,13 +20,17 @@ from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jump
 
 @contextmanager
 def _bending_check_info_row(help_text: str):
-    """Render ULS check info controls with the same layout used by Check 1.6."""
-    col_info_title, col_info_button = st.columns([0.9, 0.1])
-    with col_info_title:
-        st.markdown("**Info:**")
-    with col_info_button:
-        with info_i_button(help_text=help_text):
-            yield
+    """Render INFO above the calculation column, not the companion diagram."""
+    # The expanded card below uses a 2:1 calculation/diagram split.  Keep the
+    # INFO row on that same grid so its trigger remains above the calc box.
+    calc_col, _diagram_col = st.columns([2.0, 1.0], gap="large")
+    with calc_col:
+        col_info_title, col_info_button = st.columns([0.9, 0.1])
+        with col_info_title:
+            st.markdown("**Info:**")
+        with col_info_button:
+            with info_i_button(help_text=help_text):
+                yield
 
 
 # ============================================================
