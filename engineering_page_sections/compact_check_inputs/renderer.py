@@ -51,13 +51,13 @@ def _inject_styles(st_module: Any) -> None:
   border: 1px solid #D4DAE1 !important;
   border-radius: 8px !important;
   overflow: hidden !important;
-  background: #E9EDF1 !important;
+  background: #F3F5F7 !important;
 }
 [class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] summary {
   min-height: 58px !important;
   box-sizing: border-box !important;
   padding: 0.45rem 0.65rem !important;
-  background: #E9EDF1 !important;
+  background: #F3F5F7 !important;
   border: 0 !important;
   color: #10234A !important;
   font-size: 16px !important;
@@ -67,6 +67,11 @@ def _inject_styles(st_module: Any) -> None:
   color: #10234a;
   font-size: 16px !important;
   line-height: 1.6 !important;
+}
+[class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] summary p::first-letter {
+  color: #10234A !important;
+  font-size: 1.45em !important;
+  line-height: 1 !important;
 }
 /* Every shared input card uses the same two-column widget rhythm.  Existing
    widget rows remain intact; this only arranges those rows into pairs. */
