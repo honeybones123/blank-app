@@ -31,6 +31,13 @@ def _render_card_styles() -> None:
     st.markdown(
         """
 <style>
+/* Start uses the full shared application shell; do not apply a narrower
+   page-specific max-width. */
+div[data-testid="stMainBlockContainer"]:has(#start-page-shell-anchor),
+.stApp .block-container:has(#start-page-shell-anchor) {
+  width: calc(100% - 2rem) !important;
+  max-width: none !important;
+}
 .start-page-intro { margin: .15rem 0 1rem; }
 .start-page-intro p { margin: .3rem 0 0; color:#475569; font-size:.95rem; line-height:1.5; }
 div[data-testid="stHorizontalBlock"]:has(.st-key-start_beam_inputs_card) { align-items:stretch !important; gap:1rem !important; }
@@ -189,6 +196,7 @@ def render_start_page(
 ) -> None:
     """Render initial navigation without owning calculations."""
     _render_card_styles()
+    st.markdown('<div id="start-page-shell-anchor" style="height:0;line-height:0;font-size:0;margin:0;padding:0;"></div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="start-page-intro"><p>Choose whether to define the beam directly or calculate its design actions from applied loads.</p></div>',
         unsafe_allow_html=True,
