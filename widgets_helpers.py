@@ -1205,21 +1205,30 @@ blockquote p, blockquote * { color: #1a1a1a !important; }
 
 /* Seamless calc system styles */
 .calc-details {
-  margin: 1rem 0;
+  margin: 0.18rem 0 0.55rem 0 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box;
+  font-size: 0.92rem !important;
+  line-height: 1.35 !important;
 }
 
 .calc-details summary {
   cursor: pointer;
-  padding: 0.5rem;
+  min-height: 0 !important;
+  padding: 0.72rem 1rem !important;
   font-weight: 600;
   border-left: 4px solid #1f77b4;
   background-color: rgba(31, 119, 180, 0.08);
-  border-radius: 0 4px 4px 0;
+  border-radius: 8px !important;
+  font-size: 0.92rem !important;
+  line-height: 1.35 !important;
 }
 
 .calc-body {
-  margin-top: 0.5rem;
-  padding-left: 1rem;
+  margin-top: 0.35rem !important;
+  padding: 0 1rem 0.35rem !important;
+  font-size: 0.92rem !important;
+  line-height: 1.35 !important;
 }
 
 .calc-inner {
@@ -1677,10 +1686,13 @@ div[data-testid="stButton"] > button.step-summary-card {
 .step-card {
   border-left: 4px solid #1f77b4;
   background: rgba(31,119,180,0.08);
-  padding: 0.55rem 0.8rem;
-  margin: 0.12rem 0 0.28rem 0;
-  border-radius: 0 6px 6px 0;
+  padding: 0.72rem 1rem !important;
+  margin: 0.18rem 0 0.55rem 0 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box;
   color: #1a1a1a;
+  font-size: 0.92rem !important;
+  line-height: 1.35 !important;
 }
 
 .step-card.pass { border-left-color: #28a745; background: rgba(40,167,69,0.10); }
