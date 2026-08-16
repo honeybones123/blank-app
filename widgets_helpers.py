@@ -1319,8 +1319,8 @@ div[data-testid="stExpander"] details summary {
   border-left: 4px solid #1f77b4 !important;
   background: rgba(31,119,180,0.08) !important;
   margin: 0 !important;
-  padding: 0.03rem 0.40rem !important;
-  min-height: 32px !important;
+  padding: 0.40rem 0.50rem !important;
+  min-height: 42px !important;
   box-sizing: border-box !important;
   display: flex !important;
   align-items: center !important;
