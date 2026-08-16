@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import json
 from pathlib import Path
 import time
@@ -30,7 +31,10 @@ def _parse_http_date(value: str | None) -> datetime | None:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
     except ValueError:
-        return None
+        try:
+            return parsedate_to_datetime(value).astimezone(timezone.utc)
+        except (TypeError, ValueError, IndexError):
+            return None
 
 
 def check_response(
