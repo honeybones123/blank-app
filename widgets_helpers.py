@@ -1076,7 +1076,9 @@ h2, h3, h4 {
     margin-bottom: 0.85rem !important;
 }
 h2:not(#design-guide), h3, h4 {
-    font-size: 1.15rem !important;
+    /* Ten percent emphasis increase for lower-level headings.  The shell H1
+       and navigation tab labels are styled separately and remain unchanged. */
+    font-size: 1.265rem !important;
     line-height: 1.35 !important;
 }
 h1 {
@@ -1094,7 +1096,7 @@ h1 {
 
 /* Clean section titles */
 .section-title {
-    font-size: 16px !important;
+    font-size: 17.6px !important;
     font-weight: 600;
     line-height: 1.35 !important;
     margin: 0.25rem 0 0.85rem !important;

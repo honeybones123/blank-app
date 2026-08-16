@@ -41,7 +41,7 @@ def _inject_styles(st_module: Any) -> None:
   color: #10234a;
   /* Lower-level section labels share one hierarchy; the page H1 remains
      larger and is intentionally unaffected by this rule. */
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 700;
   line-height: 1.35;
   margin: 0.25rem 0 0.85rem;
@@ -161,7 +161,7 @@ div[data-testid="stExpander"][class*="st-key-compact_check_inputs_"][class*="_re
   grid-column: 1 / -1;
 }
 @media (max-width: 700px) {
-  .compact-check-inputs-heading { font-size: 1.2rem; }
+  .compact-check-inputs-heading { font-size: 1.21rem; }
   [class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] summary { min-height: 3rem; }
   [class*="st-key-compact_check_inputs_"] div[data-testid="stExpanderDetails"]
     > div[data-testid="stVerticalBlock"] { grid-template-columns: minmax(0, 1fr); }
