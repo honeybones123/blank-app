@@ -1832,6 +1832,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 # Use the same lazy check-group contract as the Shear page.
                 # Detailed cards are expensive, so render only the selected
                 # group instead of rebuilding all three on every navigation.
+                _previous_bending_tab = st.session_state.get("bending_check_tab")
                 active_bending_tab = render_lazy_check_tab_selector(
                     st,
                     labels=("ULS Checks", "SLS Checks", "Minimum strength checks"),
@@ -1839,6 +1840,13 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     aria_label="Bending design checks",
                     anchor_id="bending-check-tabs-anchor",
                 )
+                # A normal check-tab change must not consume a stale jump
+                # request left by summary navigation.  Otherwise the final
+                # page-level scroll hook can move the viewport when SLS/ULS
+                # is selected.
+                if _previous_bending_tab and _previous_bending_tab != active_bending_tab:
+                    st.session_state.pop("jump_to", None)
+                    st.session_state.pop("bending_pending_scroll_uid", None)
 
                 if active_bending_tab == "ULS Checks":
                     render_uls_tab(
