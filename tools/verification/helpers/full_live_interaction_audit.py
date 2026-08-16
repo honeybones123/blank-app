@@ -334,10 +334,25 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
             page.keyboard.press("Escape")
             continue
         alternate = option_texts[alternate_index]
-        alternate_option = page.locator('[role="option"]:visible').filter(
-            has_text=re.compile(rf"^\s*{re.escape(alternate)}\s*$")
-        )
-        if alternate_option.count() == 0:
+        # Streamlit may replace the popup node during the first committed
+        # frame. Re-resolve the visible option briefly instead of treating a
+        # detached transient node as a lost widget option.
+        alternate_option = None
+        option_deadline = time.monotonic() + 3.0
+        while time.monotonic() < option_deadline:
+            candidate = page.locator('[role="option"]:visible').filter(
+                has_text=re.compile(rf"^\s*{re.escape(alternate)}\s*$")
+            )
+            if candidate.count():
+                alternate_option = candidate
+                break
+            # A widget commit can close and remount the popup between the
+            # snapshot and this lookup. Re-open the same live control once the
+            # transient popup has disappeared.
+            if page.locator('[role="option"]:visible').count() == 0:
+                control.click(force=True)
+            page.wait_for_timeout(100)
+        if alternate_option is None:
             raise AssertionError(f"{label!r} lost alternate option {alternate!r}")
         alternate_option.first.click(force=True)
         _stable(page)
