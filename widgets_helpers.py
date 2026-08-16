@@ -977,6 +977,15 @@ def apply_global_widget_css():
         div[data-testid="stPopover"] button::before {
             display: none !important;
         }
+
+        /* Keep the Runtime shell heading on the same 44px scale as Slab.
+           Scope this to the page shell so widget labels and card text are
+           unaffected. */
+        .stApp h1,
+        .main h1 {
+            font-size: 44px !important;
+            line-height: 1.14 !important;
+        }
         /* Streamlit 1.61 renders the popover caret as a real material-icon
            child rather than a pseudo-element. Keep the established compact
            blue information trigger instead of displaying a dropdown arrow. */
