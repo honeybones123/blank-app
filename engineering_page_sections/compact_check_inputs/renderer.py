@@ -45,16 +45,28 @@ def _inject_styles(st_module: Any) -> None:
   margin: 0;
 }
 [class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] {
-  border-left: 0 !important;
-  border-right: 0 !important;
-  border-radius: 0 !important;
+  margin: 0.55rem 0 !important;
+}
+[class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] > details {
+  border: 1px solid #D4DAE1 !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  background: #E9EDF1 !important;
 }
 [class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] summary {
-  min-height: 3.4rem;
+  min-height: 58px !important;
+  box-sizing: border-box !important;
+  padding: 0.45rem 0.65rem !important;
+  background: #E9EDF1 !important;
+  border: 0 !important;
+  color: #10234A !important;
+  font-size: 16px !important;
+  line-height: 1.6 !important;
 }
 [class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] summary p {
   color: #10234a;
-  font-size: .96rem;
+  font-size: 16px !important;
+  line-height: 1.6 !important;
 }
 /* Every shared input card uses the same two-column widget rhythm.  Existing
    widget rows remain intact; this only arranges those rows into pairs. */
