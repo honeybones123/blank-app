@@ -383,23 +383,26 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
             restored_control = restored_controls.nth(label_occurrence)
         else:
             restored_controls = page.get_by_role("combobox")
-            try:
-                restored_controls.first.wait_for(state="visible", timeout=30_000)
-            except Exception:
-                pass
             restored_control = None
-            for candidate_index in range(restored_controls.count()):
-                candidate = restored_controls.nth(candidate_index)
-                if not candidate.is_visible() or not candidate.is_enabled():
-                    continue
-                candidate.click(force=True)
-                candidate_original = page.locator('[role="option"]:visible').filter(
-                    has_text=re.compile(rf"^\s*{re.escape(original)}\s*$")
-                )
-                if candidate_original.count():
-                    restored_control = candidate
-                    break
-                page.keyboard.press("Escape")
+            deadline = time.monotonic() + 60.0
+            while time.monotonic() < deadline and restored_control is None:
+                for candidate_index in range(restored_controls.count()):
+                    candidate = restored_controls.nth(candidate_index)
+                    try:
+                        if not candidate.is_visible() or not candidate.is_enabled():
+                            continue
+                        candidate.click(force=True)
+                        candidate_original = page.locator('[role="option"]:visible').filter(
+                            has_text=re.compile(rf"^\s*{re.escape(original)}\s*$")
+                        )
+                        if candidate_original.count():
+                            restored_control = candidate
+                            break
+                        page.keyboard.press("Escape")
+                    except Exception:
+                        page.keyboard.press("Escape")
+                if restored_control is None:
+                    page.wait_for_timeout(150)
             if restored_control is None:
                 raise AssertionError(
                     f"{label!r} disappeared after selection; "
