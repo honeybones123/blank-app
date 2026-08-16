@@ -1320,6 +1320,13 @@ div[data-testid="stExpander"] details summary {
   background: rgba(31,119,180,0.08) !important;
   margin: 0 !important;
   padding: 0.03rem 0.40rem !important;
+  min-height: 32px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  font-family: inherit !important;
+  font-size: 14px !important;
+  line-height: 1.35 !important;
   border-radius: 0 6px 6px 0 !important;
   color: #222 !important;
   cursor: pointer !important;
