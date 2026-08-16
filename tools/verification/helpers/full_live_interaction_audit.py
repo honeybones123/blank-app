@@ -75,7 +75,17 @@ def _wait_checked(page: Page, label: str, expected: bool, timeout_ms: int = 60_0
     deadline = time.monotonic() + timeout_ms / 1000
     while time.monotonic() < deadline:
         try:
-            if page.get_by_label(label, exact=True).first.is_checked() == expected:
+            # Streamlit can briefly retain a detached control wrapper during a
+            # fragment rerender. Read the live visible DOM node rather than a
+            # locator captured before that rerender.
+            states = page.locator("input[type='checkbox']").evaluate_all(
+                """(els, wanted) => els
+                    .filter(e => (e.getAttribute('aria-label') || '') === wanted)
+                    .filter(e => !!(e.offsetWidth || e.offsetHeight))
+                    .map(e => !!e.checked)""",
+                label,
+            )
+            if expected in states:
                 page.wait_for_timeout(250)
                 return
         except Exception:

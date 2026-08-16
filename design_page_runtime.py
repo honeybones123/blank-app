@@ -1462,24 +1462,15 @@ def render_sfd_bmd_page():
 
     def _commit_inputs_action_source(_selected: bool) -> None:
         """Publish the selected one-way action source to Beam Inputs only."""
-
-        projected_keys = synchronize_load_analysis_actions_for_inputs(
-            st.session_state,
-            draft=load_analysis_store.current().to_dict(),
-            results=load_analysis_store.results(),
-        )
+        # The toggle is a source-pointer command.  Do not synchronously copy
+        # the calculated action projection from this route while Streamlit is
+        # still reconciling the toggle widget: that second write used to make
+        # the control flicker and could leave the visible state on the prior
+        # revision.  Beam Inputs resolves the projection from the committed
+        # source when it renders; Load Analysis remains load-owned here.
         _request_inputs_engineering_commit(
             "inputs_action_source_toggle",
-            changed_keys=tuple(
-                sorted(
-                    {
-                        "actions_mode",
-                        "actions_source",
-                        *ACTION_SOURCE_COMMIT_KEYS,
-                        *projected_keys,
-                    }
-                )
-            ),
+            changed_keys=("actions_mode", "actions_source", *ACTION_SOURCE_COMMIT_KEYS),
         )
 
     # Load Analysis controls are page-owned. They must not call Beam Inputs
