@@ -849,7 +849,13 @@ def apply_global_widget_css():
         """
         <style>
         /* Match Inputs page: main content breathing room on all pages */
-        .main .block-container {
+        .stApp [data-testid="stMainBlockContainer"],
+        .stApp .block-container,
+        .stApp [data-testid="stAppViewContainer"] .main .block-container {
+            width: calc(100% - 2rem) !important;
+            max-width: 1180px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
             padding-left: 3rem;
             padding-right: 3rem;
             padding-top: 1.25rem;
