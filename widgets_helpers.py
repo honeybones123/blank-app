@@ -1037,6 +1037,11 @@ def apply_global_widget_css():
 
 def apply_result_page_css():
     """Shared layout and heading styling for engineering result pages only."""
+    # Result routes (Shear, Bending, Creep, Shrinkage, Crack and Deflection)
+    # do not all pass through the Inputs shell initializer.  Install the same
+    # global shell-width contract here so none of them can fall back to
+    # Streamlit's 736px default container.
+    apply_global_widget_css()
     st.markdown(
         """
 <style>
