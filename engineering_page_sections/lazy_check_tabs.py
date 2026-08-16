@@ -75,7 +75,19 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
   const saved = win.sessionStorage.getItem(key);
   if (saved !== null) {{
     const y = Number(saved);
-    if (Number.isFinite(y)) win.setTimeout(function () {{ win.scrollTo(0, y); }}, 120);
+    if (Number.isFinite(y)) {{
+      let attempts = 0;
+      const restore = win.setInterval(function () {{
+        win.scrollTo(0, y);
+        attempts += 1;
+        if (attempts >= 12) {{
+          win.clearInterval(restore);
+          win.sessionStorage.removeItem(key);
+        }}
+      }}, 40);
+    }} else {{
+      win.sessionStorage.removeItem(key);
+    }}
   }}
 }})();
 </script>
