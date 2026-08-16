@@ -1847,6 +1847,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 if _previous_bending_tab and _previous_bending_tab != active_bending_tab:
                     st.session_state.pop("jump_to", None)
                     st.session_state.pop("bending_pending_scroll_uid", None)
+                elif not st.session_state.get("bending_pending_scroll_uid"):
+                    # A tab interaction is not a summary-navigation request.
+                    # Do not let an old global jump target move the viewport
+                    # during the page-level post-render hook.
+                    st.session_state.pop("jump_to", None)
 
                 if active_bending_tab == "ULS Checks":
                     render_uls_tab(
