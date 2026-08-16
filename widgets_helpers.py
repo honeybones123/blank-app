@@ -2712,17 +2712,19 @@ def clickable_calcbox(
     .{css_class} {{
         border-left: 4px solid {border_color} !important;
         background-color: {bg_color} !important;
-        padding: 0.50rem 0.70rem !important;
-        margin: 0.12rem 0 0.35rem 0 !important;
-        border-radius: 0 6px 6px 0 !important;
+        /* Keep legacy clickable calcboxes on the same geometry contract as
+           the shared step-card renderer used by bending and slab. */
+        padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
+        margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+        border-radius: var(--sb-card-radius, 8px) !important;
         color: #222 !important;
     }}
     
     .{css_class} details {{
         border: none !important;
         background: transparent !important;
-        margin: 0.12rem 0 0.35rem 0 !important;
-        padding: 0.50rem 0.70rem !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }}
     
     .{css_class} summary {{
