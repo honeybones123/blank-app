@@ -84,6 +84,17 @@ def _wait_checked(page: Page, label: str, expected: bool, timeout_ms: int = 60_0
     raise AssertionError(f"{label!r} did not settle to checked={expected}")
 
 
+def _visible_enabled(locator: Locator) -> Locator | None:
+    """Return the first live visible control when Streamlit has duplicates."""
+    for candidate in locator.all():
+        try:
+            if candidate.is_visible() and candidate.is_enabled():
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
 def _ready(page: Page, page_slug: str) -> None:
     heading = page.get_by_role(
         "heading", name=PAGE_HEADINGS[page_slug], exact=False
@@ -188,8 +199,8 @@ def _audit_switches(page: Page, page_slug: str, evidence: list[dict[str, Any]]) 
     for label in dict.fromkeys(names):
         if label in IGNORED_CONTROL_NAMES:
             continue
-        control = page.get_by_label(label, exact=True).first
-        if not control.is_enabled() or not control.is_visible():
+        control = _visible_enabled(page.get_by_label(label, exact=True))
+        if control is None:
             continue
         original = control.is_checked()
         # Click the semantic checkbox itself. Current Streamlit renders a
@@ -201,8 +212,8 @@ def _audit_switches(page: Page, page_slug: str, evidence: list[dict[str, Any]]) 
         _wait_checked(page, label, not original)
         _stable(page)
         _assert_healthy(page, page_slug)
-        restored_control = page.get_by_label(label, exact=True).first
-        if restored_control.is_checked() != original:
+        restored_control = _visible_enabled(page.get_by_label(label, exact=True))
+        if restored_control is not None and restored_control.is_checked() != original:
             restored_control.click(force=True, timeout=5_000)
         _wait_checked(page, label, original)
         _stable(page)
@@ -432,15 +443,17 @@ def _audit_number_inputs(page: Page, page_slug: str, evidence: list[dict[str, An
     )
     for label in dict.fromkeys(names):
         _ensure_compact_input_cards_open(page, page_slug)
-        control = page.get_by_label(label, exact=True).first
-        if not control.is_visible() or not control.is_enabled():
+        control = _visible_enabled(page.get_by_label(label, exact=True))
+        if control is None:
             continue
         original = control.input_value()
         control.press("ArrowUp")
         _stable(page)
         _assert_healthy(page, page_slug)
         _ensure_compact_input_cards_open(page, page_slug)
-        restored = page.get_by_label(label, exact=True).first
+        restored = _visible_enabled(page.get_by_label(label, exact=True))
+        if restored is None:
+            raise AssertionError(f"{label!r} did not remount a visible control")
         restored.fill(original)
         restored.press("Enter")
         _stable(page)
