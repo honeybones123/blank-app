@@ -59,6 +59,26 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
 }}
 </style>
 <div id="{anchor_id}" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>
+<script>
+(function () {{
+  const key = "sb_calc_tab_scroll_y";
+  const win = window.top;
+  if (!win.__sbCalcTabScrollBound) {{
+    win.__sbCalcTabScrollBound = true;
+    win.document.addEventListener("click", function (event) {{
+      const label = event.target && event.target.closest && event.target.closest('label');
+      if (!label) return;
+      const radio = label.querySelector('input[type="radio"]');
+      if (radio) win.sessionStorage.setItem(key, String(win.scrollY || 0));
+    }}, true);
+  }}
+  const saved = win.sessionStorage.getItem(key);
+  if (saved !== null) {{
+    const y = Number(saved);
+    if (Number.isFinite(y)) win.setTimeout(function () {{ win.scrollTo(0, y); }}, 120);
+  }}
+}})();
+</script>
 """,
         unsafe_allow_html=True,
     )
