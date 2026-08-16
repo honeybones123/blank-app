@@ -1028,11 +1028,12 @@ def apply_result_page_css():
 /* Page chrome: vertical padding comes from apply_global_widget_css (.main .block-container) */
 
 .result-page-title {
-    font-size: 2.35rem;
+    /* Match the shared Slab/application-shell H1. */
+    font-size: 2.75rem;
     font-weight: 700;
-    line-height: 1.05;
-    margin-top: -0.2rem;
-    margin-bottom: 0.08rem;
+    line-height: 1.14;
+    margin-top: 0;
+    margin-bottom: 0.35rem;
 }
 
 /* Compact vertical rhythm */
@@ -1054,8 +1055,8 @@ div[data-baseweb="input"] {
 
 /* Tighten heading rhythm */
 h2, h3, h4 {
-    margin-top: 0.6rem !important;
-    margin-bottom: 0.5rem !important;
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.85rem !important;
 }
 
 /* Tighten expanders */
