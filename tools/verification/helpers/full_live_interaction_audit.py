@@ -459,7 +459,25 @@ def _audit_selectboxes(page: Page, page_slug: str, evidence: list[dict[str, Any]
                 f"{label!r} cannot restore option {original!r}; "
                 f"available={available_options!r}"
             )
-        original_option.first.click(force=True)
+        # React Aria may replace the popup option tree between the visibility
+        # check and the click. Re-resolve the live option instead of holding a
+        # detached locator from the previous tree.
+        restored_click_deadline = time.monotonic() + 5.0
+        restored_clicked = False
+        while time.monotonic() < restored_click_deadline:
+            try:
+                live_original = page.locator('[role="option"]:visible').filter(
+                    has_text=re.compile(rf"^\s*{re.escape(original)}\s*$")
+                )
+                if live_original.count():
+                    live_original.first.click(force=True, timeout=1_000)
+                    restored_clicked = True
+                    break
+            except Exception:
+                pass
+            page.wait_for_timeout(80)
+        if not restored_clicked:
+            raise AssertionError(f"{label!r} could not click live option {original!r}")
         _stable(page)
         _assert_healthy(page, page_slug)
         evidence.append({"kind": "select", "label": label, "ok": True})
