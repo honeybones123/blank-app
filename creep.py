@@ -61,6 +61,7 @@ from engineering_page_sections.compact_check_inputs import (
     join_summary,
     render_compact_check_inputs,
 )
+from engineering_page_sections.lazy_check_tabs import render_lazy_check_tab_selector
 
 
 # ------------------------------------------------------------
@@ -667,12 +668,14 @@ div[data-testid="stTabs"] [data-baseweb="tab-panel"] {
         unsafe_allow_html=True,
     )
 
-    tab_th_k2, tab_phi, tab_eps = st.tabs(
-        [
-            "Notional thickness t_h and k₂",
-            "Creep coefficient ϕ_cc(t)",
-            "Creep strain ε_cc",
-        ]
+    _creep_tab_labels = (
+        "Notional thickness t_h and k₂",
+        "Creep coefficient ϕ_cc(t)",
+        "Creep strain ε_cc",
+    )
+    active_creep_tab = render_lazy_check_tab_selector(
+        st, labels=_creep_tab_labels, key="creep_check_tab",
+        aria_label="Creep checks", anchor_id="creep-check-tabs-anchor",
     )
 
     # Calculate alpha2 for display in k2 calc box
@@ -801,7 +804,7 @@ k₂ = {k2:.3f}
 _Ref: AS 3600:2018 Cl. 3.1.8.3 and Fig. 3.1.8.3._
 """
 
-    with tab_th_k2:
+    if active_creep_tab == _creep_tab_labels[0]:
         render_expandable_step(
             page_key="creep_geom",
             step_id="creep_th_raw",
@@ -952,7 +955,7 @@ from Table 3.1.8.3 is:
 _Ref: AS 3600:2018 Table 3.1.8.3._
 """
 
-    with tab_phi:
+    if active_creep_tab == _creep_tab_labels[1]:
         render_expandable_step(
             page_key="creep_coeff",
             step_id="creep_phi_cc_t",
@@ -1120,7 +1123,7 @@ Expressed in microstrain:
 _Ref: AS 3600:2018 Cl. 3.1.8.1._
 """
 
-    with tab_eps:
+    if active_creep_tab == _creep_tab_labels[2]:
         render_expandable_step(
             page_key="creep_strain",
             step_id="creep_sigma0",
