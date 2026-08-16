@@ -40,10 +40,10 @@ def _inject_styles(st_module: Any) -> None:
 .compact-check-inputs-heading {
   color: #10234a;
   /* Match the Slab page's shared h2 treatment. */
-  font-size: 1.45rem;
+  font-size: 1.6rem;
   font-weight: 700;
   line-height: 1.35;
-  margin: 0 0 0.85rem;
+  margin: 0.25rem 0 0.85rem;
 }
 [class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] {
   margin: 0.55rem 0 !important;

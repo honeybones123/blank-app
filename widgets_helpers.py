@@ -1026,6 +1026,14 @@ def apply_result_page_css():
         """
 <style>
 /* Page chrome: vertical padding comes from apply_global_widget_css (.main .block-container) */
+:root {
+    --sb-heading-size: 1.45rem;
+    --sb-body-size: 0.92rem;
+    --sb-card-gap: 0.55rem;
+    --sb-card-radius: 8px;
+    --sb-card-padding-y: 0.72rem;
+    --sb-card-padding-x: 1rem;
+}
 
 .result-page-title {
     /* Match the shared Slab/application-shell H1. */
@@ -1067,9 +1075,10 @@ h2, h3, h4 {
 
 /* Clean section titles */
 .section-title {
-    font-size: 1.05rem;
+    font-size: var(--sb-heading-size) !important;
     font-weight: 600;
-    margin-bottom: 0.4rem;
+    line-height: 1.35 !important;
+    margin: 0.25rem 0 0.85rem !important;
 }
 
 /* Consistent divider rhythm */
@@ -1117,6 +1126,28 @@ hr {
     line-height: 1.1rem;
     margin: 0 0 0.18rem 0;
 }
+
+/* Shared calculation-step geometry. Status colours remain semantic, while
+   every result page uses the same card radius, padding and text rhythm. */
+.calc-details,
+.step-card {
+    border-radius: var(--sb-card-radius) !important;
+    margin: 0.18rem 0 var(--sb-card-gap) !important;
+    box-sizing: border-box;
+    font-size: var(--sb-body-size) !important;
+    line-height: 1.35 !important;
+}
+.calc-details summary,
+.step-card {
+    min-height: 0 !important;
+    padding: var(--sb-card-padding-y) var(--sb-card-padding-x) !important;
+}
+.calc-details summary { font-size: var(--sb-body-size) !important; }
+.calc-details summary strong,
+.step-card .title { font-size: 1rem !important; line-height: 1.3 !important; }
+.calc-details .calc-body,
+.step-card .sub,
+.step-card .result { font-size: var(--sb-body-size) !important; line-height: 1.35 !important; }
 </style>
         """,
         unsafe_allow_html=True,
@@ -1138,8 +1169,8 @@ def render_result_page_title(title: str, *, top_margin_rem: float = -0.2) -> Non
     st.markdown(
         (
             "<div class='result-page-title' "
-        "style='font-size:2.35rem;font-weight:700;line-height:1.05;"
-        f"margin-top:{top_margin_rem:g}rem;margin-bottom:0.08rem'>"
+            "style='font-weight:700;line-height:1.14;"
+        f"margin-top:{top_margin_rem:g}rem;margin-bottom:0.35rem'>"
             f"{html.escape(str(title))}</div>"
         ),
         unsafe_allow_html=True,
