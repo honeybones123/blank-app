@@ -8,9 +8,9 @@ def scoped_css() -> str:
       .stApp {{ background: {TOKENS['page_bg']}; }}
       /* Extracted from the Runtime app shell; kept under the V2 presentation root.
          Runtime reference measurements retained here for contract traceability:
-         max-width: 1180px; padding-top: 2rem. */
+         max-width: none; padding-top: 2rem. */
       .stApp [data-testid="stAppViewContainer"] .main .block-container {{
-        max-width: 1180px !important; padding-top: 3.7rem !important;
+        max-width: none !important; padding-top: 3.7rem !important;
         padding-right: 2.25rem !important; padding-left: 2.25rem !important;
         padding-bottom: 2rem !important;
       }}

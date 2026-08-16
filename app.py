@@ -108,7 +108,7 @@ def _apply_sharp_embed_css() -> None:
   .stApp .block-container,
   .stApp [data-testid="stAppViewContainer"] .main .block-container {
     width: calc(100% - 2rem) !important;
-    max-width: 1180px !important;
+    max-width: none !important;
     margin-left: auto !important;
     margin-right: auto !important;
     padding-top: 2rem !important;

@@ -853,7 +853,7 @@ def apply_global_widget_css():
         .stApp .block-container,
         .stApp [data-testid="stAppViewContainer"] .main .block-container {
             width: calc(100% - 2rem) !important;
-            max-width: 1180px !important;
+            max-width: none !important;
             margin-left: auto !important;
             margin-right: auto !important;
             padding-left: 3rem;
