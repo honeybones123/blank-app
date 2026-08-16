@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
 from pathlib import Path
+import statistics
 import time
 from typing import Any, Callable
 from urllib.parse import urlencode
@@ -121,10 +122,23 @@ def main() -> int:
     parser.add_argument("--minimum-last-modified", help="ISO-8601 timestamp; reject older artifacts")
     parser.add_argument("--expected-etag")
     parser.add_argument("--require-release-metadata", action="store_true")
+    parser.add_argument("--runs", type=int, default=3, help="cold HTTP shell samples per page")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     minimum = _parse_http_date(args.minimum_last_modified)
-    pages = [check_page(args.base_url, page, minimum_last_modified=minimum, expected_etag=args.expected_etag, require_release_metadata=args.require_release_metadata) for page in args.pages]
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
+    pages = []
+    for page in args.pages:
+        samples = [check_page(args.base_url, page, minimum_last_modified=minimum, expected_etag=args.expected_etag, require_release_metadata=args.require_release_metadata) for _ in range(args.runs)]
+        latencies = [float(sample.get("elapsed_ms") or 0.0) for sample in samples]
+        result = dict(samples[-1])
+        result["runs"] = len(samples)
+        result["http_p50_ms"] = round(statistics.median(latencies), 3)
+        result["http_p95_ms"] = round(sorted(latencies)[max(0, int(len(latencies) * 0.95 + 0.999999) - 1)], 3)
+        result["sample_failures"] = [sample.get("failures", []) for sample in samples if not sample.get("ok")]
+        result["ok"] = all(sample.get("ok") for sample in samples)
+        pages.append(result)
     result = {"ok": all(item["ok"] for item in pages), "base_url": args.base_url, "pages": pages}
     rendered = json.dumps(result, indent=2) + "\n"
     if args.output:
