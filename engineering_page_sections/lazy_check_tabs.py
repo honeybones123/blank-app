@@ -41,6 +41,9 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
     border-radius: 0 !important;
     padding: 0.3rem 0 0.45rem !important;
     margin: 0 !important;
+    font-family: inherit !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
 }}
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #{anchor_id}) div[role="radiogroup"] > label:has(input:checked) {{
     color: #ff4b4b !important;
