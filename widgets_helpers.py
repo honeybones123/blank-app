@@ -1397,8 +1397,8 @@ div[data-testid="stExpander"] details summary {
   border: none !important;
   border-left: 4px solid #1f77b4 !important;
   background: rgba(31,119,180,0.08) !important;
-  margin: 0.15rem 0 !important;
-  padding: 0.45rem 0.65rem !important;
+  margin: 0.18rem 0 var(--sb-card-gap, 0.55rem) !important;
+  padding: var(--sb-card-padding-y, 0.72rem) var(--sb-card-padding-x, 1rem) !important;
   min-height: 59px !important;
   box-sizing: border-box !important;
   display: flex !important;
@@ -1656,16 +1656,16 @@ def step_expander_calcbox(
         # and diagrams until the user opens the stateful expander.  Because
         # this helper is its own nested fragment, opening or closing one card
         # redraws only that card rather than the page or application shell.
-        if not expander.open:
-            return
-        # Keep both selectors in one invisible marker.  Separate opening and
-        # closing HTML calls cannot wrap later Streamlit elements, so the old
-        # three-delta sequence added transport/DOM work without changing the
-        # actual layout.
+        # Keep the semantic marker in the collapsed card as well as its body.
+        # The summary colour depends on this marker; delaying it until open
+        # made closed PASS/FAIL cards appear neutral blue.
         st.markdown(
             f"<div id='inner_{uid}'><span class='{status_class}'></span>{accent_html}</div>",
             unsafe_allow_html=True,
         )
+
+        if not expander.open:
+            return
 
         if diagram_fn:
             col_calc, col_fig = st.columns([2.0, 1.0], gap="large")
