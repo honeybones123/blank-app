@@ -135,7 +135,9 @@ def test_target_band_state_has_no_apply_button() -> None:
 def test_design_brain_selects_shear_family_when_shear_fails() -> None:
     app = _started_app()
     shear_action = next(widget for widget in app.number_input if widget.label == "Design shear Vu* (kN)")
-    shear_action.set_value(300.0).run()
+    # This is the intentionally heavy end-to-end shear search. CI measurements on
+    # main are ~15.2-15.6 s for the action rerun, while normal AppTests stay at 10 s.
+    shear_action.set_value(300.0).run(timeout=25)
     assert not app.exception
     assert any("SHEAR_FAIL" in item.value for item in app.markdown)
 
