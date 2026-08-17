@@ -1,0 +1,74 @@
+name: Temporary Bending cold diagram profile
+on:
+  push:
+    branches: [perf/bending-diagram-profile-2026-08-18]
+  workflow_dispatch:
+
+jobs:
+  profile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/bending-diagram-profile-2026-08-18
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install runtime and Chromium
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Instrument only the cold 3-panel figure builder
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('bending_diagrams.py')
+          s = p.read_text(encoding='utf-8')
+          anchor = 'def _plot_stress_strain_profiles(\n'
+          helper = '''def _profile_cold_bending_figure_call(fn, *args, **kwargs):\n    import cProfile\n    import io\n    import os\n    import pstats\n    from pathlib import Path\n    if os.environ.get("CODEX_PROFILE_COLD_BENDING_FIGURE") != "1":\n        return fn(*args, **kwargs)\n    profiler = cProfile.Profile()\n    result = profiler.runcall(fn, *args, **kwargs)\n    out = io.StringIO()\n    stats = pstats.Stats(profiler, stream=out).strip_dirs().sort_stats("cumulative")\n    stats.print_stats(80)\n    Path("artifacts").mkdir(exist_ok=True)\n    Path("artifacts/bending_figure_cprofile.txt").write_text(out.getvalue(), encoding="utf-8")\n    return result\n\n\n'''
+          if helper not in s:
+              s = s.replace(anchor, helper + anchor, 1)
+          old = '''    figure = _stress_diagram_plot_stress_strain_profiles(\n        state_dict,\n        state_label=state_label,\n        layout=layout,\n        moment_sign=moment_sign,\n    )\n'''
+          new = '''    figure = _profile_cold_bending_figure_call(\n        _stress_diagram_plot_stress_strain_profiles,\n        state_dict,\n        state_label=state_label,\n        layout=layout,\n        moment_sign=moment_sign,\n    )\n'''
+          if old not in s:
+              raise SystemExit('cold figure call target not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Run true cold Bending profile
+        env:
+          CODEX_PROFILE_COLD_BENDING_FIGURE: '1'
+        run: >-
+          python tools/verification/helpers/cold_page_benchmark.py
+          --page bending
+          --runs 1
+          --max-invalid-attempts 3
+          --mode navigation
+          --starting-port 8800
+          --output artifacts/bending_cold.json
+      - name: Print profile summary
+        run: |
+          echo '===== TOP FIGURE CALLS ====='
+          sed -n '1,120p' artifacts/bending_figure_cprofile.txt
+          echo '===== COLD PAGE SUMMARY ====='
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('artifacts/bending_cold.json').read_text())['pages']['bending']['runs'][0]
+          print(json.dumps({
+            'page_open_ms': d['page_open_ms'],
+            'page_renderer_ms': d['page_renderer_ms'],
+            'websocket_received_bytes': d['websocket_received_bytes'],
+            'websocket_received_frames': d['websocket_received_frames'],
+            'top_trace_deltas': d.get('top_trace_deltas', [])[:12],
+          }, indent=2))
+          PY
+      - name: Upload profiling evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bending-cold-diagram-profile
+          path: artifacts
