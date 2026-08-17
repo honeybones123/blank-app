@@ -1,0 +1,110 @@
+name: Temporary post-PR9 calc profile
+on:
+  push:
+    branches: [perf/post-pr9-profile-2026-08-18]
+  workflow_dispatch:
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CODEX_RENDER_TIMING_TRACE: "1"
+      CODEX_BROWSER_TEST_MODE: "1"
+      BEAM_OUTPUTS_DIR: ${{ github.workspace }}/perf-out
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install runtime and browser
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Start app
+        run: |
+          mkdir -p perf-out
+          python -m streamlit run app.py --server.headless true --server.port 8501 --server.address 127.0.0.1 > /tmp/app.log 2>&1 &
+          echo $! > /tmp/app.pid
+          python - <<'PY'
+          import time, urllib.request
+          deadline=time.time()+60
+          while time.time()<deadline:
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2) as r:
+                      if r.status == 200:
+                          break
+              except Exception:
+                  time.sleep(.5)
+          else:
+              raise SystemExit('app did not become healthy')
+          PY
+      - name: Exercise calculation pages
+        run: |
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+
+          slugs=['bending','shear','creep','shrinkage','crack','deflection']
+          samples={s:[] for s in slugs}
+          with sync_playwright() as p:
+              browser=p.chromium.launch()
+              context=browser.new_context(viewport={'width':1600,'height':1000})
+              page=context.new_page()
+              # Prime the app once, then take three route samples per page.
+              page.goto('http://127.0.0.1:8501/?page=bending', wait_until='domcontentloaded', timeout=60000)
+              page.locator('h1').first.wait_for(state='visible', timeout=60000)
+              page.wait_for_timeout(1200)
+              for slug in slugs:
+                  for i in range(3):
+                      started=time.perf_counter()
+                      page.goto(f'http://127.0.0.1:8501/?page={slug}', wait_until='domcontentloaded', timeout=60000)
+                      page.locator('h1').first.wait_for(state='visible', timeout=60000)
+                      elapsed=(time.perf_counter()-started)*1000
+                      samples[slug].append(round(elapsed,1))
+                      page.wait_for_timeout(800)
+              browser.close()
+          Path('perf-out/browser-route-ms.json').write_text(json.dumps(samples, indent=2), encoding='utf-8')
+          print('BROWSER_ROUTE_MS', json.dumps(samples, sort_keys=True))
+          PY
+      - name: Summarize render traces
+        run: |
+          python - <<'PY'
+          import json, statistics
+          from pathlib import Path
+          root=Path('perf-out/performance')
+          events=[]
+          for path in root.glob('product_render_timing_*.jsonl'):
+              for line in path.read_text(encoding='utf-8').splitlines():
+                  try: events.append(json.loads(line))
+                  except Exception: pass
+          pages=['bending','shear','creep','shrinkage','crack','deflection']
+          out={}
+          for page in pages:
+              ends=[e for e in events if e.get('page_slug')==page and e.get('name')=='app.page_dispatch.end']
+              dispatch=[float(e.get('delta_ms') or 0) for e in ends]
+              total=[float(e.get('elapsed_ms') or 0) for e in ends]
+              # Ignore first observation when we have repeat samples; report warm median and raw values.
+              warm_dispatch=dispatch[1:] if len(dispatch)>1 else dispatch
+              warm_total=total[1:] if len(total)>1 else total
+              out[page]={
+                  'dispatch_raw_ms':[round(x,1) for x in dispatch],
+                  'rerun_raw_ms':[round(x,1) for x in total],
+                  'warm_dispatch_median_ms':round(statistics.median(warm_dispatch),1) if warm_dispatch else None,
+                  'warm_rerun_median_ms':round(statistics.median(warm_total),1) if warm_total else None,
+              }
+          Path('perf-out/render-summary.json').write_text(json.dumps(out, indent=2), encoding='utf-8')
+          print('RENDER_SUMMARY', json.dumps(out, sort_keys=True))
+          PY
+      - name: Upload profile artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-pr9-performance-profile
+          path: perf-out
+      - name: Show app log on failure
+        if: failure()
+        run: tail -250 /tmp/app.log || true
