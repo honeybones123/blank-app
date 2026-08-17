@@ -2,15 +2,20 @@ name: Temporary post-PR9 calc profile
 on:
   push:
     branches: [perf/post-pr9-profile-2026-08-18]
-  pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  profile:
+  profile-and-persist:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: perf/post-pr9-profile-2026-08-18
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -40,6 +45,9 @@ jobs:
           if old not in src:
               raise SystemExit('target deflection sequence not found')
           path.write_text(src.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('tests/test_side_view_deflection_reuse_contract.py')
+          test.write_text('''from pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\n\n\ndef test_side_view_reuses_reported_deflection_before_recomputing() -> None:\n    source = (ROOT / "ui" / "diagrams" / "crack_side_view_diagram.py").read_text(encoding="utf-8")\n    start = source.index("def compute_crack_diagram_deflection_mesh(")\n    end = source.index("\\ndef _defl_w_at_x", start)\n    fn = source[start:end]\n\n    first_pick = fn.index("reported = _pick_reported_delta_total_mm()")\n    guard = fn.index("if reported is None or not math.isfinite(reported):")\n    ensure = fn.index("_ensure_deflection_results_for_diagram()", guard)\n    second_pick = fn.index("reported = _pick_reported_delta_total_mm()", first_pick + 1)\n\n    assert first_pick < guard < ensure < second_pick\n''', encoding='utf-8')
           PY
       - name: Candidate cold Bending
         run: >-
@@ -50,23 +58,38 @@ jobs:
           --mode navigation
           --starting-port 8700
           --output artifacts/bending_candidate.json
-      - name: Compare A/B
+      - name: Require material A/B improvement
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           a=json.loads(Path('artifacts/bending_baseline.json').read_text())['pages']['bending']['runs'][0]
           b=json.loads(Path('artifacts/bending_candidate.json').read_text())['pages']['bending']['runs'][0]
-          keys=['page_open_ms','dispatch_ms','page_renderer_ms','renderer_boundary_ms','websocket_received_bytes','websocket_received_frames']
-          out={k:{'baseline':a.get(k),'candidate':b.get(k)} for k in keys}
-          out['baseline_top_trace']=a.get('top_trace_deltas',[])[:8]
-          out['candidate_top_trace']=b.get('top_trace_deltas',[])[:8]
+          improvement=float(a['page_renderer_ms'])-float(b['page_renderer_ms'])
+          out={
+              'renderer_improvement_ms': improvement,
+              'baseline_page_open_ms': a['page_open_ms'],
+              'candidate_page_open_ms': b['page_open_ms'],
+              'baseline_renderer_ms': a['page_renderer_ms'],
+              'candidate_renderer_ms': b['page_renderer_ms'],
+          }
           print(json.dumps(out, indent=2))
           Path('artifacts/bending_ab_summary.json').write_text(json.dumps(out, indent=2), encoding='utf-8')
+          if improvement < 50.0:
+              raise SystemExit(f'candidate improvement too small to persist: {improvement:.1f} ms')
           PY
+      - name: Verify regression contract
+        run: python -m pytest -q tests/test_side_view_deflection_reuse_contract.py
+      - name: Persist proven product change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ui/diagrams/crack_side_view_diagram.py tests/test_side_view_deflection_reuse_contract.py
+          git commit -m 'Reuse existing deflection result in side-view diagrams'
+          git push origin HEAD:perf/post-pr9-profile-2026-08-18
       - name: Upload profile artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: post-pr9-bending-ab-profile
+          name: post-pr9-bending-persist-profile
           path: artifacts
