@@ -350,63 +350,50 @@ def test_load_analysis_publishes_solved_actions_before_presentation_work() -> No
 
 
 def test_action_source_switch_never_commits_derived_controls_as_manual_actions() -> None:
-    """Leaving Load Analysis must only move the source pointer.
+    """Leaving Load Analysis must only move the source pointer."""
 
-    The disabled action widgets display derived Load Analysis values.  Calling
-    the manual reconciliation routine before switching that source off writes
-    those derived values into the saved manual ULS/SLS owners.
-    """
+    source = (
+        ROOT / "inputs_application" / "action_source_transaction.py"
+    ).read_text(encoding="utf-8-sig")
 
-    fragment_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-
-    assert "def _commit_manual_actions_before_source_change" in fragment_source
-    assert (
-        "if bool(st.session_state.get(INPUTS_ACTION_SOURCE_TOGGLE_KEY, False))"
-        in fragment_source
-    )
-    assert "before_commit=_commit_manual_actions_before_source_change" in fragment_source
-    assert "before_commit=_INPUTS_PAGE_RUNTIME.reconcile_design_actions" not in fragment_source
-    manual_branch = fragment_source.index(
-        "if not uses_load_analysis_actions(st.session_state):"
-    )
-    reconcile = fragment_source.index(
-        "_INPUTS_PAGE_RUNTIME.reconcile_design_actions()",
-        manual_branch,
-    )
-    assert manual_branch < reconcile
+    assert "def _commit_manual_actions_before_source_change" in source
+    assert "if bool(state.get(INPUTS_ACTION_SOURCE_TOGGLE_KEY, False))" in source
+    assert "before_commit=_commit_manual_actions_before_source_change" in source
+    assert "before_commit=runtime.reconcile_design_actions" not in source
+    load_analysis_exit = source.index("if uses_load_analysis_actions(state):")
+    reconcile = source.index("runtime.reconcile_design_actions()", load_analysis_exit)
+    assert load_analysis_exit < reconcile
 
 
-def test_inputs_hydrates_committed_actions_before_summary_workspace_render() -> None:
-    source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    start = source.index("def _render_v2_workspace_fragment(")
-    end = source.index("\ndef render_inputs_page()", start)
-    fragment_source = source[start:end]
+def test_inputs_action_source_transaction_hydrates_before_manual_reconcile() -> None:
+    source = (
+        ROOT / "inputs_application" / "action_source_transaction.py"
+    ).read_text(encoding="utf-8-sig")
 
-    hydrate_index = fragment_source.index(
-        "hydrate_committed_design_action_widgets(force=True)"
-    )
-    reconcile_index = fragment_source.index(
-        "_INPUTS_PAGE_RUNTIME.reconcile_design_actions()",
-        hydrate_index,
-    )
+    hydrate_index = source.index("hydrate_actions(force=True)")
+    reconcile_index = source.index("runtime.reconcile_design_actions()", hydrate_index)
     assert hydrate_index < reconcile_index
-    assert hydrate_index < fragment_source.index("render_engineering_workspace(")
+
+    page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
+    fragment_start = page_source.index("def _render_v2_workspace_fragment(")
+    fragment_end = page_source.index("\ndef render_inputs_page()", fragment_start)
+    fragment_source = page_source[fragment_start:fragment_end]
+    assert "render_inputs_action_source_transaction(" in fragment_source
+    assert fragment_source.index("render_inputs_action_source_transaction(") < fragment_source.index(
+        "render_engineering_workspace("
+    )
 
 
-def test_inputs_apply_is_consumed_before_any_projection_or_rendering() -> None:
+def test_inputs_apply_is_consumed_before_action_source_transaction_or_rendering() -> None:
     source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
     start = source.index("def _render_v2_workspace_fragment(")
     end = source.index("\ndef render_inputs_page()", start)
     fragment_source = source[start:end]
 
-    apply_index = fragment_source.index(
-        "_INPUTS_PAGE_RUNTIME.handle_pending_apply()"
-    )
-    assert apply_index < fragment_source.index("render_action_source_toggle(")
-    assert apply_index < fragment_source.index(
-        "_INPUTS_PAGE_RUNTIME.reconcile_design_actions()"
-    )
-    assert apply_index < fragment_source.index("render_engineering_workspace(")
+    apply_index = fragment_source.index("_INPUTS_PAGE_RUNTIME.handle_pending_apply()")
+    action_source_index = fragment_source.index("render_inputs_action_source_transaction(")
+    render_index = fragment_source.index("render_engineering_workspace(")
+    assert apply_index < action_source_index < render_index
 
 
 def test_apply_routing_never_requests_an_explicit_rerun_or_polling_wake() -> None:
