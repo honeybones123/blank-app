@@ -9,7 +9,7 @@ Inputs page styles, widget coordinators, and reference captures.
 - Streamlit layout: `wide`
 - Canvas: white
 - Base font size: `14px`
-- Main content max width: `1180px`
+- Main content max width: `none` (shared full-width application shell)
 - Main block padding: `2rem` top, `2.25rem` left/right, `2rem` bottom
 - H1: `2rem`, line-height `1.15`
 - H2: `1.45rem`
