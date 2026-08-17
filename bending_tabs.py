@@ -1,4 +1,4 @@
-﻿import math
+import math
 from contextlib import contextmanager
 import pandas as pd
 import streamlit as st
@@ -454,6 +454,7 @@ used to calculate moment capacity.
 subjected to bending.
 """,
         ),
+        render_policy="mounted",
     )
     render_timing_mark("bending_page.uls_check.4.end")
     step_expander_calcbox(
@@ -687,6 +688,7 @@ ductility assessment recorded in Check 1.6.
 [2] AS 3600:2018, Clause 8.1 — ultimate strength of members subjected to bending.
 """,
         ),
+        render_policy="mounted",
     )
 
 
@@ -1037,6 +1039,7 @@ References:
             details_md=section13_details,
             status=None,
             content_before=info_1_3,
+            render_policy="mounted",
         )
 
 
@@ -1226,6 +1229,7 @@ A deeper neutral axis generally represents a larger compression zone and lower t
             details_md=section12_details,
             status=None,
             content_before=info_1_2,
+            render_policy="mounted",
         )
 
         # --------------------------------------------------
@@ -1607,6 +1611,7 @@ This check is therefore the final verification that the section will fail in the
             details_md=section15_details,
             status=ku_status,
             content_before=info_1_6,
+            render_policy="mounted",
         )
 
 
@@ -1879,6 +1884,7 @@ This is the governing acceptance check for flexural strength. Regardless of the 
                 details_md=section17_details,
                 status=Mu_status,
                 content_before=info_1_8,
+                render_policy="mounted",
             )
 
     else:
@@ -1949,6 +1955,7 @@ $f_{{ct,f}} \\approx {fctf_as:.3f}$ MPa.
         summary_line=f"2.1 Concrete flexural tensile strength $f_{{ct,f}}$ | Result: f_{{ct,f}} = {fctf_as:.3f} MPa",
         details_md=section21_details,
         status=None,
+        render_policy="mounted",
     )
 
     # 2.2 Z_g
@@ -1986,6 +1993,7 @@ $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
         summary_line=f"2.2 Gross section modulus Z_g | Result: Z_g = {Zg:,.3e} mm^3",
         details_md=section22_details,
         status=None,
+        render_policy="mounted",
     )
 
     # 2.3 M_cr
@@ -2023,6 +2031,7 @@ $M_{{cr}} \\approx {Mcr_as:.2f}$ kNm.
         summary_line=f"2.3 Cracking moment $M_{{cr}}$ | Result: M_{{cr}} = {Mcr_as:.2f} kNm",
         details_md=section23_details,
         status=None,
+        render_policy="mounted",
     )
 
     # 2.4 Minimum required capacity (1.2 Mcr) - PASS/FAIL
@@ -2068,6 +2077,7 @@ Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
         summary_line=f"2.4 Minimum required design capacity (M_u,cap)_min | Result: phi_Mu_cap = {phi_Mu_cap:.2f} kNm vs (M_u,cap)_min = {Mu_min_as:.2f} kNm -> {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else '-'}",
         details_md=section24_details,
         status=Mu_min_status,
+        render_policy="mounted",
     )
 
     # 2.5 Minimum tensile reinforcement - PASS/FAIL
@@ -2117,6 +2127,7 @@ Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm^2.
         summary_line=f"2.5 Minimum tensile reinforcement A_st,min | Result: A_st = {Ast:.1f} mm^2 vs A_st,min = {Ast_min_as:.1f} mm^2 -> {'PASS' if As_ok else 'FAIL' if As_ok is False else '-'}",
         details_md=section25_details,
         status=As_status,
+        render_policy="mounted",
     )
 
 

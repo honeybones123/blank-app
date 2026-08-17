@@ -1462,6 +1462,26 @@ div[data-testid="stExpander"] details:has(span.step-fail) > summary {
   border-left-color: #dc3545 !important;
   background: rgba(220,53,69,0.10) !important;
 }
+
+/* Keep the open calculation body visually connected to its semantic header. */
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] details[open]:has(span.step-neutral) > div {
+  box-shadow: inset 4px 0 0 #1f77b4 !important;
+  background: rgba(31,119,180,0.018) !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] details[open]:has(span.step-pass) > div {
+  box-shadow: inset 4px 0 0 #28a745 !important;
+  background: rgba(40,167,69,0.018) !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] details[open]:has(span.step-fail) > div {
+  box-shadow: inset 4px 0 0 #dc3545 !important;
+  background: rgba(220,53,69,0.018) !important;
+}
 </style>
         """,
         unsafe_allow_html=True,
@@ -1575,6 +1595,7 @@ def step_expander_calcbox(
     expanded=None,
     jump_uid=None,
     accent: str | None = None,
+    render_policy: str = "lazy",
 ):
     """
     Render a step as an expandable card with summary header.
@@ -1645,11 +1666,13 @@ def step_expander_calcbox(
     open_key = f"step_open_{uid}"
     if open_key not in st.session_state:
         st.session_state[open_key] = bool(is_expanded)
+    policy = str(render_policy or "lazy").strip().lower()
+    mount_closed_body = policy in {"mounted", "eager", "client_mounted"} and diagram_fn is None
     expander = st.expander(
         label,
         expanded=bool(is_expanded),
         key=open_key,
-        on_change="rerun",
+        on_change="ignore" if mount_closed_body else "rerun",
     )
     with expander:
         # Closed calculation cards are visually represented entirely by their
@@ -1665,7 +1688,7 @@ def step_expander_calcbox(
             unsafe_allow_html=True,
         )
 
-        if not expander.open:
+        if not expander.open and not mount_closed_body:
             return
 
         if diagram_fn:
