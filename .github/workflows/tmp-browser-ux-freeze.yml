@@ -28,7 +28,8 @@ jobs:
           cache-dependency-path: head/requirements.txt
       - name: Install runtime and browser
         run: |
-          python -m pip install -r head/requirements.txt
+          cd head
+          python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium
       - name: Start baseline and candidate apps
         run: |
@@ -53,18 +54,13 @@ jobs:
           mkdir -p browser-artifacts
           python - <<'PY'
           from pathlib import Path
-          import json, math
+          import json
           from PIL import Image, ImageChops
           from playwright.sync_api import sync_playwright
 
           OUT = Path('browser-artifacts')
           BASE='http://127.0.0.1:8501'
           HEAD='http://127.0.0.1:8502'
-
-          def wait_ready(page, slug):
-              page.goto(f'{page.url.split("?")[0]}?page={slug}' if '?' in page.url else f'{page.url}?page={slug}', wait_until='domcontentloaded', timeout=60000)
-              page.locator('h1').first.wait_for(state='visible', timeout=60000)
-              page.wait_for_timeout(2500)
 
           def snap(root, slug, name, mutate=None):
               with sync_playwright() as p:
@@ -115,22 +111,17 @@ jobs:
           for slug,name,mutate in cases:
               bm=snap(BASE,slug,'base-'+name,mutate)
               hm=snap(HEAD,slug,'head-'+name,mutate)
-              # Visible text and structural counts are the primary UX contract.
               text_same=bm['body_text']==hm['body_text']
               structural_same=all(bm[k]==hm[k] for k in ('h1','expanders','number_inputs','radios'))
-              # Pixel comparison is diagnostic; allow tiny antialiasing differences only.
               a=Image.open(OUT/f'base-{name}.png').convert('RGB')
               b=Image.open(OUT/f'head-{name}.png').convert('RGB')
               if a.size != b.size:
                   pixel_ratio=1.0
               else:
                   d=ImageChops.difference(a,b)
-                  bbox=d.getbbox()
-                  if bbox is None:
+                  if d.getbbox() is None:
                       pixel_ratio=0.0
                   else:
-                      hist=d.histogram()
-                      # Count pixels with any channel delta > 8 to ignore raster antialiasing noise.
                       import numpy as np
                       aa=np.asarray(a, dtype=np.int16)
                       bb=np.asarray(b, dtype=np.int16)
