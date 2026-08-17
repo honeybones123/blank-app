@@ -750,8 +750,10 @@ def compute_crack_diagram_deflection_mesh(
 
     from ui.diagrams.deflection_diagram import deflected_longitudinal_profile_mm
 
-    _ensure_deflection_results_for_diagram()
     reported = _pick_reported_delta_total_mm()
+    if reported is None or not math.isfinite(reported):
+        _ensure_deflection_results_for_diagram()
+        reported = _pick_reported_delta_total_mm()
     floor_mm = max(16.0, 0.004 * L_mm)
     if reported is None or not math.isfinite(reported):
         delta_for_shape = floor_mm
