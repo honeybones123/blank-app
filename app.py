@@ -175,8 +175,6 @@ def _apply_sharp_embed_css() -> None:
     )
 
 
-_apply_sharp_embed_css()
-
 from widgets_helpers import (
     apply_global_widget_css,
     apply_calcbox_css,
@@ -5558,9 +5556,11 @@ def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     _browser_test_mode_for_run = bool(_browser_test_mode_active())
     st.session_state.setdefault("_dev_mode", bool(_browser_test_mode_for_run or _EXPLICIT_DEV_MODE))
-    # The wide responsive layout is emitted once above during normal script
-    # composition. Re-emitting the identical style block here doubled the
-    # websocket payload on every route change without changing the UI.
+    # The application shell owns width, padding and base scale on every route.
+    # Emit the shared shell CSS inside the render cycle so page- or component-
+    # local styles cannot leave Start, Inputs or result pages at different
+    # container widths after navigation. This remains one emission per rerun.
+    _apply_sharp_embed_css()
     _apply_normal_user_page_zoom_css()
     reset_speed_profile_last_run()
     reset_rerun_pure_caches()
