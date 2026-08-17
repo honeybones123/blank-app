@@ -100,25 +100,18 @@ jobs:
               tab.first.click()
 
           def edit_bending_width(page):
-              # The Bending input architecture keeps these widgets mounted to preserve state.
-              inputs=page.locator('input[type="number"]')
-              labels=inputs.evaluate_all("els => els.map(e => ({aria:e.getAttribute('aria-label'), value:e.value}))")
-              target=None
-              for idx,item in enumerate(labels):
-                  aria=str(item.get('aria') or '')
-                  if 'Width b (mm)' in aria:
-                      target=inputs.nth(idx)
-                      break
-              if target is None:
-                  # Fallback to the current RECT geometry input by its accessible label.
-                  candidate=page.get_by_label('Width b (mm)', exact=True)
-                  if candidate.count():
-                      target=candidate.first
-              if target is None:
-                  raise AssertionError(f'Width b (mm) input not found; number inputs={labels}')
-              old=float(target.input_value())
-              target.fill(str(old + 25.0))
-              target.press('Tab')
+              # Exercise the control exactly as a user does: open the input card,
+              # then edit the visible RECT width field. Hidden mounted widgets are
+              # deliberately not manipulated directly.
+              card=page.get_by_text('Section & material', exact=True)
+              if card.count() < 1:
+                  raise AssertionError('Section & material input card not found')
+              card.first.click()
+              width=page.get_by_label('Width b (mm)', exact=True)
+              width.wait_for(state='visible', timeout=15000)
+              old=float(width.input_value())
+              width.fill(str(old + 25.0))
+              width.press('Tab')
 
           cases=[
               ('bending','bending-default',None),
