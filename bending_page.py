@@ -17,6 +17,16 @@ def _runtime() -> ModuleType:
     return import_module("bending_page_runtime")
 
 
+def _install_presentation_performance_policy() -> None:
+    """Install Bending's presentation-only card policy before page render."""
+
+    from engineering_page_sections.calcbox_performance import (
+        install_bending_hybrid_calcbox_runtime,
+    )
+
+    install_bending_hybrid_calcbox_runtime(import_module("bending_tabs"))
+
+
 def build_bending_page_context() -> BendingPageContext:
     return BendingPageContext()
 
@@ -32,6 +42,7 @@ def render_bending_page() -> None:
 
     context = build_bending_page_context()
     render_timing_mark("bending_page.shell.setup", route=context.route_slug)
+    _install_presentation_performance_policy()
     render_timing_mark("bending_page.shell.workspace.start")
     try:
         _runtime().render_bending()
