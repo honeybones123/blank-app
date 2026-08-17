@@ -45,6 +45,7 @@ def is_expanded(page_key: str, step_id: str) -> bool:
     return st.session_state.get(open_key, False)
 
 
+@st.fragment
 def render_expandable_step(
     *,
     page_key: str,
@@ -68,6 +69,11 @@ def render_expandable_step(
     """
     Render an expandable step with calcbox formatting.
     Matches the behavior of step_expander_calcbox from widgets_helpers.
+
+    Closed steps render only their summary/status shell. Their equations, INFO
+    content, tables and diagrams are constructed only after the stateful
+    expander opens, and the helper is a fragment so that open/close reruns are
+    scoped to this card rather than the whole calculation page.
     
     Args:
         page_key: Unique key for the page (e.g., "shear")
@@ -113,6 +119,8 @@ def render_expandable_step(
     # Use session state key pattern: step_open_{step_id} (matches step_expander_calcbox)
     open_key = f"step_open_{step_id}"
     is_expanded_state = st.session_state.get(open_key, False)
+    if open_key not in st.session_state:
+        st.session_state[open_key] = bool(is_expanded_state)
     
     # Determine status class
     status_class = status_to_class(status_kind)
@@ -151,11 +159,22 @@ def render_expandable_step(
 
     if diagram_outside_expander and diagram_render_fn:
         diagram_render_fn()
-    
-    with st.expander(label, expanded=is_expanded_state):
-        # Inner target for flash highlight
-        st.markdown(f"<div id='inner_{step_id}'>", unsafe_allow_html=True)
-        st.markdown(f"<span class='{status_class}'></span>", unsafe_allow_html=True)
+
+    expander = st.expander(
+        label,
+        expanded=bool(is_expanded_state),
+        key=open_key,
+        on_change="rerun",
+    )
+    with expander:
+        # Keep the semantic status marker mounted so collapsed PASS/FAIL cards
+        # retain their colour, but do not construct any hidden body content.
+        st.markdown(
+            f"<div id='inner_{step_id}'><span class='{status_class}'></span></div>",
+            unsafe_allow_html=True,
+        )
+        if not expander.open:
+            return
         
         # Vertical calc stack: diagram either inside (above calcbox) or already drawn outside expander.
         _has_calc = bool(calc_md or calc_render_fn)
@@ -171,7 +190,6 @@ def render_expandable_step(
         if info_render_fn and not diagram_full_above_calc and not diagram_calc_inside_vertical:
             info_render_fn()
         
-        # Render content (always render, but Streamlit will collapse/expand based on expander state)
         if diagram_calc_inside_vertical:
             if anchor_id:
                 st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
@@ -229,6 +247,3 @@ def render_expandable_step(
             diagram_render_fn()
             if table_render_fn:
                 table_render_fn()
-        
-        # Close inner div for flash highlight
-        st.markdown("</div>", unsafe_allow_html=True)
