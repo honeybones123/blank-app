@@ -20,3 +20,27 @@ def test_bending_diagrams_use_stable_streamlit_component_keys() -> None:
     assert 'key="bending_side_view"' in side_view
     assert 'key=f"bending_side_view_' not in side_view
     assert "@st.fragment\ndef render_bending_side_view_diagram(" in side_view
+
+
+def test_bending_check_tabs_keep_a_stable_container() -> None:
+    """A tab click must not replace the detailed-calculation DOM slot."""
+
+    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+
+    assert "calc_blocks_container = st.container()" in source
+    assert "with calc_blocks_container:" in source
+    assert "calc_blocks_placeholder = st.empty()" not in source
+
+
+def test_bending_calculation_tabs_are_client_side_and_preserve_scroll() -> None:
+    """ULS/SLS selection is view-only and must not remount the page."""
+
+    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+
+    assert "uls_checks_tab, sls_checks_tab, minimum_checks_tab = st.tabs(" in source
+    assert "with uls_checks_tab:" in source
+    assert "with sls_checks_tab:" in source
+    assert "with minimum_checks_tab:" in source
+    assert "__sbBendingCalcTabScrollGuard" in source
+    assert "doc.addEventListener(\"click\", preserveScroll, true)" in source
+    assert "render_lazy_check_tab_selector" not in source

@@ -88,7 +88,6 @@ from engineering_page_sections.compact_check_inputs import (
     format_number,
     join_summary,
 )
-from engineering_page_sections.lazy_check_tabs import render_lazy_check_tab_selector
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 # Safe option lists for reinforcement inputs
@@ -1169,7 +1168,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         st.markdown("<div style='margin-top: 0.5rem;'></div>", unsafe_allow_html=True)
         diagram_section_placeholder = st.empty()
         inputs_placeholder = st.empty()
-        calc_blocks_placeholder = st.empty()
+        # The detailed tab body is interactive.  Keep a stable multi-element
+        # container for it instead of replacing an ``st.empty`` slot on every
+        # tab click; replacement remounts the whole calculation subtree and
+        # makes the browser lose its scroll position.
+        calc_blocks_container = st.container()
         render_timing_mark("bending_page.runtime.presentation.summary.end")
 
     # Persist canonical bending state for the rest of the page (and next rerun)
@@ -1766,10 +1769,57 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             else:
                 state_for_math = "Uncracked"
 
-            with calc_blocks_placeholder.container():
+            with calc_blocks_container:
                 render_timing_mark("bending_page.runtime.checks.start")
                 # ---------------- Step-by-step tabs ----------------
                 apply_step_summary_expander_css()
+                # Switching a native Streamlit tab must remain a local view
+                # change.  Streamlit's tab implementation can focus the newly
+                # selected panel and move the enclosing ``section.stMain``
+                # scroller when ULS/SLS bodies have different heights.  Record
+                # and restore that exact scroller only for this unique Bending
+                # calculation-tab group; navigation and diagram tabs remain
+                # untouched.
+                import streamlit.components.v1 as components
+
+                components.html(
+                    """
+                    <script>
+                    (function () {
+                      const doc = window.parent.document;
+                      const marker = "__sbBendingCalcTabScrollGuard";
+                      if (doc[marker]) return;
+                      doc[marker] = true;
+                      const labels = new Set([
+                        "ULS Checks", "SLS Checks", "Minimum strength checks"
+                      ]);
+                      function preserveScroll(event) {
+                        const tab = event.target && event.target.closest
+                          ? event.target.closest('[role="tab"], button')
+                          : null;
+                        if (!tab || !labels.has((tab.textContent || "").trim())) return;
+                        const scroller = doc.querySelector('section.stMain');
+                        if (!scroller) return;
+                        const scrollTop = scroller.scrollTop;
+                        [0, 50, 150, 350, 750].forEach(function (delay) {
+                          window.parent.setTimeout(function () {
+                            if (Math.abs(scroller.scrollTop - scrollTop) > 1) {
+                              scroller.scrollTop = scrollTop;
+                            }
+                          }, delay);
+                        });
+                      }
+                      doc.addEventListener("click", preserveScroll, true);
+                      doc.addEventListener("keydown", function (event) {
+                        if (event.key === "Enter" || event.key === " ") {
+                          preserveScroll(event);
+                        }
+                      }, true);
+                    })();
+                    </script>
+                    """,
+                    height=0,
+                )
                 render_section_title("Bending design checks")
                 detail_view = st.session_state.get("bending_detail_view", "positive")
                 if detail_view not in _valid_bending_views and _valid_bending_views:
@@ -1829,31 +1879,13 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         "d": float(top_results_pos.get("d_mm", d_eff) or d_eff),
                     })
 
-                # Use the same lazy check-group contract as the Shear page.
-                # Detailed cards are expensive, so render only the selected
-                # group instead of rebuilding all three on every navigation.
-                _previous_bending_tab = st.session_state.get("bending_check_tab")
-                active_bending_tab = render_lazy_check_tab_selector(
-                    st,
-                    labels=("ULS Checks", "SLS Checks", "Minimum strength checks"),
-                    key="bending_check_tab",
-                    aria_label="Bending design checks",
-                    anchor_id="bending-check-tabs-anchor",
+                # Bending calculation tabs are client-side Streamlit tabs.
+                # Unlike a radio selector, changing one does not rerun this
+                # result-page fragment or reset the main page scroller.
+                uls_checks_tab, sls_checks_tab, minimum_checks_tab = st.tabs(
+                    ("ULS Checks", "SLS Checks", "Minimum strength checks")
                 )
-                # A normal check-tab change must not consume a stale jump
-                # request left by summary navigation.  Otherwise the final
-                # page-level scroll hook can move the viewport when SLS/ULS
-                # is selected.
-                if _previous_bending_tab and _previous_bending_tab != active_bending_tab:
-                    st.session_state.pop("jump_to", None)
-                    st.session_state.pop("bending_pending_scroll_uid", None)
-                elif not st.session_state.get("bending_pending_scroll_uid"):
-                    # A tab interaction is not a summary-navigation request.
-                    # Do not let an old global jump target move the viewport
-                    # during the page-level post-render hook.
-                    st.session_state.pop("jump_to", None)
-
-                if active_bending_tab == "ULS Checks":
+                with uls_checks_tab:
                     render_uls_tab(
                         top_results_active,
                         b,
@@ -1866,7 +1898,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         Mu_star_override=Mu_uls_active,
                         moment_sign=detail_view,
                     )
-                elif active_bending_tab == "SLS Checks":
+                with sls_checks_tab:
                     render_sls_tab(
                         top_results_active,
                         b,
@@ -1879,7 +1911,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         summary_mode=False,
                         moment_sign=detail_view,
                     )
-                else:
+                with minimum_checks_tab:
                     render_min_strength_tab(
                         top_results_active, b, D, fc, fsy, Ast_active,
                         summary_mode=False,
