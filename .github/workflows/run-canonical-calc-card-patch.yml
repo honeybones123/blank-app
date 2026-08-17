@@ -1,0 +1,23 @@
+name: Run canonical calc-card patch
+on:
+  push:
+    branches: [agent/architecture-and-calc-page-performance]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/architecture-and-calc-page-performance
+          fetch-depth: 0
+      - run: python tools/tmp_patch_canonical_calc_card.py
+      - run: python -m py_compile widgets_helpers.py bending_tabs.py
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add widgets_helpers.py bending_tabs.py
+          git commit -m 'Add canonical calc-card render policy'
+          git push origin HEAD:agent/architecture-and-calc-page-performance
