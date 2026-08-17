@@ -8,6 +8,7 @@ selected check group beneath it.
 from __future__ import annotations
 
 from collections.abc import Sequence
+import json
 from typing import Any
 
 
@@ -27,6 +28,10 @@ def render_lazy_check_tab_selector(
     current = str(st_module.session_state.get(key) or options[0])
     if current not in options:
         st_module.session_state[key] = options[0]
+
+    scroll_storage_key = f"sb_calc_tab_scroll_y::{key}"
+    js_anchor_id = json.dumps(anchor_id)
+    js_scroll_storage_key = json.dumps(scroll_storage_key)
 
     st_module.markdown(
         f"""
@@ -61,18 +66,32 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
 <div id="{anchor_id}" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>
 <script>
 (function () {{
-  const key = "sb_calc_tab_scroll_y";
+  const anchorId = {js_anchor_id};
+  const storageKey = {js_scroll_storage_key};
   const win = window.top;
+  const doc = win.document;
+  const belongsToThisSelector = function (label) {{
+    const anchor = doc.getElementById(anchorId);
+    const groupRoot = anchor && anchor.closest('div[data-testid="stVerticalBlock"]');
+    return Boolean(groupRoot && groupRoot.contains(label));
+  }};
+  win.__sbCalcTabScrollSelectors = win.__sbCalcTabScrollSelectors || {{}};
   if (!win.__sbCalcTabScrollBound) {{
     win.__sbCalcTabScrollBound = true;
-    win.document.addEventListener("click", function (event) {{
+    doc.addEventListener("click", function (event) {{
       const label = event.target && event.target.closest && event.target.closest('label');
       if (!label) return;
       const radio = label.querySelector('input[type="radio"]');
-      if (radio) win.sessionStorage.setItem(key, String(win.scrollY || 0));
+      if (!radio) return;
+      Object.values(win.__sbCalcTabScrollSelectors).some(function (selector) {{
+        if (!selector.belongsToThisSelector(label)) return false;
+        win.sessionStorage.setItem(selector.storageKey, String(win.scrollY || 0));
+        return true;
+      }});
     }}, true);
   }}
-  const saved = win.sessionStorage.getItem(key);
+  win.__sbCalcTabScrollSelectors[anchorId] = {{ storageKey: storageKey, belongsToThisSelector: belongsToThisSelector }};
+  const saved = win.sessionStorage.getItem(storageKey);
   if (saved !== null) {{
     const y = Number(saved);
     if (Number.isFinite(y)) {{
@@ -82,11 +101,11 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
         attempts += 1;
         if (attempts >= 12) {{
           win.clearInterval(restore);
-          win.sessionStorage.removeItem(key);
+          win.sessionStorage.removeItem(storageKey);
         }}
       }}, 40);
     }} else {{
-      win.sessionStorage.removeItem(key);
+      win.sessionStorage.removeItem(storageKey);
     }}
   }}
 }})();

@@ -79,6 +79,7 @@ from engineering_page_sections.compact_check_inputs import (
     format_number,
     join_summary,
 )
+from engineering_page_sections.lazy_check_tabs import render_lazy_check_tab_selector
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -2865,67 +2866,19 @@ In short:
     # Streamlit st.tabs renders every tab body on every rerun.  Keep the same
     # visible tab treatment, but use a styled radio as the server-side active
     # tab boundary so inactive check diagrams are not assembled at all.
-    _jump_tab = st.session_state.get(JUMP_NAV_TAB_KEY)
+    _jump_tab = st.session_state.pop(JUMP_NAV_TAB_KEY, None)
     if _jump_tab in SHEAR_CHECK_TAB_LABELS:
         st.session_state[SHEAR_CHECK_TAB_KEY] = _jump_tab
     elif st.session_state.get(SHEAR_CHECK_TAB_KEY) not in SHEAR_CHECK_TAB_LABELS:
         st.session_state[SHEAR_CHECK_TAB_KEY] = SHEAR_CHECK_TAB_LABELS[0]
 
-    st.markdown(
-        """
-<style>
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] {
-    display: flex !important;
-    align-items: center !important;
-    gap: 18px !important;
-    border-bottom: 1px solid rgba(49,51,63,0.20) !important;
-    padding-bottom: 4px !important;
-    margin-bottom: 0.35rem !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label {
-    margin: 0 !important;
-    padding: 6px 2px !important;
-    background: transparent !important;
-    border: none !important;
-    border-bottom: 2px solid transparent !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    cursor: pointer !important;
-    font-weight: 500 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label input[type="radio"],
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label > div:first-child,
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label > span:first-child {
-    display: none !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label:has(input:checked),
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label[aria-checked="true"] {
-    border-bottom: 2px solid #ff4b4b !important;
-    font-weight: 600 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label:hover {
-    background: transparent !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label * {
-    margin: 0 !important;
-    padding: 0 !important;
-}
-</style>
-""",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div id="shear-check-tabs-anchor" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>',
-        unsafe_allow_html=True,
-    )
-    active_shear_tab = st.radio(
-        "Shear design checks",
-        options=SHEAR_CHECK_TAB_LABELS,
-        horizontal=True,
+    active_shear_tab = render_lazy_check_tab_selector(
+        st,
+        labels=SHEAR_CHECK_TAB_LABELS,
         key=SHEAR_CHECK_TAB_KEY,
-        label_visibility="collapsed",
+        aria_label="Shear design checks",
+        anchor_id="shear-check-tabs-anchor",
     )
-    st.session_state.pop(JUMP_NAV_TAB_KEY, None)
     tab1, tab2, tab3 = st.container(), st.container(), st.container()
 
     # =====================================================
