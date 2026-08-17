@@ -1482,6 +1482,47 @@ div[data-testid="stVerticalBlock"]:has(
   box-shadow: inset 4px 0 0 #dc3545 !important;
   background: rgba(220,53,69,0.018) !important;
 }
+
+/* Technical-basis trigger: calculation cards use one clear teaching CTA.
+   Keep ordinary app popovers unchanged by scoping this to calc-card stacks. */
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"],
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"] {
+  border: 1px solid rgba(31,119,180,0.32) !important;
+  border-radius: 999px !important;
+  background: rgba(31,119,180,0.055) !important;
+  color: #1f5f8f !important;
+  padding: 0.28rem 0.62rem !important;
+  min-height: 1.85rem !important;
+  font-size: 0 !important;
+  line-height: 1 !important;
+  font-weight: 600 !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::before,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]::before {
+  content: "ⓘ Understand the technical basis";
+  display: inline !important;
+  font-size: 0.78rem !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]:hover,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]:hover {
+  border-color: rgba(31,119,180,0.55) !important;
+  background: rgba(31,119,180,0.10) !important;
+  color: #155a8a !important;
+}
 </style>
         """,
         unsafe_allow_html=True,
