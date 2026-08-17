@@ -15,7 +15,7 @@ def test_repository_instructions_make_performance_ui_freeze_explicit() -> None:
     assert "## Calculation-Page Performance UI Freeze" in instructions
     assert "must not change any visible UI or formatting" in instructions
     assert "### 9.1 Calculation-page presentation freeze" in contract
-    assert "no presentation authority" in normalized_contract
+    assert "has no authority to change **what** the user sees" in normalized_contract
     assert "separately authorised product change" in contract
 
 
@@ -50,3 +50,28 @@ def test_performance_registry_only_delegates_to_existing_page_renderers() -> Non
     assert "CALCULATION_PAGE_MODULES" in source
     for slug in ("bending", "shear", "creep", "shrinkage", "crack", "deflection"):
         assert f'"{slug}": PageModuleSpec(' in source
+
+
+def test_hybrid_calcbox_policy_keeps_light_cards_browser_only_and_diagrams_lazy() -> None:
+    source = (
+        ROOT / "engineering_page_sections" / "calcbox_performance.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'on_change="ignore"' in source
+    assert "if diagram_fn is not None:" in source
+    assert "return lazy_renderer(" in source
+    assert "return _render_eager_light_calcbox(" in source
+    assert "EngineeringResultStore" not in source
+    assert "PublicationStore" not in source
+    assert "DesignBrain" not in source
+    assert "input_revision" not in source
+
+
+def test_bending_shell_installs_presentation_policy_without_touching_calculation_runtime() -> None:
+    source = (ROOT / "bending_page.py").read_text(encoding="utf-8")
+
+    assert "install_bending_hybrid_calcbox_runtime" in source
+    assert '_runtime().render_bending()' in source
+    assert "compute_bending_results" not in source.split(
+        "def _install_presentation_performance_policy()", 1
+    )[1].split("def build_bending_page_context", 1)[0]
