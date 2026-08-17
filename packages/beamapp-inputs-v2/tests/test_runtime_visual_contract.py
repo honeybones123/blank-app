@@ -8,14 +8,16 @@ LAB_ROOT = Path(__file__).parents[1]
 
 def test_runtime_visual_contract_is_present_and_explicit() -> None:
     contract = (LAB_ROOT / "RUNTIME_VISUAL_CONTRACT.md").read_text(encoding="utf-8")
-    for required in ("1180px", "2.25rem", "14px", "Bottom Reinforcement", "sibling columns"):
+    for required in ("full-width", "2.25rem", "14px", "Bottom Reinforcement", "sibling columns"):
         assert required in contract
 
 
 def test_v2_shell_uses_runtime_shell_measurements() -> None:
     css = scoped_css()
-    for required in ("font-size: 14px", "max-width: 1180px", "2.25rem", "padding-top: 2rem"):
+    for required in ("font-size: 14px", "max-width: none", "2.25rem", "padding-top: 2rem"):
         assert required in css
+
+
 def test_design_brain_visual_shell_remains_frozen() -> None:
     """Architecture changes must not redesign the accepted V2 card shell."""
     from pathlib import Path
