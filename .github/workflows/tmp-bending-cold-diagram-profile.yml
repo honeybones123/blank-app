@@ -1,8 +1,9 @@
-# Temporary measurement-only workflow. Follow-up commit intentionally triggers branch push profiling.
+# Temporary measurement-only workflow. Uses the same pull-request trigger pattern as the proven performance profiler.
 name: Temporary Bending cold diagram profile
 on:
   push:
     branches: [perf/bending-diagram-profile-2026-08-18]
+  pull_request:
   workflow_dispatch:
 
 jobs:
