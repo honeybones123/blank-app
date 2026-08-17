@@ -54,7 +54,7 @@ jobs:
           mkdir -p browser-artifacts
           python - <<'PY'
           from pathlib import Path
-          import json
+          import json, traceback
           from PIL import Image, ImageChops
           from playwright.sync_api import sync_playwright
 
@@ -72,13 +72,12 @@ jobs:
                   if mutate:
                       mutate(page)
                       page.wait_for_timeout(2200)
-                  visible_text=page.locator('body').inner_text()
                   metrics={
                       'h1': page.locator('h1').first.inner_text(),
                       'expanders': page.locator('div[data-testid="stExpander"] details').count(),
                       'number_inputs': page.locator('input[type="number"]').count(),
                       'radios': page.locator('div[role="radiogroup"]').count(),
-                      'body_text': visible_text,
+                      'body_text': page.locator('body').inner_text(),
                   }
                   page.screenshot(path=str(OUT/f'{name}.png'), full_page=True, animations='disabled')
                   browser.close()
@@ -90,48 +89,54 @@ jobs:
                   raise AssertionError('No expander found')
               details.nth(0).locator('summary').click()
 
-          def edit_first_number(page):
-              nums=page.locator('input[type="number"]')
-              if nums.count() < 1:
-                  raise AssertionError('No number input found on Bending page')
-              el=nums.nth(0)
-              old=float(el.input_value())
-              new=old + (1.0 if abs(old) < 100 else 5.0)
-              el.fill(str(new))
-              el.press('Tab')
+          def switch_bending_state_tab(page):
+              tab=page.get_by_text('SLS (cracked)', exact=True)
+              if tab.count() < 1:
+                  raise AssertionError('SLS (cracked) state tab not found')
+              tab.first.click()
 
           cases=[
               ('bending','bending-default',None),
-              ('bending','bending-edit',edit_first_number),
+              ('bending','bending-sls-tab',switch_bending_state_tab),
               ('shear','shear-closed',None),
               ('shear','shear-first-open',open_first_expander),
           ]
           report={}
           failures=[]
           for slug,name,mutate in cases:
-              bm=snap(BASE,slug,'base-'+name,mutate)
-              hm=snap(HEAD,slug,'head-'+name,mutate)
-              text_same=bm['body_text']==hm['body_text']
-              structural_same=all(bm[k]==hm[k] for k in ('h1','expanders','number_inputs','radios'))
-              a=Image.open(OUT/f'base-{name}.png').convert('RGB')
-              b=Image.open(OUT/f'head-{name}.png').convert('RGB')
-              if a.size != b.size:
-                  pixel_ratio=1.0
-              else:
-                  d=ImageChops.difference(a,b)
-                  if d.getbbox() is None:
-                      pixel_ratio=0.0
+              try:
+                  bm=snap(BASE,slug,'base-'+name,mutate)
+                  hm=snap(HEAD,slug,'head-'+name,mutate)
+                  text_same=bm['body_text']==hm['body_text']
+                  structural_same=all(bm[k]==hm[k] for k in ('h1','expanders','number_inputs','radios'))
+                  a=Image.open(OUT/f'base-{name}.png').convert('RGB')
+                  b=Image.open(OUT/f'head-{name}.png').convert('RGB')
+                  if a.size != b.size:
+                      pixel_ratio=1.0
                   else:
-                      import numpy as np
-                      aa=np.asarray(a, dtype=np.int16)
-                      bb=np.asarray(b, dtype=np.int16)
-                      changed=np.any(np.abs(aa-bb)>8, axis=2)
-                      pixel_ratio=float(changed.mean())
-              report[name]={'text_same':text_same,'structural_same':structural_same,'pixel_changed_ratio':pixel_ratio,'base':{k:v for k,v in bm.items() if k!='body_text'},'head':{k:v for k,v in hm.items() if k!='body_text'}}
-              if not text_same or not structural_same or pixel_ratio > 0.001:
+                      d=ImageChops.difference(a,b)
+                      if d.getbbox() is None:
+                          pixel_ratio=0.0
+                      else:
+                          import numpy as np
+                          aa=np.asarray(a, dtype=np.int16)
+                          bb=np.asarray(b, dtype=np.int16)
+                          changed=np.any(np.abs(aa-bb)>8, axis=2)
+                          pixel_ratio=float(changed.mean())
+                  report[name]={
+                      'text_same':text_same,
+                      'structural_same':structural_same,
+                      'pixel_changed_ratio':pixel_ratio,
+                      'base':{k:v for k,v in bm.items() if k!='body_text'},
+                      'head':{k:v for k,v in hm.items() if k!='body_text'},
+                  }
+                  if not text_same or not structural_same or pixel_ratio > 0.001:
+                      failures.append(name)
+              except Exception as exc:
+                  report[name]={'error':f'{type(exc).__name__}: {exc}','traceback':traceback.format_exc()}
                   failures.append(name)
+              (OUT/'report.json').write_text(json.dumps(report, indent=2, sort_keys=True), encoding='utf-8')
           print(json.dumps(report, indent=2, sort_keys=True))
-          (OUT/'report.json').write_text(json.dumps(report, indent=2, sort_keys=True), encoding='utf-8')
           if failures:
               raise SystemExit('UX freeze mismatch: '+', '.join(failures))
           PY
