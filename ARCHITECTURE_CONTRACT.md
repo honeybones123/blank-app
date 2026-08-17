@@ -17,26 +17,24 @@ This contract defines the target architecture for the canonical Runtime app. A p
 
 ### Presentation shell
 
-`inputs_page.py` owns route order and rendering composition only. It may construct page context and invoke fragment entry points. It does not calculate engineering results, classify a governing family, build recommendations, decide publication truth, or mutate a Design Brain result.
+`inputs_page.py` owns route order and rendering composition only. It may construct page context and invoke the engineering-workspace entry point. It does not own action-source transaction ordering, calculate engineering results, classify a governing family, build recommendations, decide publication truth, or mutate a Design Brain result.
 
 The Inputs page is composed in this order:
 
-1. page setup;
+1. page setup and committed widget projection;
 2. static page title owned by the shell;
-3. automatic summary/calculation fragment;
-4. workspace controls fragment;
-5. automatic Design Brain fragment;
-6. engineering-input fragment;
-7. page tail and diagnostics.
+3. one authoritative engineering workspace transaction;
+4. page tail and diagnostics.
 
-The four top-level workspace fragments are siblings. The engineering-input
-fragment may contain stable family-local child fragments so a committed edit
-redraws only its owning widget family. A diagram may likewise have a nested
-display-local fragment, but no fragment may wrap all workspace regions.
+The authoritative engineering workspace owns the revision-consistent composition of summary/calculation, workspace controls, Design Brain, engineering inputs and diagrams. These regions may have stable presentation-local child fragments, but they must consume the same committed snapshot/revision and may not create competing calculation, publication or Apply authorities.
+
+A child fragment may rerender a display-local region without advancing engineering identity. Splitting presentation for responsiveness is allowed; splitting the authoritative engineering transaction into independently publishing sibling authorities is forbidden.
+
+Action-source switching is an application transaction. The page shell may invoke it, but the pointer -> projection -> reconciliation -> commit ordering belongs to an application service and cannot be reimplemented in `inputs_page.py`.
 
 ### Application services
 
-Application services coordinate explicit typed values and stores. They may depend on domain modules and ports, but never on page modules or rendering functions.
+Application services coordinate explicit typed values and stores. They may depend on domain modules and ports. They do not depend on page modules. Presentation-aware application boundaries may receive an explicit rendering adapter only where the boundary itself is a user interaction transaction; they cannot calculate engineering results or own page layout.
 
 Required storage boundaries are:
 
@@ -104,14 +102,14 @@ Revision status is one of `empty`, `pending`, `ready`, `failed`, or `superseded`
 
 ## 5. Automatic scoped execution
 
-Widget callbacks commit or classify the edit and request the smallest affected fragment rerun.
+Widget callbacks commit or classify the edit and request the smallest affected presentation rerun that preserves the authoritative engineering transaction.
 
-- Display-local edit: rerun only its widget/diagram fragment.
-- Engineering edit: commit `input_revision`; schedule summary/calculation automatically; schedule Design Brain after the matching calculation is ready.
-- Design-policy edit: reuse a matching calculation when legal and schedule Design Brain automatically.
+- Display-local edit: rerun only its widget/diagram/card fragment when that fragment has no engineering authority.
+- Engineering edit: commit `input_revision`; the authoritative workspace refreshes the matching calculation and Design Brain publication automatically.
+- Design-policy edit: reuse a matching calculation when legal and refresh Design Brain automatically.
 - Apply: validate and commit atomically, then follow the engineering-edit path.
 
-Polling or background execution may be used, but the browser must never require a manual refresh. The shell must not recompute the authoritative transaction merely because an unrelated widget expanded, collapsed, or changed display mode.
+Polling or background execution may be used only when freshness contracts remain explicit, but the browser must never require a manual refresh. The shell must not recompute the authoritative transaction merely because an unrelated expander opened, collapsed, or changed display mode.
 
 ## 6. Freshness and failure presentation
 
@@ -137,16 +135,17 @@ Family-specific policy belongs within the family contract/runtime. Page-owned de
 
 ## 8. Dependency direction
 
-Allowed direction is:
+Allowed engineering direction is:
 
 `page shell -> application services -> domain/design_brain/calculations -> pure contracts`
 
-Adapters may implement inward-facing ports. Reverse imports are forbidden. In particular:
+Presentation components may depend on pure presentation helpers and read models, but they cannot become engineering authorities. Adapters may implement inward-facing ports. Reverse engineering imports are forbidden. In particular:
 
 - report helpers cannot import page modules;
 - Design Brain registry modules cannot import a family module that imports the registry;
 - evidence and optimisation modules cannot mutually import each other;
-- domain modules cannot import Streamlit or `inputs_page.py`.
+- domain modules cannot import Streamlit or `inputs_page.py`;
+- calculation-card performance policy cannot import calculation or Design Brain mutation services.
 
 Relevant strongly connected components must be zero at final acceptance.
 
@@ -161,31 +160,21 @@ Relevant strongly connected components must be zero at final acceptance.
 
 ### 9.1 Calculation-page presentation freeze
 
-Performance optimisation is an execution concern and has no presentation
-authority. For Bending, Shear, Creep, Shrinkage, Crack Control and Deflection:
+Performance optimisation may change **when** an existing calculation-page body is constructed, but has no authority to change **what** the user sees. For Bending, Shear, Creep, Shrinkage, Crack Control and Deflection:
 
 - the visible control set, control type, order and location remain unchanged;
-- headings, labels, help, equations, calculation-box text and explanations
-  remain unchanged;
-- cards, tabs, expanders, diagrams, icons, colours, borders, spacing,
-  typography, dimensions and responsive formatting remain unchanged;
-- deferred work may display only the existing loading treatment and cannot
-  expose a new shell, placeholder or stale result;
-- optimisation code may call an existing page renderer but cannot render UI,
-  inject CSS/HTML, alter widget state, publish results or own navigation;
-- UI or formatting changes require a separately authorised product change and
-  cannot be justified or bundled as a performance optimisation.
+- headings, labels, help, equations, calculation-box text and explanations remain unchanged;
+- cards, tabs, expanders, diagrams, icons, colours, borders, spacing, typography, dimensions and responsive formatting remain unchanged;
+- light closed card bodies may remain mounted so expansion is browser-only;
+- expensive diagram-bearing card bodies may remain lazy so their figures are constructed only when opened;
+- opening or closing a presentation-only card must never advance input revision, recalculate engineering results, refresh Design Brain or publish a new authoritative result;
+- deferred work may display only the existing loading treatment and cannot expose a new shell, placeholder or stale result;
+- a shared presentation renderer may choose eager versus lazy execution, but it cannot alter engineering state, publish results, own navigation or change the visible contract;
+- UI or formatting changes require a separately authorised product change and cannot be justified or bundled as a performance optimisation.
 
-Acceptance requires like-for-like cold and warm measurements plus unchanged
-visual/formatting, calculation, state-retention and Apply contracts.
+Acceptance requires like-for-like cold and warm measurements plus unchanged visual/formatting, calculation, state-retention and Apply contracts.
 
-The calculation-page performance target is strict: every measured cold page
-open must complete in less than 1.0 second. A median below 1.0 second does not
-pass when any required cold run exceeds the limit. The target cannot be met by
-removing, hiding, renaming, restyling, reordering or deferring visible content,
-or by substituting a lighter presentation. Before and after runs must render
-the same page, controls, expanded/collapsed defaults, summaries, diagrams,
-calculation boxes, wording and formatting from the same engineering snapshot.
+The calculation-page performance target is strict: every measured cold page open must complete in less than 1.0 second. A median below 1.0 second does not pass when any required cold run exceeds the limit. The target cannot be met by removing, hiding, renaming, restyling, reordering or omitting visible content, or by substituting a lighter presentation. Before and after runs must render the same page, controls, expanded/collapsed defaults, summaries, diagrams, calculation boxes, wording and formatting from the same engineering snapshot.
 
 ## 10. Root-cause completion gate
 
