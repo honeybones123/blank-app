@@ -8,6 +8,7 @@ jobs:
     timeout-minutes: 20
     env:
       CODEX_DISABLE_CALC_PAGE_WARMUP: "1"
+      CODEX_RENDER_TIMING_TRACE: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,71 +19,43 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: python -m pip install -r requirements.txt
-      - name: Profile real app routes
+      - name: Trace bending and shear
         run: |
           python - <<'PY'
           import json
           import time
           from streamlit.testing.v1 import AppTest
 
-          PAGES = ("bending", "shear", "creep", "shrinkage", "crack", "deflection")
-
-          def page_status(page):
-              try:
-                  from application.page_module_registry import calculation_page_render_status
-                  return calculation_page_render_status(page)
-              except Exception as exc:
-                  return {"status_error": f"{type(exc).__name__}: {exc}"}
-
-          results = {}
-          for page in PAGES:
+          def summarize(page):
               at = AppTest.from_file("app.py", default_timeout=60)
               at.query_params["page"] = page
+              at.run(timeout=60)
               t0 = time.perf_counter()
               at.run(timeout=60)
-              t1 = time.perf_counter()
-              cold = {
-                  "wall_ms": round((t1 - t0) * 1000, 1),
-                  "renderer": page_status(page),
+              wall_ms = (time.perf_counter() - t0) * 1000.0
+              events = list(at.session_state.get("_render_timing_events") or [])
+              slow = sorted(
+                  [
+                      {
+                          "name": e.get("name"),
+                          "delta_ms": e.get("delta_ms"),
+                          "elapsed_ms": e.get("elapsed_ms"),
+                          "meta": e.get("meta"),
+                      }
+                      for e in events
+                  ],
+                  key=lambda e: float(e.get("delta_ms") or 0.0),
+                  reverse=True,
+              )[:20]
+              from application.page_module_registry import calculation_page_render_status
+              result = {
+                  "wall_ms": round(wall_ms, 1),
+                  "renderer": calculation_page_render_status(page),
+                  "slow_marks": slow,
                   "exceptions": [str(x.value) for x in at.exception],
               }
-              t2 = time.perf_counter()
-              at.run(timeout=60)
-              t3 = time.perf_counter()
-              warm = {
-                  "wall_ms": round((t3 - t2) * 1000, 1),
-                  "renderer": page_status(page),
-                  "exceptions": [str(x.value) for x in at.exception],
-              }
-              results[page] = {"cold": cold, "warm": warm}
-              print("PAGE", page, json.dumps(results[page], sort_keys=True))
+              print("TRACE", page, json.dumps(result, sort_keys=True))
 
-          # Bending card policy comparison on one identical app state. These
-          # runs use the canonical state keys so no page-specific renderer is introduced.
-          at = AppTest.from_file("app.py", default_timeout=60)
-          at.query_params["page"] = "bending"
-          at.run(timeout=60)
-          card_results = {}
-          for label, key in (
-              ("light_mounted_1_5", "step_open_bending_uls_authoritative_5"),
-              ("heavy_diagram_1_1", "step_open_bending_uls_authoritative_1"),
-          ):
-              at.session_state[key] = True
-              before_plots = len(at.get("plotly_chart"))
-              t0 = time.perf_counter()
-              at.run(timeout=60)
-              t1 = time.perf_counter()
-              after_plots = len(at.get("plotly_chart"))
-              card_results[label] = {
-                  "open_full_rerun_ms": round((t1 - t0) * 1000, 1),
-                  "renderer": page_status("bending"),
-                  "plotly_before": before_plots,
-                  "plotly_after": after_plots,
-                  "exceptions": [str(x.value) for x in at.exception],
-              }
-              at.session_state[key] = False
-              at.run(timeout=60)
-              print("CARD", label, json.dumps(card_results[label], sort_keys=True))
-
-          print("RESULTS_JSON=" + json.dumps({"pages": results, "bending_cards": card_results}, sort_keys=True))
+          summarize("bending")
+          summarize("shear")
           PY
