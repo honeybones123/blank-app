@@ -103,7 +103,7 @@ def scroll_to_jump_after_render(offset_px: int = 96, duration_ms: int = 850):
 
   function switchToTab(name) {{
     if (!name) return Promise.resolve();
-    const tabButtons = doc.querySelectorAll('button[data-baseweb="tab"]');
+    const tabButtons = doc.querySelectorAll('[role="tab"], button[data-baseweb="tab"]');
     for (const button of tabButtons) {{
       if (button.textContent.trim() === name) {{
         if (button.getAttribute("aria-selected") !== "true") {{

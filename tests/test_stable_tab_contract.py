@@ -1,0 +1,50 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_shared_stable_tabs_are_native_view_only_tabs() -> None:
+    source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "return tuple(st_module.tabs(tab_labels))" in source
+    assert "st_module.radio(" not in source
+    assert "section.stMain" in source
+    assert "doc.addEventListener('pointerdown', snapshot, true)" in source
+    assert "window.parent.setTimeout" in source
+    assert "session_state" not in source
+
+
+def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:
+    for filename, scope in (
+        ("bending_page_runtime.py", "bending-calculation-checks"),
+        ("shear_page_runtime.py", "shear-calculation-checks"),
+        ("creep.py", "creep-calculation-checks"),
+    ):
+        source = (ROOT / filename).read_text(encoding="utf-8-sig")
+        assert "from engineering_page_sections.stable_tabs import render_stable_tabs" in source
+        assert f'scope_id="{scope}"' in source
+        assert "render_lazy_check_tab_selector" not in source
+
+    assert not (ROOT / "engineering_page_sections" / "lazy_check_tabs.py").exists()
+
+
+def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
+    bending = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+    shear = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8-sig")
+    creep = (ROOT / "creep.py").read_text(encoding="utf-8-sig")
+    crack = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
+
+    assert 'scope_id="bending-section-diagrams"' in bending
+    assert 'scope_id="shear-visualisation-diagrams"' in shear
+    assert 'scope_id="creep-side-view-diagrams"' in creep
+    assert 'scope_id="crack-method-diagrams"' in crack
+    assert 'scope_id="crack-as5100-method-diagrams"' in crack
+
+
+def test_cross_page_calculation_jumps_target_native_tabs() -> None:
+    source = (ROOT / "jump_nav.py").read_text(encoding="utf-8")
+
+    assert "'[role=\"tab\"], button[data-baseweb=\"tab\"]'" in source

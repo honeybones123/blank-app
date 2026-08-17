@@ -74,6 +74,7 @@ from engineering_page_sections.compact_check_inputs import (
     format_number,
     join_summary,
 )
+from engineering_page_sections.stable_tabs import render_stable_tabs
 
 
 CRACK_METHOD_LABELS = {
@@ -329,23 +330,18 @@ def _render_c766_method(sync_callbacks):
     return result
 
 
-def _render_retained_crack_diagram(sync_callbacks, crack_metrics) -> None:
+def _render_retained_crack_diagram(_sync_callbacks, crack_metrics) -> None:
     """Keep the standard crack/moment diagram control for every method."""
     st.markdown('<div id="crack-diagram-module" style="height:0;width:0;overflow:hidden;"></div>', unsafe_allow_html=True)
-    seed_widget_from_shared("crack_diagram_view", "crack_diagram_panel", "Crack Diagram")
-    st.radio(
-        "Diagram view",
-        options=["Crack Diagram", "Moment Diagram"],
-        horizontal=True,
-        key="crack_diagram_view",
-        on_change=sync_callbacks["crack_diagram_view"],
-        label_visibility="collapsed",
+    crack_tab, moment_tab = render_stable_tabs(
+        st,
+        labels=("Crack Diagram", "Moment Diagram"),
+        scope_id="crack-method-diagrams",
     )
-    panel = str(st.session_state.get("crack_diagram_view", "Crack Diagram") or "Crack Diagram")
-    if panel == "Moment Diagram":
-        render_crack_moment_tab_plotly()
-    else:
+    with crack_tab:
         render_crack_side_view_diagram(st.session_state, crack_metrics=crack_metrics)
+    with moment_tab:
+        render_crack_moment_tab_plotly()
 
 
 def _render_as5100_method_cards(result) -> None:
@@ -988,7 +984,6 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
 """,
             unsafe_allow_html=True,
         )
-        seed_widget_from_shared("crack_diagram_view", "crack_diagram_panel", "Crack Diagram")
         _gov_col, _spacer = st.columns([2.2, 3.0])
         with _gov_col:
             if bool(_resolve_crack_diagram_window(st.session_state).get("multi")):
@@ -998,18 +993,12 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                     "</p>",
                     unsafe_allow_html=True,
                 )
-        st.radio(
-            "Diagram view",
-            options=["Crack Diagram", "Moment Diagram"],
-            horizontal=True,
-            key="crack_diagram_view",
-            on_change=sync_callbacks["crack_diagram_view"],
-            label_visibility="collapsed",
+        crack_tab, moment_tab = render_stable_tabs(
+            st,
+            labels=("Crack Diagram", "Moment Diagram"),
+            scope_id="crack-as5100-method-diagrams",
         )
-        panel = str(st.session_state.get("crack_diagram_view", "Crack Diagram") or "Crack Diagram")
-        if panel == "Moment Diagram":
-            render_crack_moment_tab_plotly()
-        else:
+        with crack_tab:
             render_crack_side_view_diagram(
                 st.session_state,
                 crack_metrics={
@@ -1018,6 +1007,8 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                     "wmax_mm": float(wmax_choice),
                 },
             )
+        with moment_tab:
+            render_crack_moment_tab_plotly()
 
     # --------------------------------------------------------
     render_timing_mark("crack_page.runtime.checks.start")

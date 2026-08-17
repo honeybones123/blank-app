@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_bending_views_use_client_side_tabs_without_a_rerun_selector() -> None:
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
 
-    assert 'section_tab, side_view_tab = st.tabs(diagram_options)' in source
+    assert 'section_tab, side_view_tab = render_stable_tabs(' in source
     assert 'key="bending_diagram_view"' not in source
     assert 'if diagram_view == "Section":' not in source
 
@@ -37,10 +37,11 @@ def test_bending_calculation_tabs_are_client_side_and_preserve_scroll() -> None:
 
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
 
-    assert "uls_checks_tab, sls_checks_tab, minimum_checks_tab = st.tabs(" in source
+    assert "uls_checks_tab, sls_checks_tab, minimum_checks_tab = render_stable_tabs(" in source
     assert "with uls_checks_tab:" in source
     assert "with sls_checks_tab:" in source
     assert "with minimum_checks_tab:" in source
-    assert "__sbBendingCalcTabScrollGuard" in source
-    assert "doc.addEventListener(\"click\", preserveScroll, true)" in source
+    assert 'scope_id="bending-calculation-checks"' in source
+    assert 'scope_id="bending-section-diagrams"' in source
+    assert "from engineering_page_sections.stable_tabs import render_stable_tabs" in source
     assert "render_lazy_check_tab_selector" not in source

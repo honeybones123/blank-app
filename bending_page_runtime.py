@@ -88,6 +88,7 @@ from engineering_page_sections.compact_check_inputs import (
     format_number,
     join_summary,
 )
+from engineering_page_sections.stable_tabs import render_stable_tabs
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 # Safe option lists for reinforcement inputs
@@ -1773,53 +1774,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 render_timing_mark("bending_page.runtime.checks.start")
                 # ---------------- Step-by-step tabs ----------------
                 apply_step_summary_expander_css()
-                # Switching a native Streamlit tab must remain a local view
-                # change.  Streamlit's tab implementation can focus the newly
-                # selected panel and move the enclosing ``section.stMain``
-                # scroller when ULS/SLS bodies have different heights.  Record
-                # and restore that exact scroller only for this unique Bending
-                # calculation-tab group; navigation and diagram tabs remain
-                # untouched.
-                import streamlit.components.v1 as components
-
-                components.html(
-                    """
-                    <script>
-                    (function () {
-                      const doc = window.parent.document;
-                      const marker = "__sbBendingCalcTabScrollGuard";
-                      if (doc[marker]) return;
-                      doc[marker] = true;
-                      const labels = new Set([
-                        "ULS Checks", "SLS Checks", "Minimum strength checks"
-                      ]);
-                      function preserveScroll(event) {
-                        const tab = event.target && event.target.closest
-                          ? event.target.closest('[role="tab"], button')
-                          : null;
-                        if (!tab || !labels.has((tab.textContent || "").trim())) return;
-                        const scroller = doc.querySelector('section.stMain');
-                        if (!scroller) return;
-                        const scrollTop = scroller.scrollTop;
-                        [0, 50, 150, 350, 750].forEach(function (delay) {
-                          window.parent.setTimeout(function () {
-                            if (Math.abs(scroller.scrollTop - scrollTop) > 1) {
-                              scroller.scrollTop = scrollTop;
-                            }
-                          }, delay);
-                        });
-                      }
-                      doc.addEventListener("click", preserveScroll, true);
-                      doc.addEventListener("keydown", function (event) {
-                        if (event.key === "Enter" || event.key === " ") {
-                          preserveScroll(event);
-                        }
-                      }, true);
-                    })();
-                    </script>
-                    """,
-                    height=0,
-                )
                 render_section_title("Bending design checks")
                 detail_view = st.session_state.get("bending_detail_view", "positive")
                 if detail_view not in _valid_bending_views and _valid_bending_views:
@@ -1882,8 +1836,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 # Bending calculation tabs are client-side Streamlit tabs.
                 # Unlike a radio selector, changing one does not rerun this
                 # result-page fragment or reset the main page scroller.
-                uls_checks_tab, sls_checks_tab, minimum_checks_tab = st.tabs(
-                    ("ULS Checks", "SLS Checks", "Minimum strength checks")
+                uls_checks_tab, sls_checks_tab, minimum_checks_tab = render_stable_tabs(
+                    st,
+                    labels=("ULS Checks", "SLS Checks", "Minimum strength checks"),
+                    scope_id="bending-calculation-checks",
                 )
                 with uls_checks_tab:
                     render_uls_tab(
@@ -1971,7 +1927,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 # Both views stay mounted in client-side tabs. Switching views must
                 # not run Python, replace the focused selector, or move the page's
                 # scroll anchor.
-                section_tab, side_view_tab = st.tabs(diagram_options)
+                section_tab, side_view_tab = render_stable_tabs(
+                    st,
+                    labels=diagram_options,
+                    scope_id="bending-section-diagrams",
+                )
                 with section_tab:
                     try:
                         section_chart_key = "bending_section_stress_strain"

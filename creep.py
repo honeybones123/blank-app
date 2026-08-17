@@ -61,7 +61,7 @@ from engineering_page_sections.compact_check_inputs import (
     join_summary,
     render_compact_check_inputs,
 )
-from engineering_page_sections.lazy_check_tabs import render_lazy_check_tab_selector
+from engineering_page_sections.stable_tabs import render_stable_tabs
 
 
 # ------------------------------------------------------------
@@ -626,8 +626,10 @@ div[data-testid="stElementContainer"]:has(#creep-side-view-tabs-anchor)
         )
         fig_creep_immediate = compact_side_view_figure(fig_creep_immediate)
         fig_creep_long_term = compact_side_view_figure(fig_creep_long_term)
-        tab_creep_immediate, tab_creep_long_term = st.tabs(
-            ["Immediate / cracked state", "After creep / long-term"]
+        tab_creep_immediate, tab_creep_long_term = render_stable_tabs(
+            st,
+            labels=("Immediate / cracked state", "After creep / long-term"),
+            scope_id="creep-side-view-diagrams",
         )
         with tab_creep_immediate:
             render_plotly_diagram(
@@ -673,9 +675,10 @@ div[data-testid="stTabs"] [data-baseweb="tab-panel"] {
         "Creep coefficient ϕ_cc(t)",
         "Creep strain ε_cc",
     )
-    active_creep_tab = render_lazy_check_tab_selector(
-        st, labels=_creep_tab_labels, key="creep_check_tab",
-        aria_label="Creep checks", anchor_id="creep-check-tabs-anchor",
+    creep_geometry_tab, creep_coefficient_tab, creep_strain_tab = render_stable_tabs(
+        st,
+        labels=_creep_tab_labels,
+        scope_id="creep-calculation-checks",
     )
 
     # Calculate alpha2 for display in k2 calc box
@@ -804,7 +807,7 @@ k₂ = {k2:.3f}
 _Ref: AS 3600:2018 Cl. 3.1.8.3 and Fig. 3.1.8.3._
 """
 
-    if active_creep_tab == _creep_tab_labels[0]:
+    with creep_geometry_tab:
         render_expandable_step(
             page_key="creep_geom",
             step_id="creep_th_raw",
@@ -955,7 +958,7 @@ from Table 3.1.8.3 is:
 _Ref: AS 3600:2018 Table 3.1.8.3._
 """
 
-    if active_creep_tab == _creep_tab_labels[1]:
+    with creep_coefficient_tab:
         render_expandable_step(
             page_key="creep_coeff",
             step_id="creep_phi_cc_t",
@@ -1123,7 +1126,7 @@ Expressed in microstrain:
 _Ref: AS 3600:2018 Cl. 3.1.8.1._
 """
 
-    if active_creep_tab == _creep_tab_labels[2]:
+    with creep_strain_tab:
         render_expandable_step(
             page_key="creep_strain",
             step_id="creep_sigma0",

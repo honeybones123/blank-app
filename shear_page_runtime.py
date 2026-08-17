@@ -79,7 +79,7 @@ from engineering_page_sections.compact_check_inputs import (
     format_number,
     join_summary,
 )
-from engineering_page_sections.lazy_check_tabs import render_lazy_check_tab_selector
+from engineering_page_sections.stable_tabs import render_stable_tabs
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -90,23 +90,6 @@ _standardise_shear_visual_layout = _shear_visualisation_section._standardise_she
 _render_plotly_in_mcft_column = _shear_visualisation_section._render_plotly_in_mcft_column
 _render_mcft_behaviour_chart = _shear_visualisation_section._render_mcft_behaviour_chart
 _shear_visualisation_section.bind_runtime(globals())
-
-# Keep Shear's existing step renderer available, but suppress the expensive
-# detail/diagram branch while an inactive Shear check tab is being assembled.
-# The surrounding summary and calculations still run; only non-visible tab
-# content is skipped until that tab is selected.
-_render_expandable_step = render_expandable_step
-
-
-def render_expandable_step(*args, **kwargs):
-    if (
-        kwargs.get("page_key") == "shear"
-        and bool(st.session_state.get("_shear_skip_inactive_tab", False))
-    ):
-        return None
-    return _render_expandable_step(*args, **kwargs)
-
-
 
 # ------------------------------------------------------------
 #  Helper functions for diagrams
@@ -129,7 +112,6 @@ SHEAR_CHECK_TAB_LABELS = (
     "MCFT and strength checks",
     "Shear reinforcement checks",
 )
-SHEAR_CHECK_TAB_KEY = "shear_check_tab"
 
 # Shear link legs: 0 means no links; active closed links start at 2 legs.
 REO_SHEAR_LEGS_OPTIONS = [0] + list(range(2, 13))
@@ -685,32 +667,17 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
             unsafe_allow_html=True,
         )
         render_section_title("Visualisation")
-        current_mode = str(st.session_state.get("shear_visual_diagram_mode", "") or "").strip()
-        if current_mode not in {"Side view", "Section", "Shear diagram"}:
-            if str(st.session_state.get("shear_visual_panel_mode", "") or "").strip() == "Shear diagram":
-                current_mode = "Shear diagram"
-            else:
-                current_mode = str(st.session_state.get("shear_reo_layout_mode", "Side view") or "Side view").strip()
-                if current_mode not in {"Side view", "Section"}:
-                    current_mode = "Side view"
-            st.session_state["shear_visual_diagram_mode"] = current_mode
-
-        visual_mode = str(st.session_state.get("shear_visual_diagram_mode", "Side view") or "Side view").strip()
-        if visual_mode == "Section":
-            _render_shear_cross_section()
-        elif visual_mode == "Shear diagram":
-            _render_shear_force_diagram()
-        else:
+        side_view_tab, section_tab, shear_diagram_tab = render_stable_tabs(
+            st,
+            labels=("Side view", "Section", "Shear diagram"),
+            scope_id="shear-visualisation-diagrams",
+        )
+        with side_view_tab:
             _render_shear_side_view()
-
-        controls_col, _ = st.columns([5, 5], gap="small")
-        with controls_col:
-            st.radio(
-                "Visualisation diagram",
-                options=["Side view", "Section", "Shear diagram"],
-                horizontal=True,
-                key="shear_visual_diagram_mode",
-            )
+        with section_tab:
+            _render_shear_cross_section()
+        with shear_diagram_tab:
+            _render_shear_force_diagram()
 
 
 def build_reo_circles_from_state(shape_code: str, dims: dict):
@@ -2863,29 +2830,18 @@ In short:
     render_section_title("Shear design checks")
 
 
-    # Streamlit st.tabs renders every tab body on every rerun.  Keep the same
-    # visible tab treatment, but use a styled radio as the server-side active
-    # tab boundary so inactive check diagrams are not assembled at all.
-    _jump_tab = st.session_state.pop(JUMP_NAV_TAB_KEY, None)
-    if _jump_tab in SHEAR_CHECK_TAB_LABELS:
-        st.session_state[SHEAR_CHECK_TAB_KEY] = _jump_tab
-    elif st.session_state.get(SHEAR_CHECK_TAB_KEY) not in SHEAR_CHECK_TAB_LABELS:
-        st.session_state[SHEAR_CHECK_TAB_KEY] = SHEAR_CHECK_TAB_LABELS[0]
-
-    active_shear_tab = render_lazy_check_tab_selector(
+    # Native tabs are a client-side view boundary.  Selecting a tab must not
+    # rerun the page or rebuild its authoritative engineering result.
+    tab1, tab2, tab3 = render_stable_tabs(
         st,
         labels=SHEAR_CHECK_TAB_LABELS,
-        key=SHEAR_CHECK_TAB_KEY,
-        aria_label="Shear design checks",
-        anchor_id="shear-check-tabs-anchor",
+        scope_id="shear-calculation-checks",
     )
-    tab1, tab2, tab3 = st.container(), st.container(), st.container()
 
     # =====================================================
     # TAB 1: Torsion + dimensions
     # =====================================================
     render_timing_mark("shear_page.runtime.checks.tab1.start")
-    st.session_state["_shear_skip_inactive_tab"] = active_shear_tab != SHEAR_CHECK_TAB_LABELS[0]
     with tab1:
         # =====================================================
         # Check 1 — TORSION CRACKING CHECK (T_cr)
@@ -3463,7 +3419,6 @@ dv is defined by shear transfer geometry (shear). They represent different mecha
     render_timing_mark("shear_page.runtime.checks.tab2.start")
     # TAB 2: MCFT and strength checks
     # =====================================================
-    st.session_state["_shear_skip_inactive_tab"] = active_shear_tab != SHEAR_CHECK_TAB_LABELS[1]
     with tab2:
         st.markdown(
             """
@@ -3557,7 +3512,9 @@ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_
         # existing breakdown toggle is the explicit user-controlled boundary;
         # do not build several Plotly figures on every route render when the
         # detailed view is hidden.
-        if active_shear_tab == SHEAR_CHECK_TAB_LABELS[1]:
+        # The native tab controls visibility locally; this body remains
+        # mounted so its widgets and visual state cannot be discarded.
+        with st.container():
             st.session_state.setdefault("show_mcft_breakdown", False)
             show_mcft_breakdown = bool(st.session_state.get("show_mcft_breakdown", False))
             st.toggle(
@@ -4668,7 +4625,6 @@ Regardless of reinforcement, design shear capacity cannot exceed this limit.
     render_timing_mark("shear_page.runtime.checks.tab3.start")
     # TAB 3: Shear reinforcement checks
     # =====================================================
-    st.session_state["_shear_skip_inactive_tab"] = active_shear_tab != SHEAR_CHECK_TAB_LABELS[2]
     with tab3:
         # =====================================================
         # Check 10 — SHEAR REINFORCEMENT LAYOUT (3 zones)
@@ -4929,7 +4885,6 @@ Spacing is varied along the span based on shear demand and checked against minim
     render_timing_mark("shear_page.runtime.checks.end")
 
     render_timing_mark("shear_page.runtime.checks.tab3.end")
-    st.session_state["_shear_skip_inactive_tab"] = False
 
     # Cross-page jump scroll (Inputs summary → shear/torsion calc anchors)
     from jump_nav import scroll_to_jump_after_render
