@@ -22,15 +22,9 @@ from inputs_application.engineering_workspace import (
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
 from inputs_application.engineering_input_store import InputSnapshotStore
-from inputs_application.action_source_control import (
-    ACTION_SOURCE_COMMIT_KEYS,
-    INPUTS_ACTION_SOURCE_TOGGLE_KEY,
-    authoritative_action_source_projection,
-    render_action_source_toggle,
-    synchronize_load_analysis_actions_for_inputs,
-    uses_load_analysis_actions,
+from inputs_application.action_source_transaction import (
+    render_inputs_action_source_transaction,
 )
-from inputs_application.load_analysis_state_store import LoadAnalysisStateStore
 from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     hydrate_inputs_longitudinal_reo_widgets_for_revision,
 )
@@ -159,153 +153,23 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
     """Render the single V2 transaction inside one stable page fragment."""
 
     # Streamlit executes the Apply button callback before re-entering this
-    # fragment.  Consume that immutable, revision-bound command first: no
+    # fragment. Consume that immutable, revision-bound command first: no
     # action-source projection, widget reconciliation or rendering may advance
     # state between the user's click and the atomic Apply validation/commit.
-    # After the commit, this same fragment run resolves and renders the new
-    # complete workspace once.
     _INPUTS_PAGE_RUNTIME.handle_pending_apply()
 
-    load_analysis_store = LoadAnalysisStateStore(st.session_state)
-
-    def _commit_manual_actions_before_source_change() -> None:
-        """Commit manual controls only when they are the current edit owner.
-
-        Streamlit updates the toggle widget before invoking its callback.  A
-        ``True`` value therefore means the user is leaving Beam Inputs and the
-        visible controls still contain manual actions that must be committed.
-        A ``False`` value means the user is leaving Load Analysis ownership;
-        those disabled controls contain a derived projection and must never be
-        reconciled into the preserved manual action owners.
-        """
-
-        if bool(st.session_state.get(INPUTS_ACTION_SOURCE_TOGGLE_KEY, False)):
-            _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
-
-    def _commit_selected_action_source(_selected: bool) -> None:
-        projected_keys = synchronize_load_analysis_actions_for_inputs(
-            st.session_state,
-            draft=load_analysis_store.current().to_dict(),
-            results=load_analysis_store.results(),
-        )
-        _request_inputs_engineering_commit(
-            INPUTS_ACTION_SOURCE_TOGGLE_KEY,
-            changed_keys=tuple(
-                sorted(
-                    {
-                        "actions_mode",
-                        "actions_source",
-                        *ACTION_SOURCE_COMMIT_KEYS,
-                        *projected_keys,
-                    }
-                )
-            ),
-            # The toggle callback already causes the owning fragment to rerun.
-            # Scheduling another fragment wake here creates overlapping runs
-            # and can truncate the page below Design Actions.
-            wake_fragments=False,
-        )
-
-    # Both Beam Inputs and Load Analysis render this same branch selector.
-    # Its widget keys are projections of the existing canonical action-source
-    # contract, so changing either page cannot create a split source state.
-    render_action_source_toggle(
-        st,
-        widget_key=INPUTS_ACTION_SOURCE_TOGGLE_KEY,
-        # Commit the visible ULS/SLS action widgets before changing their
-        # source. This is the same single transaction boundary used before
-        # calculation and prevents Streamlit's callback ordering from saving
-        # an older manual action when the source switch is pressed.
-        before_commit=_commit_manual_actions_before_source_change,
-        after_commit=_commit_selected_action_source,
+    # Action-source ownership is an application transaction, not a page-shell
+    # concern. Keep pointer/projection/reconcile ordering behind one boundary.
+    render_inputs_action_source_transaction(
+        st_module=st,
+        runtime=_INPUTS_PAGE_RUNTIME,
+        request_commit=_request_inputs_engineering_commit,
+        hydrate_actions=hydrate_committed_design_action_widgets,
     )
 
-    # Load Analysis owns its loads and solved actions. Beam Inputs receives a
-    # one-way, derived ULS/SLS projection only while that source is selected.
-    # Running this idempotently also catches a newer Load Analysis solve after
-    # the user returns to Inputs without manufacturing a second authority.
-    projected_keys = synchronize_load_analysis_actions_for_inputs(
-        st.session_state,
-        draft=load_analysis_store.current().to_dict(),
-        results=load_analysis_store.results(),
-    )
-    # The Load Analysis page may already have projected the latest actions into
-    # shared state before Inputs is opened.  In that case ``projected_keys`` is
-    # empty even though the beam-owned input transaction still contains the
-    # former manual actions.  Compare the typed projection with the committed
-    # beam snapshot as well, so navigation cannot leave widgets on the live
-    # Load Analysis values while summaries and Design Brain evaluate zeros.
-    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
-    committed_actions = (
-        InputSnapshotStore(st.session_state)
-        .current_for_beam(active_beam_id)
-        .to_dict()
-        if active_beam_id
-        else {}
-    )
-    action_projection = authoritative_action_source_projection(st.session_state)
-    projection_commit_keys = tuple(
-        sorted(
-            key
-            for key, value in action_projection.items()
-            if committed_actions.get(key) != value
-        )
-    ) if uses_load_analysis_actions(st.session_state) else ()
-    action_commit_keys = tuple(sorted({*projected_keys, *projection_commit_keys}))
-    if action_commit_keys:
-        _request_inputs_engineering_commit(
-            INPUTS_ACTION_SOURCE_TOGGLE_KEY,
-            changed_keys=action_commit_keys,
-            wake_fragments=False,
-        )
-
-    # Source changes reuse the same visible Streamlit controls.  Project the
-    # newly selected owner into those controls *before* reconciliation.  The
-    # reverse order treats the previous owner's display values as edits: when
-    # Load Analysis was switched off it wrote 9.7/19.5 into the preserved
-    # manual ULS fields and left the SLS result stale.  This ordering is the
-    # single source-switch transaction: pointer -> projection -> reconcile.
-    hydrate_committed_design_action_widgets(force=True)
-
-    if not uses_load_analysis_actions(st.session_state):
-        # Only Beam Inputs owns editable action controls.  In Load Analysis
-        # mode the same widgets are disabled projections and must never enter
-        # manual reconciliation merely because the fragment rendered them.
-        _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
-        # Reconciliation writes the visible manual controls to their canonical
-        # ULS/SLS owners.  Close that command by idempotently committing the
-        # active action set before calculation/publication is read below.
-        # This is required even when the reconcile call reports no difference:
-        # an earlier proxy-only callback may already have updated shared state
-        # while the beam-owned snapshot still contains the previous action.
-        # ``_request_inputs_engineering_commit`` is content-idempotent, so an
-        # already complete callback transaction creates no extra revision.
-        selected_prefix = (
-            "sls"
-            if str(st.session_state.get("loads_edit_mode", "ULS") or "ULS")
-            .strip()
-            .upper()
-            == "SLS"
-            else "uls"
-        )
-        _request_inputs_engineering_commit(
-            "inputs_load_Mstar_pos_proxy",
-            changed_keys=(
-                f"{selected_prefix}_Mstar",
-                f"{selected_prefix}_Mstar_pos_manual",
-                f"{selected_prefix}_Mstar_neg_manual",
-                f"{selected_prefix}_Vstar",
-                f"{selected_prefix}_Nstar",
-            ),
-            wake_fragments=False,
-        )
-
-    # Fragment reruns do not execute the page setup coordinator.  Reconcile
-    # the visible Inputs reinforcement controls from the committed beam
-    # snapshot before any workspace region (calculation, Design Brain, or
-    # widgets) renders.  This prevents the page from displaying Ø24 while V2
-    # evaluates the committed Ø40 transaction, which can otherwise select a
-    # different family and recommendation.
+    # Fragment reruns do not execute the page setup coordinator. Reconcile the
+    # visible Inputs reinforcement controls from the committed beam snapshot
+    # before any workspace region renders.
     active_beam_id = str(st.session_state.get("active_beam_id") or "").strip() or None
     input_store = InputSnapshotStore(st.session_state)
     beam_snapshot = input_store.current_for_beam(active_beam_id or "")
@@ -342,7 +206,7 @@ def render_inputs_page() -> None:
         ss.get("_inputs_page_shell_render_count", 0) or 0
     ) + 1
     # Reconcile the widget mirror before page setup builds the authoritative
-    # snapshot.  Setup deliberately reads the current widget projection, so
+    # snapshot. Setup deliberately reads the current widget projection, so
     # waiting until the workspace fragment is too late: a stale widget value
     # could otherwise overwrite a newer committed beam row before V2 runs.
     active_beam_id = str(ss.get("active_beam_id") or "").strip() or None
@@ -356,7 +220,7 @@ def render_inputs_page() -> None:
     )
     render_timing_mark("inputs_page.shell.setup.start")
     page_context = _INPUTS_PAGE_RUNTIME.render_page_setup(ss=ss)
-    # Build one explicit context for all sibling regions.  Session state stays
+    # Build one explicit context for all sibling regions. Session state stays
     # the storage mechanism, but page consumers now share the same snapshot
     # and service handles for this render.
     page_context["workspace_context"] = InputsWorkspaceContext.from_session(
