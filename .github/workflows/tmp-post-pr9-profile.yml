@@ -20,16 +20,53 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium
-      - name: Run authoritative cold-page benchmark
+      - name: Baseline cold Bending
         run: >-
           python tools/verification/helpers/cold_page_benchmark.py
+          --page bending
           --runs 1
           --max-invalid-attempts 2
           --mode navigation
-          --output artifacts/post_pr9_cold_profile.json
+          --starting-port 8600
+          --output artifacts/bending_baseline.json
+      - name: Patch checkout to reuse existing deflection result
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('ui/diagrams/crack_side_view_diagram.py')
+          src = path.read_text(encoding='utf-8')
+          old = '''    _ensure_deflection_results_for_diagram()\n    reported = _pick_reported_delta_total_mm()\n'''
+          new = '''    reported = _pick_reported_delta_total_mm()\n    if reported is None or not math.isfinite(reported):\n        _ensure_deflection_results_for_diagram()\n        reported = _pick_reported_delta_total_mm()\n'''
+          if old not in src:
+              raise SystemExit('target deflection sequence not found')
+          path.write_text(src.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Candidate cold Bending
+        run: >-
+          python tools/verification/helpers/cold_page_benchmark.py
+          --page bending
+          --runs 1
+          --max-invalid-attempts 2
+          --mode navigation
+          --starting-port 8700
+          --output artifacts/bending_candidate.json
+      - name: Compare A/B
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('artifacts/bending_baseline.json').read_text())['pages']['bending']['runs'][0]
+          b=json.loads(Path('artifacts/bending_candidate.json').read_text())['pages']['bending']['runs'][0]
+          keys=['page_open_ms','dispatch_ms','page_renderer_ms','renderer_boundary_ms','websocket_received_bytes','websocket_received_frames']
+          out={k:{'baseline':a.get(k),'candidate':b.get(k)} for k in keys}
+          out['baseline_top_trace']=a.get('top_trace_deltas',[])[:8]
+          out['candidate_top_trace']=b.get('top_trace_deltas',[])[:8]
+          print(json.dumps(out, indent=2))
+          Path('artifacts/bending_ab_summary.json').write_text(json.dumps(out, indent=2), encoding='utf-8')
+          PY
       - name: Upload profile artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: post-pr9-cold-page-profile
-          path: artifacts/post_pr9_cold_profile.json
+          name: post-pr9-bending-ab-profile
+          path: artifacts
