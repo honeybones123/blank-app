@@ -52,26 +52,17 @@ def test_performance_registry_only_delegates_to_existing_page_renderers() -> Non
         assert f'"{slug}": PageModuleSpec(' in source
 
 
-def test_hybrid_calcbox_policy_keeps_light_cards_browser_only_and_diagrams_lazy() -> None:
-    source = (
-        ROOT / "engineering_page_sections" / "calcbox_performance.py"
-    ).read_text(encoding="utf-8")
+def test_bending_uses_one_canonical_calcbox_renderer() -> None:
+    """Performance work cannot fork calc-card markup/CSS/state ownership."""
 
-    assert 'on_change="ignore"' in source
-    assert "if diagram_fn is not None:" in source
-    assert "return lazy_renderer(" in source
-    assert "return _render_eager_light_calcbox(" in source
-    assert "EngineeringResultStore" not in source
-    assert "PublicationStore" not in source
-    assert "DesignBrain" not in source
-    assert "input_revision" not in source
+    bending_shell = (ROOT / "bending_page.py").read_text(encoding="utf-8")
+    bending_tabs = (ROOT / "bending_tabs.py").read_text(encoding="utf-8-sig")
+    canonical = (ROOT / "widgets_helpers.py").read_text(encoding="utf-8-sig")
 
-
-def test_bending_shell_installs_presentation_policy_without_touching_calculation_runtime() -> None:
-    source = (ROOT / "bending_page.py").read_text(encoding="utf-8")
-
-    assert "install_bending_hybrid_calcbox_runtime" in source
-    assert '_runtime().render_bending()' in source
-    assert "compute_bending_results" not in source.split(
-        "def _install_presentation_performance_policy()", 1
-    )[1].split("def build_bending_page_context", 1)[0]
+    assert "install_bending_hybrid_calcbox_runtime" not in bending_shell
+    assert "_install_presentation_performance_policy" not in bending_shell
+    assert not (ROOT / "engineering_page_sections" / "calcbox_performance.py").exists()
+    assert "step_expander_calcbox" in bending_tabs
+    assert "def step_expander_calcbox(" in canonical
+    assert "apply_step_summary_expander_css()" in canonical
+    assert "span class='{status_class}'" in canonical
