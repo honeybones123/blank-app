@@ -2,6 +2,7 @@ name: Temporary post-PR9 calc profile
 on:
   push:
     branches: [perf/post-pr9-profile-2026-08-18]
+  pull_request:
   workflow_dispatch:
 
 permissions:
