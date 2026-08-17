@@ -1,3 +1,4 @@
+# Temporary measurement-only workflow. Follow-up commit intentionally triggers branch push profiling.
 name: Temporary Bending cold diagram profile
 on:
   push:
