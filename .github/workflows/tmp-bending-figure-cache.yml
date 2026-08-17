@@ -1,0 +1,50 @@
+name: Temporary Bending figure cache patch
+on:
+  push:
+    branches: [perf/calc-pages-profile-2026-08-17]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/calc-pages-profile-2026-08-17
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply safe Bending presentation cache
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('bending_diagrams.py')
+          source = path.read_text(encoding='utf-8')
+
+          old_imports = "import math\nimport os\nimport numpy as np\n"
+          new_imports = "import math\nimport os\nimport hashlib\nimport json\nimport numpy as np\n"
+          if old_imports not in source:
+              raise SystemExit('Expected bending_diagrams import block not found')
+          source = source.replace(old_imports, new_imports, 1)
+
+          old_wrapper = '''def _plot_stress_strain_profiles(\n    state_dict, state_label=None, layout=None, moment_sign: str = "positive"\n):\n    """Compatibility wrapper for the shared 3-panel stress/strain diagram builder."""\n    return _stress_diagram_plot_stress_strain_profiles(\n        state_dict,\n        state_label=state_label,\n        layout=layout,\n        moment_sign=moment_sign,\n    )\n'''
+
+          new_wrapper = '''_BENDING_MAIN_FIGURE_CACHE_KEY = "_bending_main_stress_strain_figure_cache"\n_BENDING_MAIN_FIGURE_SESSION_KEYS = (\n    "shape_name",\n    "sec_shape",\n    "section_shape",\n    "geometry_section_shape",\n    "bending_sls_dn",\n    "bending_sls_eps_top",\n    "bending_sls_eps_bot",\n    "bending_sls_kappa",\n    "bending_sls_eps_s_outer",\n    "eps_s_sls_bot",\n    "eps_s_sls_bottom",\n    "eps_s_bottom_sls",\n)\n\n\ndef _bending_main_figure_fingerprint(\n    state_dict,\n    *,\n    state_label,\n    layout,\n    moment_sign: str,\n) -> str:\n    """Fingerprint every state dependency read by the shared 3-panel builder."""\n    session_inputs = {\n        key: st.session_state.get(key) for key in _BENDING_MAIN_FIGURE_SESSION_KEYS\n    }\n    param_inputs = {\n        "d": get_param("d", None),\n        "sigma_s_sls": get_param("sigma_s_sls", None),\n        "Ec": get_param("Ec", 30000.0),\n        "fsy": get_param("fsy", 500.0),\n        "Es": get_param("Es", 200000.0),\n    }\n    payload = {\n        "version": 1,\n        "state_dict": state_dict,\n        "state_label": state_label,\n        "layout": layout,\n        "moment_sign": str(moment_sign or "positive"),\n        "session_inputs": session_inputs,\n        "param_inputs": param_inputs,\n    }\n    encoded = json.dumps(\n        payload,\n        sort_keys=True,\n        separators=(",", ":"),\n        default=str,\n    ).encode("utf-8")\n    return hashlib.sha256(encoded).hexdigest()\n\n\ndef _plot_stress_strain_profiles(\n    state_dict, state_label=None, layout=None, moment_sign: str = "positive"\n):\n    """Return the shared 3-panel figure, reusing only identical presentation state.\n\n    The cache is deliberately session-local and single-entry. It owns no\n    engineering result: all calculation state is resolved before this wrapper,\n    and any dependency read by the shared figure builder invalidates the key.\n    Dev mode bypasses caching so diagram consistency diagnostics still execute.\n    """\n    if layout is None or state_label is None or st.session_state.get("_dev_mode", False):\n        return _stress_diagram_plot_stress_strain_profiles(\n            state_dict,\n            state_label=state_label,\n            layout=layout,\n            moment_sign=moment_sign,\n        )\n\n    fingerprint = _bending_main_figure_fingerprint(\n        state_dict,\n        state_label=state_label,\n        layout=layout,\n        moment_sign=moment_sign,\n    )\n    cached = st.session_state.get(_BENDING_MAIN_FIGURE_CACHE_KEY)\n    if (\n        isinstance(cached, dict)\n        and cached.get("fingerprint") == fingerprint\n        and cached.get("figure") is not None\n    ):\n        return cached["figure"]\n\n    figure = _stress_diagram_plot_stress_strain_profiles(\n        state_dict,\n        state_label=state_label,\n        layout=layout,\n        moment_sign=moment_sign,\n    )\n    st.session_state[_BENDING_MAIN_FIGURE_CACHE_KEY] = {\n        "fingerprint": fingerprint,\n        "figure": figure,\n    }\n    return figure\n'''
+
+          if old_wrapper not in source:
+              raise SystemExit('Expected bending figure wrapper not found')
+          source = source.replace(old_wrapper, new_wrapper, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          python -m py_compile bending_diagrams.py
+      - name: Commit patch and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-bending-figure-cache.yml
+          git add bending_diagrams.py
+          git commit -m "Cache unchanged Bending presentation figure"
+          git push origin HEAD:perf/calc-pages-profile-2026-08-17
