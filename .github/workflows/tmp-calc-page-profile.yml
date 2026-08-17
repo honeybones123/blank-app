@@ -3,12 +3,11 @@ on:
   push:
     branches: [perf/calc-pages-profile-2026-08-17]
 jobs:
-  profile:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       CODEX_DISABLE_CALC_PAGE_WARMUP: "1"
-      CODEX_RENDER_TIMING_TRACE: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,56 +16,60 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: requirements.txt
-      - run: python -m pip install -r requirements.txt
-      - run: python -m pip install pytest
+          cache-dependency-path: |
+            requirements.txt
+            packages/beamapp-inputs-v2/pyproject.toml
+            packages/beamapp-inputs-v2/requirements.txt
+      - name: Install Runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+          python -m pip install -e "./packages/beamapp-inputs-v2[test]"
       - name: Verify performance architecture contracts
         run: python -m pytest -q tests/test_step_ui_lazy_rendering_contract.py tests/test_calculation_page_performance_ui_freeze.py tests/test_bending_figure_cache_contract.py
-      - name: Trace bending and shear
+      - name: Measure cold and warm calc pages
         run: |
           python - <<'PY'
           import json
           import time
           from streamlit.testing.v1 import AppTest
+          from application.page_module_registry import calculation_page_render_status
 
-          def read_state(at, key, default=None):
-              try:
-                  return at.session_state[key]
-              except Exception:
-                  return default
-
-          def summarize(page):
+          for page in ("bending", "shear"):
               at = AppTest.from_file("app.py", default_timeout=60)
               at.query_params["page"] = page
-              at.run(timeout=60)
               t0 = time.perf_counter()
               at.run(timeout=60)
-              wall_ms = (time.perf_counter() - t0) * 1000.0
-              events = list(read_state(at, "_render_timing_events", []) or [])
-              slow = sorted(
-                  [
-                      {
-                          "name": e.get("name"),
-                          "delta_ms": e.get("delta_ms"),
-                          "elapsed_ms": e.get("elapsed_ms"),
-                          "meta": e.get("meta"),
-                      }
-                      for e in events
-                      if isinstance(e, dict)
-                  ],
-                  key=lambda e: float(e.get("delta_ms") or 0.0),
-                  reverse=True,
-              )[:25]
-              from application.page_module_registry import calculation_page_render_status
-              result = {
-                  "wall_ms": round(wall_ms, 1),
-                  "renderer": calculation_page_render_status(page),
-                  "slow_marks": slow,
-                  "event_count": len(events),
+              cold_wall = (time.perf_counter() - t0) * 1000.0
+              cold_renderer = dict(calculation_page_render_status(page) or {})
+              t1 = time.perf_counter()
+              at.run(timeout=60)
+              warm_wall = (time.perf_counter() - t1) * 1000.0
+              warm_renderer = dict(calculation_page_render_status(page) or {})
+              print("PERF_FINAL", page, json.dumps({
+                  "cold_wall_ms": round(cold_wall, 1),
+                  "cold_renderer_ms": cold_renderer.get("render_ms"),
+                  "warm_wall_ms": round(warm_wall, 1),
+                  "warm_renderer_ms": warm_renderer.get("render_ms"),
                   "exceptions": [str(x.value) for x in at.exception],
-              }
-              print("TRACE", page, json.dumps(result, sort_keys=True))
-
-          summarize("bending")
-          summarize("shear")
+              }, sort_keys=True))
           PY
+      - name: Verify vendored V2 artifact matches source
+        run: python tools/verification/verify_vendored_inputs_v2.py
+      - name: Enforce V2 architecture boundaries
+        working-directory: packages/beamapp-inputs-v2
+        run: python tools/architecture_check.py
+      - name: Run all V2 contracts and tests
+        working-directory: packages/beamapp-inputs-v2
+        run: python -m pytest -q -p no:cacheprovider tests
+      - name: Audit every Design Brain family outcome
+        working-directory: packages/beamapp-inputs-v2
+        run: python tools/design_brain_completion_audit.py
+      - name: Verify calculation parity
+        working-directory: packages/beamapp-inputs-v2
+        run: python tools/shadow_parity_report.py
+      - name: Verify Runtime Apply boundary
+        run: python -m tools.verification.inputs_apply_full_rerun_contract
+      - name: Verify clean installed-package boundary
+        run: python tools/verification/run_inputs_v2_clean_install_contract.py --runtime-vendored
