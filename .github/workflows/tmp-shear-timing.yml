@@ -10,17 +10,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/architecture-and-calc-page-performance
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: packages/beamapp-inputs-v2/pyproject.toml
       - run: python -m pip install -e './packages/beamapp-inputs-v2[test]'
-      - name: Repeat shear AppTest with timing
+      - name: Repeat main-branch shear AppTest with timing
         working-directory: packages/beamapp-inputs-v2
         run: |
-          for i in 1 2 3 4 5; do
-            echo "=== shear attempt $i ==="
+          for i in 1 2 3; do
+            echo "=== main shear attempt $i ==="
             /usr/bin/time -f 'elapsed=%e sec' python -m pytest -q tests/test_app.py::test_design_brain_selects_shear_family_when_shear_fails || true
           done
