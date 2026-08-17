@@ -54,7 +54,7 @@ jobs:
           mkdir -p browser-artifacts
           python - <<'PY'
           from pathlib import Path
-          import json, traceback
+          import difflib, json, traceback
           from PIL import Image, ImageChops
           from playwright.sync_api import sync_playwright
 
@@ -71,14 +71,18 @@ jobs:
                   page.wait_for_timeout(2500)
                   if mutate:
                       mutate(page)
-                      page.wait_for_timeout(2200)
+                      page.wait_for_timeout(2500)
+                  main=page.locator('[data-testid="stMainBlockContainer"]').first
+                  main.wait_for(state='visible', timeout=30000)
+                  main_text=main.inner_text()
                   metrics={
                       'h1': page.locator('h1').first.inner_text(),
                       'expanders': page.locator('div[data-testid="stExpander"] details').count(),
                       'number_inputs': page.locator('input[type="number"]').count(),
                       'radios': page.locator('div[role="radiogroup"]').count(),
-                      'body_text': page.locator('body').inner_text(),
+                      'main_text': main_text,
                   }
+                  (OUT/f'{name}.txt').write_text(main_text, encoding='utf-8')
                   page.screenshot(path=str(OUT/f'{name}.png'), full_page=True, animations='disabled')
                   browser.close()
                   return metrics
@@ -95,9 +99,31 @@ jobs:
                   raise AssertionError('SLS (cracked) state tab not found')
               tab.first.click()
 
+          def edit_bending_width(page):
+              # The Bending input architecture keeps these widgets mounted to preserve state.
+              inputs=page.locator('input[type="number"]')
+              labels=inputs.evaluate_all("els => els.map(e => ({aria:e.getAttribute('aria-label'), value:e.value}))")
+              target=None
+              for idx,item in enumerate(labels):
+                  aria=str(item.get('aria') or '')
+                  if 'Width b (mm)' in aria:
+                      target=inputs.nth(idx)
+                      break
+              if target is None:
+                  # Fallback to the current RECT geometry input by its accessible label.
+                  candidate=page.get_by_label('Width b (mm)', exact=True)
+                  if candidate.count():
+                      target=candidate.first
+              if target is None:
+                  raise AssertionError(f'Width b (mm) input not found; number inputs={labels}')
+              old=float(target.input_value())
+              target.fill(str(old + 25.0))
+              target.press('Tab')
+
           cases=[
               ('bending','bending-default',None),
               ('bending','bending-sls-tab',switch_bending_state_tab),
+              ('bending','bending-width-edit',edit_bending_width),
               ('shear','shear-closed',None),
               ('shear','shear-first-open',open_first_expander),
           ]
@@ -107,7 +133,7 @@ jobs:
               try:
                   bm=snap(BASE,slug,'base-'+name,mutate)
                   hm=snap(HEAD,slug,'head-'+name,mutate)
-                  text_same=bm['body_text']==hm['body_text']
+                  text_same=bm['main_text']==hm['main_text']
                   structural_same=all(bm[k]==hm[k] for k in ('h1','expanders','number_inputs','radios'))
                   a=Image.open(OUT/f'base-{name}.png').convert('RGB')
                   b=Image.open(OUT/f'head-{name}.png').convert('RGB')
@@ -123,12 +149,20 @@ jobs:
                           bb=np.asarray(b, dtype=np.int16)
                           changed=np.any(np.abs(aa-bb)>8, axis=2)
                           pixel_ratio=float(changed.mean())
+                  text_diff=''
+                  if not text_same:
+                      text_diff='\n'.join(difflib.unified_diff(
+                          bm['main_text'].splitlines(), hm['main_text'].splitlines(),
+                          fromfile='base', tofile='head', lineterm=''
+                      ))
+                      (OUT/f'{name}-text.diff').write_text(text_diff, encoding='utf-8')
                   report[name]={
                       'text_same':text_same,
                       'structural_same':structural_same,
                       'pixel_changed_ratio':pixel_ratio,
-                      'base':{k:v for k,v in bm.items() if k!='body_text'},
-                      'head':{k:v for k,v in hm.items() if k!='body_text'},
+                      'text_diff':text_diff,
+                      'base':{k:v for k,v in bm.items() if k!='main_text'},
+                      'head':{k:v for k,v in hm.items() if k!='main_text'},
                   }
                   if not text_same or not structural_same or pixel_ratio > 0.001:
                       failures.append(name)
