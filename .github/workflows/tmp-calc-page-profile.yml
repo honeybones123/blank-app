@@ -26,6 +26,12 @@ jobs:
           import time
           from streamlit.testing.v1 import AppTest
 
+          def read_state(at, key, default=None):
+              try:
+                  return at.session_state[key]
+              except Exception:
+                  return default
+
           def summarize(page):
               at = AppTest.from_file("app.py", default_timeout=60)
               at.query_params["page"] = page
@@ -33,7 +39,7 @@ jobs:
               t0 = time.perf_counter()
               at.run(timeout=60)
               wall_ms = (time.perf_counter() - t0) * 1000.0
-              events = list(at.session_state.get("_render_timing_events") or [])
+              events = list(read_state(at, "_render_timing_events", []) or [])
               slow = sorted(
                   [
                       {
@@ -43,15 +49,17 @@ jobs:
                           "meta": e.get("meta"),
                       }
                       for e in events
+                      if isinstance(e, dict)
                   ],
                   key=lambda e: float(e.get("delta_ms") or 0.0),
                   reverse=True,
-              )[:20]
+              )[:25]
               from application.page_module_registry import calculation_page_render_status
               result = {
                   "wall_ms": round(wall_ms, 1),
                   "renderer": calculation_page_render_status(page),
                   "slow_marks": slow,
+                  "event_count": len(events),
                   "exceptions": [str(x.value) for x in at.exception],
               }
               print("TRACE", page, json.dumps(result, sort_keys=True))
