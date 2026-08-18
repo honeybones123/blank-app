@@ -23,8 +23,10 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium
-      - name: Probe calc and input card opening
+      - name: Probe current calc and input card opening
         run: python tools/verification/helpers/card_opening_probe.py
+      - name: Probe instant mounted card shell
+        run: python tools/verification/helpers/mounted_card_shell_probe.py
       - name: Upload probe evidence
         if: always()
         uses: actions/upload-artifact@v4
