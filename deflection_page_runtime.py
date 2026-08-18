@@ -789,13 +789,15 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         "deflection_report" in _deflection_results_state
         or "deflection_report_error" in _deflection_results_state
     )
-    if (
-        st.session_state.get("_deflection_core_cache_key") != _deflection_cache_key
-        or not _deflection_params_present
-        or not _deflection_report_present
-    ):
+    # The application result-page boundary refreshes Deflection authoritatively
+    # before this renderer is entered.  If that publication is present, reuse
+    # it rather than rebuilding the same report because this page-local cache
+    # has not yet been seeded in a fresh browser session.  The fallback remains
+    # for isolated/defensive renderer use where no authoritative publication
+    # exists.
+    if not _deflection_params_present or not _deflection_report_present:
         compute_deflection_results(publish=True)
-        st.session_state["_deflection_core_cache_key"] = _deflection_cache_key
+    st.session_state["_deflection_core_cache_key"] = _deflection_cache_key
     render_timing_mark("deflection_page.runtime.compute.publication.end")
 
     # --------------------------------------------------------
