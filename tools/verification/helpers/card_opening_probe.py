@@ -1,4 +1,4 @@
-"""Temporary browser probe for calc/input-card opening behaviour."""
+"""Temporary browser probe for production input-card and calc-box opening behaviour."""
 from __future__ import annotations
 
 import json
@@ -24,57 +24,41 @@ def wait_http(url: str, timeout: float = 60.0) -> None:
     raise RuntimeError("Streamlit server did not become ready")
 
 
-def sample_opening(page, selector: str, label: str) -> dict:
-    details = page.locator(selector).first
-    details.wait_for(state="attached", timeout=30_000)
-    summary = details.locator("summary").first
-    body = details.locator('[data-testid="stExpanderDetails"]').first
-    if body.count() == 0:
-        body = details.locator(":scope > div").first
+def sample_mounted_input_shell(page) -> dict:
+    shell = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__shell"]').first
+    shell.wait_for(state="attached", timeout=30_000)
+    button = shell.locator('div[data-testid="stButton"] > button').first
+    body = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__body"]').first
+    body.wait_for(state="attached", timeout=30_000)
 
-    if details.evaluate("el => el.open"):
-        summary.click()
-        page.wait_for_timeout(80)
+    # Force the measured sequence to begin closed.
+    if body.evaluate("el => getComputedStyle(el).display !== 'none'"):
+        button.click()
+        page.wait_for_function(
+            "el => getComputedStyle(el).display === 'none'",
+            arg=body.element_handle(),
+            timeout=10_000,
+        )
 
-    style = details.evaluate(
-        """el => {
-          const s = getComputedStyle(el);
-          const dc = getComputedStyle(el, '::details-content');
-          const summary = el.querySelector('summary');
-          const body = el.querySelector('[data-testid="stExpanderDetails"]') || el.querySelector(':scope > div');
-          const ss = summary ? getComputedStyle(summary) : null;
-          const bs = body ? getComputedStyle(body) : null;
-          const pick = x => x ? ({
-            transitionProperty:x.transitionProperty,
-            transitionDuration:x.transitionDuration,
-            transitionTimingFunction:x.transitionTimingFunction,
-            transitionBehavior:x.transitionBehavior,
-            blockSize:x.blockSize,
-            height:x.height,
-            contentVisibility:x.contentVisibility,
-            animationName:x.animationName,
-            animationDuration:x.animationDuration,
-            overflow:x.overflow,
-            display:x.display,
-          }) : null;
-          return {details:pick(s), detailsContent:pick(dc), summary:pick(ss), body:pick(bs)};
-        }"""
-    )
-
-    samples = details.evaluate(
-        """el => new Promise(resolve => {
-          const summary = el.querySelector('summary');
-          const body = el.querySelector('[data-testid="stExpanderDetails"]') || el.querySelector(':scope > div');
+    samples = page.evaluate(
+        """({shell, body, button}) => new Promise(resolve => {
           const out=[];
           const t0=performance.now();
           let frames=0;
           function snap(tag){
-            const r=el.getBoundingClientRect();
-            const br=body ? body.getBoundingClientRect() : {height:null};
-            out.push({t:+(performance.now()-t0).toFixed(2), tag, open:el.open, height:+r.height.toFixed(2), bodyHeight:br.height===null?null:+br.height.toFixed(2)});
+            const sr=shell.getBoundingClientRect();
+            const br=body.getBoundingClientRect();
+            const bs=getComputedStyle(body);
+            out.push({
+              t:+(performance.now()-t0).toFixed(2), tag,
+              shellHeight:+sr.height.toFixed(2),
+              bodyHeight:+br.height.toFixed(2),
+              bodyDisplay:bs.display,
+              bodyVisibility:bs.visibility,
+            });
           }
           snap('before');
-          summary.click();
+          button.click();
           snap('after_click');
           function frame(){
             frames++;
@@ -83,38 +67,104 @@ def sample_opening(page, selector: str, label: str) -> dict:
             else resolve(out);
           }
           requestAnimationFrame(frame);
-        })"""
+        })""",
+        {"shell": shell.element_handle(), "body": body.element_handle(), "button": button.element_handle()},
     )
-    heights = [x["height"] for x in samples]
+
+    visible_samples = [x for x in samples if x["bodyDisplay"] != "none"]
+    heights = [x["bodyHeight"] for x in visible_samples]
     distinct = []
     for h in heights:
         if not distinct or abs(h - distinct[-1]) > 0.5:
             distinct.append(h)
+
+    page.wait_for_function(
+        "el => getComputedStyle(el).display !== 'none'",
+        arg=body.element_handle(),
+        timeout=10_000,
+    )
+
+    # Prove a real production widget survives close/reopen. Prefer a number
+    # input because Bending input cards always contain numeric engineering data.
+    widget = body.locator('input[type="number"]').first
+    if widget.count() == 0:
+        widget = body.locator('input').first
+    widget.wait_for(state="visible", timeout=10_000)
+    original = widget.input_value()
+    test_value = "425" if original != "425" else "426"
+    widget.fill(test_value)
+    widget.press("Enter")
+    page.wait_for_timeout(300)
+
+    # Re-resolve shell/body after any Streamlit widget rerun.
+    shell = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__shell"]').first
+    button = shell.locator('div[data-testid="stButton"] > button').first
+    body = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__body"]').first
+    widget = body.locator('input[type="number"]').first
+    if widget.count() == 0:
+        widget = body.locator('input').first
+    value_after_edit = widget.input_value()
+
+    button.click()
+    page.wait_for_function(
+        "el => getComputedStyle(el).display === 'none'",
+        arg=body.element_handle(),
+        timeout=10_000,
+    )
+    button.click()
+    page.wait_for_function(
+        "el => getComputedStyle(el).display !== 'none'",
+        arg=body.element_handle(),
+        timeout=10_000,
+    )
+
+    # Re-resolve one final time in case the fragment replaced its header DOM.
+    body = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__body"]').first
+    widget = body.locator('input[type="number"]').first
+    if widget.count() == 0:
+        widget = body.locator('input').first
+    value_after_reopen = widget.input_value()
+
     return {
-        "label": label,
-        "styles": style,
         "samples": samples,
-        "distinct_height_steps": distinct,
+        "distinct_visible_body_height_steps": distinct,
         "height_step_count": len(distinct),
+        "original_widget_value": original,
+        "test_widget_value": test_value,
+        "value_after_edit": value_after_edit,
+        "value_after_reopen": value_after_reopen,
+        "state_persisted": value_after_edit == test_value and value_after_reopen == test_value,
+        "one_step_open": len(distinct) <= 1,
     }
 
 
-def inject_instant_open_css(page) -> None:
-    page.add_style_tag(content=r"""
-[class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] > details::details-content,
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] [data-calc-uid]) div[data-testid="stExpander"] > details::details-content {
-  transition: none !important;
-  transition-duration: 0s !important;
-  transition-behavior: normal !important;
-}
-""")
-
-
-def reopen_closed(page, selector: str) -> None:
-    details = page.locator(selector).first
+def sample_calc_expander(page) -> dict:
+    details = page.locator(
+        'div[data-testid="stVerticalBlock"]:has([data-calc-uid]) '
+        'div[data-testid="stExpander"] > details'
+    ).first
+    details.wait_for(state="attached", timeout=30_000)
+    summary = details.locator("summary").first
+    body = details.locator('[data-testid="stExpanderDetails"]').first
     if details.evaluate("el => el.open"):
-        details.locator("summary").first.click()
+        summary.click()
         page.wait_for_timeout(80)
+    samples = details.evaluate(
+        """el => new Promise(resolve => {
+          const summary=el.querySelector('summary');
+          const body=el.querySelector('[data-testid="stExpanderDetails"]');
+          const out=[]; const t0=performance.now(); let frames=0;
+          function snap(tag){
+            const r=el.getBoundingClientRect();
+            const br=body ? body.getBoundingClientRect() : {height:null};
+            out.push({t:+(performance.now()-t0).toFixed(2),tag,open:el.open,height:+r.height.toFixed(2),bodyHeight:br.height===null?null:+br.height.toFixed(2)});
+          }
+          snap('before'); summary.click(); snap('after_click');
+          function frame(){frames++;snap('raf');if(performance.now()-t0<650&&frames<60)requestAnimationFrame(frame);else resolve(out)}
+          requestAnimationFrame(frame);
+        })"""
+    )
+    return {"samples": samples}
 
 
 def main() -> None:
@@ -136,24 +186,19 @@ def main() -> None:
             page.get_by_role("heading", name="Bending capacity", exact=False).first.wait_for(state="visible", timeout=60_000)
             page.wait_for_timeout(800)
 
-            input_selector = '[class*="st-key-compact_check_inputs_bending_"] div[data-testid="stExpander"] > details'
-            calc_selector = 'div[data-testid="stVerticalBlock"]:has([data-calc-uid]) div[data-testid="stExpander"] > details'
+            production_input = sample_mounted_input_shell(page)
+            calc_box = sample_calc_expander(page)
+            result = {"production_input_card": production_input, "calc_box": calc_box}
 
-            baseline_input = sample_opening(page, input_selector, "input_card_baseline")
-            baseline_calc = sample_opening(page, calc_selector, "calc_box_baseline")
+            if not production_input["one_step_open"]:
+                raise RuntimeError(
+                    f"Mounted production input card opened in {production_input['height_step_count']} visible height steps"
+                )
+            if not production_input["state_persisted"]:
+                raise RuntimeError(
+                    "Mounted production input card did not preserve widget value through close/reopen"
+                )
 
-            reopen_closed(page, input_selector)
-            reopen_closed(page, calc_selector)
-            inject_instant_open_css(page)
-            page.wait_for_timeout(50)
-
-            fixed_input = sample_opening(page, input_selector, "input_card_override")
-            fixed_calc = sample_opening(page, calc_selector, "calc_box_override")
-
-            result = {
-                "baseline": {"input_card": baseline_input, "calc_box": baseline_calc},
-                "override": {"input_card": fixed_input, "calc_box": fixed_calc},
-            }
             print(json.dumps(result, indent=2))
             out = root / "artifacts" / "card-opening-probe.json"
             out.parent.mkdir(parents=True, exist_ok=True)
