@@ -1,4 +1,5 @@
 name: One-shot Deflection authority reuse
+# Trigger after workflow registration.
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
