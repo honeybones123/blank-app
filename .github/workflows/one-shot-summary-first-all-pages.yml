@@ -225,13 +225,20 @@ jobs:
         run: |
           python -m pytest -q \
             tests/test_summary_first_render_contract.py \
-            tests/test_calculation_page_ui_freeze.py \
             tests/test_calculation_page_performance_ui_freeze.py \
+            tests/test_compact_check_inputs_contract.py \
+            tests/test_compact_check_inputs_pages.py \
+            tests/test_step_ui_lazy_rendering_contract.py \
+            tests/test_authoritative_check_packs.py \
+            tests/test_page_module_registry.py \
+            tests/test_page_rerun_architecture.py \
+            tests/test_pending_widget_transaction_authority.py \
+            tests/test_time_dependent_engineering_state.py \
+            tests/test_time_dependent_presentation.py \
+            tests/test_shear_method_engineering_identity.py \
+            tests/test_crack_method_engineering_identity.py \
             tests/test_bending_figure_cache_contract.py \
             tests/test_bending_diagram_scroll_stability.py
-          if [ -f tests/test_compact_check_inputs.py ]; then
-            python -m pytest -q tests/test_compact_check_inputs.py
-          fi
 
       - name: Commit verified migration and remove one-shot workflow
         run: |
