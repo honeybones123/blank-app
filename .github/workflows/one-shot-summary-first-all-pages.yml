@@ -75,6 +75,34 @@ jobs:
               path.write_text(text, encoding='utf-8')
           PY
 
+      - name: Align grey-card tests with the verified mounted-fragment contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test_compact_check_inputs_contract.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        self.expander_calls = []\n        self.container_calls = []\n\n    def markdown(self, *_args, **_kwargs):\n        return None\n'''
+          new = '''        self.expander_calls = []\n        self.container_calls = []\n        self.fragment_calls = []\n        self.rerun_calls = []\n\n    def markdown(self, *_args, **_kwargs):\n        return None\n\n    def fragment(self, func):\n        self.fragment_calls.append(func.__name__)\n        return func\n\n    def button(self, *_args, **_kwargs):\n        return False\n\n    def rerun(self, **kwargs):\n        self.rerun_calls.append(kwargs)\n'''
+          if text.count(old) != 1:
+              raise SystemExit('compact input fake Streamlit target drifted')
+          text = text.replace(old, new, 1)
+
+          old = '''def test_renderer_adds_no_component_session_state_and_mounts_all_card_bodies():\n    rendered = []\n    fake = _FakeStreamlit()\n    config = CheckInputPanelConfig(\n        page_slug="creep",\n        mount_closed_bodies=True,\n        categories=(\n            CheckInputCategory("geometry", "Geometry", "250 × 450 mm", lambda: rendered.append("geometry")),\n            CheckInputCategory("time", "Time", "365 days", lambda: rendered.append("time")),\n        ),\n    )\n\n    render_compact_check_inputs(fake, config)\n\n    assert fake.session_state.writes == 0\n    assert rendered == ["geometry", "time"]\n    assert [call[1]["key"] for call in fake.expander_calls] == [\n        "compact_check_inputs_creep_geometry",\n        "compact_check_inputs_creep_time",\n    ]\n    assert all(call[1]["on_change"] == "ignore" for call in fake.expander_calls)\n    assert fake.container_calls == [\n        {"border": False, "key": "compact_check_inputs_creep"}\n    ]\n'''
+          new = '''def test_mounted_renderer_uses_only_visual_shell_state_and_mounts_all_card_bodies():\n    rendered = []\n    fake = _FakeStreamlit()\n    config = CheckInputPanelConfig(\n        page_slug="creep",\n        mount_closed_bodies=True,\n        categories=(\n            CheckInputCategory("geometry", "Geometry", "250 × 450 mm", lambda: rendered.append("geometry")),\n            CheckInputCategory("time", "Time", "365 days", lambda: rendered.append("time")),\n        ),\n    )\n\n    render_compact_check_inputs(fake, config)\n\n    assert fake.session_state.writes == 2\n    assert set(fake.session_state) == {\n        "compact_check_inputs_creep_geometry__open",\n        "compact_check_inputs_creep_time__open",\n    }\n    assert rendered == ["geometry", "time"]\n    assert fake.expander_calls == []\n    assert fake.fragment_calls == ["_header_fragment", "_header_fragment"]\n    assert fake.rerun_calls == []\n    assert fake.container_calls == [\n        {"border": False, "key": "compact_check_inputs_creep"},\n        {"key": "compact_check_inputs_creep_geometry__shell", "border": False},\n        {"key": "compact_check_inputs_creep_geometry__body", "border": False},\n        {"key": "compact_check_inputs_creep_time__shell", "border": False},\n        {"key": "compact_check_inputs_creep_time__body", "border": False},\n    ]\n'''
+          if text.count(old) != 1:
+              raise SystemExit('compact input mounted-card contract target drifted')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          path = Path('tests/test_page_rerun_architecture.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        "inputs_application/engineering_workspace.py",\n    }\n'''
+          new = '''        "inputs_application/engineering_workspace.py",\n        # Mounted input cards own only a fragment-scoped header visibility\n        # transition; their widget bodies stay mounted outside that fragment.\n        "engineering_page_sections/mounted_card_shell.py",\n    }\n'''
+          if text.count(old) != 1:
+              raise SystemExit('rerun architecture allow-list target drifted')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Install test runtime
         run: python -m pip install -r requirements.txt pytest
 
@@ -252,6 +280,8 @@ jobs:
             shrinkage.py \
             crack_page_runtime.py \
             tests/test_summary_first_render_contract.py \
+            tests/test_compact_check_inputs_contract.py \
+            tests/test_page_rerun_architecture.py \
             .github/workflows/one-shot-summary-first-all-pages.yml
           git diff --cached --check
           git commit -m 'Render all calculation pages summary first'
