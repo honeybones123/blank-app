@@ -1,0 +1,114 @@
+# Temporary measurement-only workflow. Compares early Aug 16, late Aug 16, and current PR #8 with the exact same cold Bending verifier.
+name: Temporary Bending Aug16 cold comparison
+on:
+  push:
+    branches: [perf/bending-diagram-profile-2026-08-18]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/bending-diagram-profile-2026-08-18
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install one controlled runtime and Chromium
+        run: |
+          git show 215066eb0e89a53fe4a929c726610f6e6a91b8d9:requirements.txt > /tmp/current-requirements.txt
+          python -m pip install -r /tmp/current-requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Create isolated Aug16 and current worktrees
+        run: |
+          git worktree add --detach /tmp/bending-early 581b867f8d6eb481f2afb4fe05f2be6e6d3fd9e3
+          git worktree add --detach /tmp/bending-late b3f529c8d6d93dedf23185ead53a7a316258dc11
+          git worktree add --detach /tmp/bending-current 215066eb0e89a53fe4a929c726610f6e6a91b8d9
+          for d in /tmp/bending-early /tmp/bending-late; do
+            mkdir -p "$d/tools/verification/helpers"
+            git show 215066eb0e89a53fe4a929c726610f6e6a91b8d9:tools/verification/helpers/cold_page_benchmark.py > "$d/tools/verification/helpers/cold_page_benchmark.py"
+          done
+      - name: Benchmark early Aug16 checkpoint
+        working-directory: /tmp/bending-early
+        run: >-
+          python tools/verification/helpers/cold_page_benchmark.py
+          --page bending
+          --runs 2
+          --max-invalid-attempts 3
+          --mode navigation
+          --starting-port 9100
+          --output /tmp/bending-early.json
+      - name: Benchmark late Aug16 checkpoint
+        working-directory: /tmp/bending-late
+        run: >-
+          python tools/verification/helpers/cold_page_benchmark.py
+          --page bending
+          --runs 2
+          --max-invalid-attempts 3
+          --mode navigation
+          --starting-port 9200
+          --output /tmp/bending-late.json
+      - name: Benchmark current PR8 head
+        working-directory: /tmp/bending-current
+        run: >-
+          python tools/verification/helpers/cold_page_benchmark.py
+          --page bending
+          --runs 2
+          --max-invalid-attempts 3
+          --mode navigation
+          --starting-port 9300
+          --output /tmp/bending-current.json
+      - name: Compare results
+        run: |
+          mkdir -p artifacts
+          cp /tmp/bending-early.json artifacts/bending-early-aug16.json
+          cp /tmp/bending-late.json artifacts/bending-late-aug16.json
+          cp /tmp/bending-current.json artifacts/bending-current.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          def load(path):
+              return json.loads(Path(path).read_text())['pages']['bending']
+          def compact(x):
+              return {
+                  'median_page_open_ms': x['summary']['median_page_open_ms'],
+                  'runs': [
+                      {
+                          'page_open_ms': r['page_open_ms'],
+                          'page_renderer_ms': r.get('page_renderer_ms'),
+                          'dispatch_ms': r.get('dispatch_ms'),
+                          'websocket_received_bytes': r.get('websocket_received_bytes'),
+                          'websocket_received_frames': r.get('websocket_received_frames'),
+                          'markdown_total_chars': r.get('markdown_total_chars'),
+                          'top_trace_deltas': (r.get('top_trace_deltas') or [])[:8],
+                      }
+                      for r in x['runs']
+                  ],
+              }
+          early=compact(load('/tmp/bending-early.json'))
+          late=compact(load('/tmp/bending-late.json'))
+          cur=compact(load('/tmp/bending-current.json'))
+          out={
+              'early_aug16_581b867': early,
+              'late_aug16_b3f529c': late,
+              'current_215066e': cur,
+          }
+          out['late_minus_early_ms']=round(late['median_page_open_ms']-early['median_page_open_ms'],3)
+          out['current_minus_late_ms']=round(cur['median_page_open_ms']-late['median_page_open_ms'],3)
+          out['current_minus_early_ms']=round(cur['median_page_open_ms']-early['median_page_open_ms'],3)
+          print(json.dumps(out, indent=2))
+          Path('artifacts/bending-aug16-cold-comparison.json').write_text(json.dumps(out, indent=2), encoding='utf-8')
+          PY
+      - name: Upload comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bending-aug16-cold-comparison
+          path: artifacts
