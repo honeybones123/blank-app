@@ -1,5 +1,5 @@
 name: Temporary Deflection profile
-# Trigger after workflow registration.
+# Benchmark authoritative-publication reuse.
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
