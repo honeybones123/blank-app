@@ -3,6 +3,7 @@ name: One-shot Shear lazy visualisation
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -27,7 +28,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           path = Path('shear_page_runtime.py')
           text = path.read_text(encoding='utf-8')
           start_marker = 'def _render_shear_visualisation_block(theta_v_deg: float | None = None):\n'
@@ -37,41 +37,21 @@ jobs:
           old = text[start:end]
           if old.count('_render_shear_side_view()') != 1 or old.count('_render_shear_cross_section()') != 1 or old.count('_render_shear_force_diagram()') != 1:
               raise SystemExit('unexpected Shear visualisation block shape; refusing approximate edit')
-
           new = '''def _render_shear_visualisation_block(theta_v_deg: float | None = None):
     with st.container():
         st.markdown(
             """
 <style>
-/* Shear page only: anchor is inside this container vertical block */
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) {
-    margin-top: 0.25rem !important;
-    padding-top: 0 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) .section-title {
-    margin-bottom: 0.35rem !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) h3,
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) h4 {
-    margin-bottom: 0.35rem !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) [data-testid="stPlotlyChart"] {
-    margin-bottom: 0.2rem !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) div[data-testid="stRadio"] {
-    margin-top: 0.25rem !important;
-    padding-top: 0 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) label[data-testid="stWidgetLabel"] {
-    margin-bottom: 0.2rem !important;
-}
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) { margin-top: 0.25rem !important; padding-top: 0 !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) .section-title { margin-bottom: 0.35rem !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) [data-testid="stPlotlyChart"] { margin-bottom: 0.2rem !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) div[data-testid="stRadio"] { margin-top: 0.25rem !important; padding-top: 0 !important; }
 </style>
 <div id="shear-visuals-block" class="shear-visuals-block" style="display:none;width:0;height:0;overflow:hidden;" aria-hidden="true"></div>
 """,
             unsafe_allow_html=True,
         )
         render_section_title("Visualisation")
-
         @st.fragment
         def _render_shear_visualisation_fragment() -> None:
             visual_mode = st.radio(
@@ -87,54 +67,37 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                 _render_shear_force_diagram()
             else:
                 _render_shear_side_view()
-
         _render_shear_visualisation_fragment()
 '''
           path.write_text(text[:start] + new + text[end:], encoding='utf-8')
           PY
-
       - name: Add lazy-visualisation contract
         run: |
           cat > tests/test_shear_visualisation_lazy_contract.py <<'PYTEST'
           from pathlib import Path
-
-
-def _block() -> str:
-    source = Path('shear_page_runtime.py').read_text(encoding='utf-8')
-    start = source.index('def _render_shear_visualisation_block(')
-    end = source.index('\n\ndef build_reo_circles_from_state', start)
-    return source[start:end]
-
-
-def test_shear_visualisation_uses_fragment_scoped_presentation_selection():
-    block = _block()
-    assert '@st.fragment' in block
-    assert 'key="shear_visualisation_panel"' in block
-    assert 'options=("Side view", "Section", "Shear diagram")' in block
-    assert 'render_stable_tabs(' not in block
-
-
-def test_shear_visualisation_reuses_existing_builders_without_eager_triplet_render():
-    block = _block()
-    assert block.count('_render_shear_side_view()') == 1
-    assert block.count('_render_shear_cross_section()') == 1
-    assert block.count('_render_shear_force_diagram()') == 1
-    assert 'if visual_mode == "Section":' in block
-    assert 'elif visual_mode == "Shear diagram":' in block
-PYTEST
-
+          def _block() -> str:
+              source = Path('shear_page_runtime.py').read_text(encoding='utf-8')
+              start = source.index('def _render_shear_visualisation_block(')
+              end = source.index('\n\ndef build_reo_circles_from_state', start)
+              return source[start:end]
+          def test_shear_visualisation_uses_fragment_scoped_presentation_selection():
+              block = _block()
+              assert '@st.fragment' in block
+              assert 'key="shear_visualisation_panel"' in block
+              assert 'render_stable_tabs(' not in block
+          def test_shear_visualisation_reuses_existing_builders_without_eager_triplet_render():
+              block = _block()
+              assert block.count('_render_shear_side_view()') == 1
+              assert block.count('_render_shear_cross_section()') == 1
+              assert block.count('_render_shear_force_diagram()') == 1
+              assert 'if visual_mode == "Section":' in block
+              assert 'elif visual_mode == "Shear diagram":' in block
+          PYTEST
       - name: Compile and test
         run: |
           python -m pip install -r requirements.txt pytest
           python -m py_compile shear_page_runtime.py
-          python -m pytest -q \
-            tests/test_shear_visualisation_lazy_contract.py \
-            tests/test_summary_first_render_contract.py \
-            tests/test_authoritative_check_packs.py \
-            tests/test_page_rerun_architecture.py \
-            tests/test_pending_widget_transaction_authority.py \
-            tests/test_calculation_page_performance_ui_freeze.py
-
+          python -m pytest -q tests/test_shear_visualisation_lazy_contract.py tests/test_summary_first_render_contract.py tests/test_authoritative_check_packs.py tests/test_page_rerun_architecture.py tests/test_pending_widget_transaction_authority.py tests/test_calculation_page_performance_ui_freeze.py
       - name: Remove one-shot workflow and commit
         run: |
           rm -f .github/workflows/one-shot-shear-lazy-visual.yml
