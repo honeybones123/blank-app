@@ -1,0 +1,49 @@
+name: Temporary Deflection profile
+on:
+  push:
+    branches: [perf/summary-first-closeout-2026-08-18]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/summary-first-closeout-2026-08-18
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install runtime and Chromium
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Profile cold Deflection page
+        run: |
+          mkdir -p artifacts/deflection-profile
+          python tools/verification/helpers/cold_page_benchmark.py \
+            --page deflection --runs 2 --mode navigation \
+            --starting-port 8920 \
+            --output artifacts/deflection-profile/trace.json
+      - name: Print phase summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path('artifacts/deflection-profile/trace.json').read_text())
+          for run in p['pages']['deflection']['runs']:
+              print('RUN', run['run'], 'page_open_ms=', run.get('page_open_ms'), 'renderer_ms=', run.get('page_renderer_ms'))
+              for item in run.get('top_trace_deltas', [])[:20]:
+                  print(item.get('delta_ms'), item.get('name'), item.get('meta', ''))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deflection-profile
+          path: artifacts/deflection-profile
