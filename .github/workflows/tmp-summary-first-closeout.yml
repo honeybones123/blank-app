@@ -1,0 +1,78 @@
+name: Temporary summary-first closeout
+on:
+  push:
+    branches: [perf/summary-first-closeout-2026-08-18]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  summary-first:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/summary-first-closeout-2026-08-18
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install test runtime
+        run: python -m pip install -r requirements.txt pytest
+      - name: Apply fail-closed Bending summary-first change
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('bending_page_runtime.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        # Render summary table using shared helper\n        render_timing_mark("bending_page.runtime.explainer.start")\n        render_page_explainer_expander(_render_bending_explainer)\n        render_timing_mark("bending_page.runtime.explainer.end")\n        clicked_uid = render_clickable_summary_table(\n            ROWS, key_prefix="bend_summary", columns=ENGINEERING_CHECK_COLUMNS\n        )\n'''
+          new = '''        # Render the engineering summary before lower-priority explanatory content.\n        # This table is the user's primary first-view result and must be emitted\n        # before the technical-basis expander, inputs, diagrams, or detailed checks.\n        clicked_uid = render_clickable_summary_table(\n            ROWS, key_prefix="bend_summary", columns=ENGINEERING_CHECK_COLUMNS\n        )\n        render_timing_mark("bending_page.runtime.summary_table.rendered")\n\n        render_timing_mark("bending_page.runtime.explainer.start")\n        render_page_explainer_expander(_render_bending_explainer)\n        render_timing_mark("bending_page.runtime.explainer.end")\n'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one Bending summary/explainer block, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Add summary-first regression contract
+        run: |
+          cat > tests/test_summary_first_render_contract.py <<'PY'
+          from pathlib import Path
+
+
+          def test_bending_summary_renders_before_explainer_and_heavy_content():
+              text = Path('bending_page_runtime.py').read_text(encoding='utf-8')
+              summary = text.index('clicked_uid = render_clickable_summary_table(')
+              summary_mark = text.index('bending_page.runtime.summary_table.rendered')
+              explainer = text.index('render_page_explainer_expander(_render_bending_explainer)')
+              inputs = text.index('with inputs_placeholder.container():')
+              diagram = text.index('bending_page.runtime.diagram.figure.start')
+              checks = text.index('bending_page.runtime.checks.start')
+
+              assert summary < summary_mark < explainer
+              assert summary < inputs
+              assert summary < diagram
+              assert summary < checks
+          PY
+      - name: Run targeted contracts
+        run: |
+          python -m pytest -q \
+            tests/test_summary_first_render_contract.py \
+            tests/test_bending_figure_cache_contract.py \
+            tests/test_bending_diagram_scroll_stability.py \
+            tests/test_calculation_page_performance_ui_freeze.py
+      - name: Persist only if tests pass
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bending_page_runtime.py tests/test_summary_first_render_contract.py
+          if git diff --cached --quiet; then
+            echo 'No product changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Render Bending summary before secondary content'
+          git push origin HEAD:perf/summary-first-closeout-2026-08-18
