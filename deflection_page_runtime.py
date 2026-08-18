@@ -273,7 +273,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     # boundary has already refreshed this publication, so delaying it until
     # after diagrams and local calculations only makes the page feel slower.
     render_timing_mark("deflection_page.runtime.summary_checks.start")
-    render_page_explainer_expander(_render_deflection_explainer)
     defl_pack = build_deflection_check_rows_from_state(st.session_state)
     rows = build_deflection_summary_rows(defl_pack.get("rows", []))
     update_results("deflection", {"rows": rows, "summary": defl_pack})
@@ -283,6 +282,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         columns=DEFLECTION_CHECK_SUMMARY_COLUMNS,
     )
     bind_summary_clicks()
+    render_page_explainer_expander(_render_deflection_explainer)
     page_divider()
     render_timing_mark("deflection_page.runtime.summary_checks.end")
 

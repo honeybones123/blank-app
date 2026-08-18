@@ -2046,7 +2046,6 @@ In short:
     )
     rows_full = build_shear_clickable_summary_rows(rows_summary_full)
     update_results("shear", {"rows": rows_full})
-    render_page_explainer_expander(_render_shear_explainer)
     st.session_state.setdefault("show_mcft_breakdown", False)
     display_rows = filter_shear_summary_rows(
         rows_summary_full,
@@ -2057,6 +2056,7 @@ In short:
         key_prefix="shear_summary",
     )
     bind_summary_clicks()
+    render_page_explainer_expander(_render_shear_explainer)
     render_timing_mark("shear_page.runtime.summary.end")
 
     visualisation_placeholder = st.empty()

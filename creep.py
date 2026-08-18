@@ -309,13 +309,13 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
         phi_cc_star_table=float(summary_values.get("phi_cc_star_table") or 0.0),
         eps_cc_micro=float(summary_values.get("eps_cc_micro") or 0.0),
     )
-    render_page_explainer_expander(_render_creep_explainer)
     render_clickable_summary_table(
         summary_rows,
         key_prefix="creep_page_summary",
         columns=PARAMETRIC_RESULT_COLUMNS,
     )
     bind_summary_clicks()
+    render_page_explainer_expander(_render_creep_explainer)
     page_divider()
     side_view_placeholder = st.empty()
     

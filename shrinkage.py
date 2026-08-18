@@ -384,13 +384,13 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
         eps_csd_t=float(summary_values.get("eps_csd_t") or 0.0),
         eps_cs_total=float(summary_values.get("eps_cs_total") or 0.0),
     )
-    render_page_explainer_expander(_render_shrinkage_explainer)
     render_clickable_summary_table(
         summary_rows,
         key_prefix="shrinkage_summary",
         columns=PARAMETRIC_RESULT_COLUMNS,
     )
     bind_summary_clicks()
+    render_page_explainer_expander(_render_shrinkage_explainer)
     page_divider()
     side_view_placeholder = st.empty()
 

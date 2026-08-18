@@ -422,11 +422,11 @@ This is an equation-path result; corrected CIRIA spreadsheet parity is not claim
 
 
 def _render_method_summary(render_explainer, rows, key_prefix: str) -> None:
-    render_page_explainer_expander(render_explainer)
     clicked_uid = render_clickable_summary_table(rows, key_prefix=key_prefix)
     if clicked_uid:
         st.session_state[f"step_open_{clicked_uid}"] = True
     bind_summary_clicks()
+    render_page_explainer_expander(render_explainer)
 
 
 
@@ -625,7 +625,6 @@ You can:
     # Publish the current authoritative AS 3600 summary before the heavier
     # inputs and diagrams.  The page boundary has already refreshed this pack.
     # --------------------------------------------------------
-    render_page_explainer_expander(_render_crack_explainer)
     crack_pack = build_crack_check_rows_from_state(st.session_state)
     rows = build_crack_summary_rows(crack_pack.get("rows") or [])
     governing_row = pick_governing_check_row(rows)
@@ -635,6 +634,7 @@ You can:
     if clicked_uid:
         st.session_state[f"step_open_{clicked_uid}"] = True
     bind_summary_clicks()
+    render_page_explainer_expander(_render_crack_explainer)
     diagram_placeholder = st.empty()
 
     # --------------------------------------------------------
