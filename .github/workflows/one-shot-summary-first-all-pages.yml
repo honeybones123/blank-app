@@ -1,0 +1,246 @@
+name: One-shot summary-first all calculation pages
+on:
+  push:
+    branches: [perf/summary-first-closeout-2026-08-18]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/summary-first-closeout-2026-08-18
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Apply fail-closed presentation-order migration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              'shear_page_runtime.py': [(
+                  '''    rows_full = build_shear_clickable_summary_rows(rows_summary_full)\n    update_results("shear", {"rows": rows_full})\n    render_page_explainer_expander(_render_shear_explainer)\n    st.session_state.setdefault("show_mcft_breakdown", False)\n    display_rows = filter_shear_summary_rows(\n        rows_summary_full,\n        show_mcft_breakdown=bool(st.session_state.get("show_mcft_breakdown", False)),\n    )\n    render_clickable_summary_table(\n        build_shear_clickable_summary_rows(display_rows),\n        key_prefix="shear_summary",\n    )\n    bind_summary_clicks()\n    render_timing_mark("shear_page.runtime.summary.end")\n''',
+                  '''    rows_full = build_shear_clickable_summary_rows(rows_summary_full)\n    update_results("shear", {"rows": rows_full})\n    st.session_state.setdefault("show_mcft_breakdown", False)\n    display_rows = filter_shear_summary_rows(\n        rows_summary_full,\n        show_mcft_breakdown=bool(st.session_state.get("show_mcft_breakdown", False)),\n    )\n    render_clickable_summary_table(\n        build_shear_clickable_summary_rows(display_rows),\n        key_prefix="shear_summary",\n    )\n    bind_summary_clicks()\n    render_page_explainer_expander(_render_shear_explainer)\n    render_timing_mark("shear_page.runtime.summary.end")\n'''
+              )],
+              'deflection_page_runtime.py': [(
+                  '''    render_timing_mark("deflection_page.runtime.summary_checks.start")\n    render_page_explainer_expander(_render_deflection_explainer)\n    defl_pack = build_deflection_check_rows_from_state(st.session_state)\n    rows = build_deflection_summary_rows(defl_pack.get("rows", []))\n    update_results("deflection", {"rows": rows, "summary": defl_pack})\n    render_clickable_summary_table(\n        rows,\n        key_prefix="defl_summary",\n        columns=DEFLECTION_CHECK_SUMMARY_COLUMNS,\n    )\n    bind_summary_clicks()\n    page_divider()\n    render_timing_mark("deflection_page.runtime.summary_checks.end")\n''',
+                  '''    render_timing_mark("deflection_page.runtime.summary_checks.start")\n    defl_pack = build_deflection_check_rows_from_state(st.session_state)\n    rows = build_deflection_summary_rows(defl_pack.get("rows", []))\n    update_results("deflection", {"rows": rows, "summary": defl_pack})\n    render_clickable_summary_table(\n        rows,\n        key_prefix="defl_summary",\n        columns=DEFLECTION_CHECK_SUMMARY_COLUMNS,\n    )\n    bind_summary_clicks()\n    render_page_explainer_expander(_render_deflection_explainer)\n    page_divider()\n    render_timing_mark("deflection_page.runtime.summary_checks.end")\n'''
+              )],
+              'creep.py': [(
+                  '''    render_page_explainer_expander(_render_creep_explainer)\n    render_clickable_summary_table(\n        summary_rows,\n        key_prefix="creep_page_summary",\n        columns=PARAMETRIC_RESULT_COLUMNS,\n    )\n    bind_summary_clicks()\n''',
+                  '''    render_clickable_summary_table(\n        summary_rows,\n        key_prefix="creep_page_summary",\n        columns=PARAMETRIC_RESULT_COLUMNS,\n    )\n    bind_summary_clicks()\n    render_page_explainer_expander(_render_creep_explainer)\n'''
+              )],
+              'shrinkage.py': [(
+                  '''    render_page_explainer_expander(_render_shrinkage_explainer)\n    render_clickable_summary_table(\n        summary_rows,\n        key_prefix="shrinkage_summary",\n        columns=PARAMETRIC_RESULT_COLUMNS,\n    )\n    bind_summary_clicks()\n''',
+                  '''    render_clickable_summary_table(\n        summary_rows,\n        key_prefix="shrinkage_summary",\n        columns=PARAMETRIC_RESULT_COLUMNS,\n    )\n    bind_summary_clicks()\n    render_page_explainer_expander(_render_shrinkage_explainer)\n'''
+              )],
+              'crack_page_runtime.py': [
+                  (
+                      '''def _render_method_summary(render_explainer, rows, key_prefix: str) -> None:\n    render_page_explainer_expander(render_explainer)\n    clicked_uid = render_clickable_summary_table(rows, key_prefix=key_prefix)\n    if clicked_uid:\n        st.session_state[f"step_open_{clicked_uid}"] = True\n    bind_summary_clicks()\n''',
+                      '''def _render_method_summary(render_explainer, rows, key_prefix: str) -> None:\n    clicked_uid = render_clickable_summary_table(rows, key_prefix=key_prefix)\n    if clicked_uid:\n        st.session_state[f"step_open_{clicked_uid}"] = True\n    bind_summary_clicks()\n    render_page_explainer_expander(render_explainer)\n'''
+                  ),
+                  (
+                      '''    render_page_explainer_expander(_render_crack_explainer)\n    crack_pack = build_crack_check_rows_from_state(st.session_state)\n    rows = build_crack_summary_rows(crack_pack.get("rows") or [])\n    governing_row = pick_governing_check_row(rows)\n    rows = mark_primary_summary_row(rows, (governing_row or {}).get("uid"))\n    update_results("crack", {"rows": rows})\n    clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")\n    if clicked_uid:\n        st.session_state[f"step_open_{clicked_uid}"] = True\n    bind_summary_clicks()\n    diagram_placeholder = st.empty()\n''',
+                      '''    crack_pack = build_crack_check_rows_from_state(st.session_state)\n    rows = build_crack_summary_rows(crack_pack.get("rows") or [])\n    governing_row = pick_governing_check_row(rows)\n    rows = mark_primary_summary_row(rows, (governing_row or {}).get("uid"))\n    update_results("crack", {"rows": rows})\n    clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")\n    if clicked_uid:\n        st.session_state[f"step_open_{clicked_uid}"] = True\n    bind_summary_clicks()\n    render_page_explainer_expander(_render_crack_explainer)\n    diagram_placeholder = st.empty()\n'''
+                  ),
+              ],
+          }
+
+          for filename, file_replacements in replacements.items():
+              path = Path(filename)
+              text = path.read_text(encoding='utf-8')
+              for old, new in file_replacements:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(
+                          f'{filename}: expected exactly one migration target, found {count}'
+                      )
+                  text = text.replace(old, new, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Install test runtime
+        run: python -m pip install -r requirements.txt pytest
+
+      - name: Write all-page summary-first regression contract
+        run: |
+          cat > tests/test_summary_first_render_contract.py <<'PYTEST'
+          from pathlib import Path
+
+
+          def _read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8")
+
+
+          def _top_level_function(path: str, name: str) -> str:
+              text = _read(path)
+              marker = f"def {name}("
+              start = text.index(marker)
+              end = text.find("\ndef ", start + len(marker))
+              return text[start:] if end < 0 else text[start:end]
+
+
+          def test_registry_defines_the_six_production_calculation_pages():
+              text = _read("application/page_module_registry.py")
+              expected = {"bending", "shear", "creep", "shrinkage", "crack", "deflection"}
+              for slug in expected:
+                  assert f'"{slug}": PageModuleSpec(' in text
+              assert text.count("PageModuleSpec(") == len(expected)
+
+
+          def test_bending_summary_renders_before_explainer_inputs_diagram_and_checks():
+              text = _top_level_function("bending_page_runtime.py", "render_bending")
+              summary = text.index("clicked_uid = render_clickable_summary_table(")
+              summary_mark = text.index("bending_page.runtime.summary_table.rendered")
+              explainer = text.index("render_page_explainer_expander(_render_bending_explainer)")
+              inputs = text.index("with inputs_placeholder.container():")
+              diagram = text.index("bending_page.runtime.diagram.figure.start")
+              checks = text.index("bending_page.runtime.checks.start")
+              authority = text.index("build_bending_check_rows_from_state(st.session_state)")
+
+              assert authority < summary < summary_mark < explainer
+              assert summary < inputs
+              assert summary < diagram
+              assert summary < checks
+
+
+          def test_shear_summary_renders_before_explainer_inputs_visualisation_and_checks():
+              text = _top_level_function("shear_page_runtime.py", "render_shear")
+              authority = text.index("build_shear_check_rows_from_state(st.session_state)")
+              summary = text.index("render_clickable_summary_table(", authority)
+              explainer = text.index("render_page_explainer_expander(_render_shear_explainer)")
+              visualisation = text.index("visualisation_placeholder = st.empty()")
+              inputs = text.index('render_timing_mark("shear_page.runtime.inputs.start")')
+              checks = text.index('render_timing_mark("shear_page.runtime.checks.start")')
+
+              assert authority < summary < explainer
+              assert summary < visualisation
+              assert summary < inputs
+              assert summary < checks
+
+
+          def test_creep_summary_renders_before_explainer_inputs_and_diagram_placeholder():
+              text = _top_level_function("creep.py", "render_creep")
+              authority = text.index("summary_values = compute_creep_results(publish=True)")
+              summary = text.index("render_clickable_summary_table(", authority)
+              explainer = text.index("render_page_explainer_expander(_render_creep_explainer)")
+              inputs = text.index("render_compact_check_inputs(")
+              diagram = text.index("side_view_placeholder = st.empty()")
+
+              assert authority < summary < explainer
+              assert summary < inputs
+              assert summary < diagram
+              assert 'current_authoritative_family(st.session_state, "creep")' in _read("creep.py")
+
+
+          def test_shrinkage_summary_renders_before_explainer_inputs_and_diagram_placeholder():
+              text = _top_level_function("shrinkage.py", "render_shrinkage")
+              authority = text.index("summary_values = compute_shrinkage_results(publish=True)")
+              summary = text.index("render_clickable_summary_table(", authority)
+              explainer = text.index("render_page_explainer_expander(_render_shrinkage_explainer)")
+              inputs = text.index("render_compact_check_inputs(")
+              diagram = text.index("side_view_placeholder = st.empty()")
+
+              assert authority < summary < explainer
+              assert summary < inputs
+              assert summary < diagram
+              assert 'current_authoritative_family(st.session_state, "shrinkage")' in _read("shrinkage.py")
+
+
+          def test_deflection_summary_renders_before_explainer_inputs_and_diagram_placeholder():
+              text = _top_level_function("deflection_page_runtime.py", "render_deflection")
+              authority = text.index("build_deflection_check_rows_from_state(st.session_state)")
+              summary = text.index("render_clickable_summary_table(", authority)
+              explainer = text.index("render_page_explainer_expander(_render_deflection_explainer)")
+              inputs = text.index('render_timing_mark("deflection_page.runtime.inputs.start")')
+              diagram = text.index("diagram_placeholder = st.empty()")
+
+              assert authority < summary < explainer
+              assert summary < inputs
+              assert summary < diagram
+
+
+          def test_crack_as3600_summary_renders_before_explainer_and_inputs():
+              text = _top_level_function("crack_page_runtime.py", "render_crack")
+              authority = text.index("build_crack_check_rows_from_state(st.session_state)")
+              summary = text.index(
+                  'clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")',
+                  authority,
+              )
+              explainer = text.index("render_page_explainer_expander(_render_crack_explainer)", authority)
+              inputs = text.index('render_timing_mark("crack_page.runtime.inputs.start")', authority)
+
+              assert authority < summary < explainer < inputs
+
+
+          def test_crack_alternate_method_summary_helper_is_result_first():
+              text = _top_level_function("crack_page_runtime.py", "_render_method_summary")
+              summary = text.index("clicked_uid = render_clickable_summary_table(")
+              explainer = text.index("render_page_explainer_expander(render_explainer)")
+              assert summary < explainer
+
+
+          def test_summary_first_migration_keeps_existing_input_card_and_lazy_boundaries():
+              shear = _top_level_function("shear_page_runtime.py", "render_shear")
+              crack = _top_level_function("crack_page_runtime.py", "render_crack")
+              deflection = _top_level_function("deflection_page_runtime.py", "render_deflection")
+              creep = _top_level_function("creep.py", "render_creep")
+              shrinkage = _top_level_function("shrinkage.py", "render_shrinkage")
+
+              assert "compact_check_input_regions(st, _shear_input_config)" in shear
+              assert "compact_check_input_columns(" in crack
+              assert "compact_check_input_columns(" in deflection
+              assert "render_compact_check_inputs(" in creep
+              assert "render_compact_check_inputs(" in shrinkage
+              assert "visualisation_placeholder = st.empty()" in shear
+              assert "diagram_placeholder = st.empty()" in deflection
+          PYTEST
+
+      - name: Compile changed runtime modules
+        run: |
+          python -m py_compile \
+            shear_page_runtime.py \
+            deflection_page_runtime.py \
+            creep.py \
+            shrinkage.py \
+            crack_page_runtime.py
+
+      - name: Run summary state input-card and lazy-render contracts
+        run: |
+          python -m pytest -q \
+            tests/test_summary_first_render_contract.py \
+            tests/test_calculation_page_ui_freeze.py \
+            tests/test_calculation_page_performance_ui_freeze.py \
+            tests/test_bending_figure_cache_contract.py \
+            tests/test_bending_diagram_scroll_stability.py
+          if [ -f tests/test_compact_check_inputs.py ]; then
+            python -m pytest -q tests/test_compact_check_inputs.py
+          fi
+
+      - name: Commit verified migration and remove one-shot workflow
+        run: |
+          rm -f .github/workflows/one-shot-summary-first-all-pages.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            shear_page_runtime.py \
+            deflection_page_runtime.py \
+            creep.py \
+            shrinkage.py \
+            crack_page_runtime.py \
+            tests/test_summary_first_render_contract.py \
+            .github/workflows/one-shot-summary-first-all-pages.yml
+          git diff --cached --check
+          git commit -m 'Render all calculation pages summary first'
+          git push origin HEAD:perf/summary-first-closeout-2026-08-18
