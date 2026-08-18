@@ -1,4 +1,5 @@
 name: One-shot Shear lazy visualisation
+# Trigger after workflow registration.
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
@@ -71,12 +72,6 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
         )
         render_section_title("Visualisation")
 
-        # Diagram builders are intentionally unchanged.  The former native-tab
-        # composition executed all three builders on every cold page render,
-        # even though only one panel was visible.  Keep selection as
-        # presentation-only state and scope its rerun to this fragment so the
-        # engineering page, inputs and authoritative publications do not rerun
-        # when the engineer changes the visual.
         @st.fragment
         def _render_shear_visualisation_fragment() -> None:
             visual_mode = st.radio(
