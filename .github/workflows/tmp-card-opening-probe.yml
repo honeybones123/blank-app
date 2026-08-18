@@ -1,0 +1,33 @@
+name: Temporary card opening probe
+on:
+  push:
+    branches: [perf/summary-first-closeout-2026-08-18]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/summary-first-closeout-2026-08-18
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install runtime and Chromium
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Probe calc and input card opening
+        run: python tools/verification/helpers/card_opening_probe.py
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: card-opening-probe
+          path: artifacts/card-opening-probe.json
