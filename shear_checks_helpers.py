@@ -78,7 +78,7 @@ def compute_canonical_shear_truth(
     """
     Single publication contract for shear pass/fail vs utilisation and spacing truth.
 
-    Does **not** change structural formulas — it merges envelope utilisation, sectional
+    Does **not** change structural formulas â€” it merges envelope utilisation, sectional
     utilisation, web utilisation, and provided vs effective vs required spacing so the UI
     and solvers cannot show PASS while governing envelope utilisation is > 1.0 or while
     provided detailing is materially looser than the governing required spacing.
@@ -115,7 +115,7 @@ def _shear_calc_context(st_state: Dict[str, Any]) -> Dict[str, Any]:
     P_v = float(actions["Pu"])
 
     lig_d = float(st_state.get("lig_d") or 10.0)
-    # Preserve 0 legs / 0 spacing — ``0 or 2.0`` incorrectly upgraded "no shear ligs" to 2 legs.
+    # Preserve 0 legs / 0 spacing â€” ``0 or 2.0`` incorrectly upgraded "no shear ligs" to 2 legs.
     try:
         legs = float(st_state.get("lig_legs", 0.0))
     except (TypeError, ValueError):
@@ -133,11 +133,11 @@ def _shear_calc_context(st_state: Dict[str, Any]) -> Dict[str, Any]:
             "kv_method",
             st_state.get(
                 "shear_k_v_method",
-                st_state.get("inputs_k_v_method", "General εₓ-based (Cl. 8.2.4.2)"),
+                st_state.get("inputs_k_v_method", "General Îµâ‚“-based (Cl. 8.2.4.2)"),
             ),
         ),
     )
-    use_general_kv = "ε" in str(kv_method) or "8.2.4.2" in str(kv_method)
+    use_general_kv = "Îµ" in str(kv_method) or "8.2.4.2" in str(kv_method)
 
     A_st = float(
         st_state.get("shear_A_st")
@@ -156,9 +156,9 @@ def _shear_calc_context(st_state: Dict[str, Any]) -> Dict[str, Any]:
     )
     kd_value_map = {
         "None (no ducts in web)": 0.0,
-        "0.5 – steel ducts, grouted": 0.5,
-        "0.8 – plastic ducts, grouted": 0.8,
-        "1.2 – ungrouted ducts": 1.2,
+        "0.5 â€“ steel ducts, grouted": 0.5,
+        "0.8 â€“ plastic ducts, grouted": 0.8,
+        "1.2 â€“ ungrouted ducts": 1.2,
     }
     k_d = float(kd_value_map.get(kd_option_selected, 0.0))
 
@@ -239,7 +239,7 @@ def build_shear_calc_bundle_from_state(st_state: Dict[str, Any]) -> Dict[str, An
     input_values = tuple(astuple(ctx["inputs"]))
     res = copy(_run_shear_calc_for_inputs(input_values))
     # When auto spacing is off, keep live run_shear_calc outputs so manual link spacing
-    # (shear_s_lig → s_lig) drives φV_u in the UI. When on, prefer canonical φV_u from
+    # (shear_s_lig â†’ s_lig) drives Ï†V_u in the UI. When on, prefer canonical Ï†V_u from
     # _compute_shear_capacity (sectional check uses governing envelope spacing in-memory;
     # shared s_lig stays the user-provided input).
     use_canonical = bool(st_state.get("shear_auto_design", False))
@@ -277,3 +277,4 @@ __all__ = [
     "resolve_shear_spacing_truth",
     "session_final_shear_truth_bundle_complete",
 ]
+
