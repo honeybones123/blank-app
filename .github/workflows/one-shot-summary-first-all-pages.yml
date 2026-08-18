@@ -2,6 +2,11 @@ name: One-shot summary-first all calculation pages
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
+  pull_request:
+
+concurrency:
+  group: one-shot-summary-first-all-pages
+  cancel-in-progress: true
 
 permissions:
   contents: write
