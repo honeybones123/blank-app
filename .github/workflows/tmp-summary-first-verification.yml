@@ -1,4 +1,5 @@
 name: Temporary summary-first verification
+# Trigger verification after workflow registration.
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
