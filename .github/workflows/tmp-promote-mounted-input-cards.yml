@@ -1,0 +1,46 @@
+name: Temporary mounted input card promotion
+on:
+  push:
+    branches: [perf/summary-first-closeout-2026-08-18]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/summary-first-closeout-2026-08-18
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Promote mounted input-card path
+        run: python tools/verification/helpers/promote_mounted_input_cards.py
+      - name: Compile changed renderers
+        run: |
+          python -m py_compile engineering_page_sections/mounted_card_shell.py
+          python -m py_compile engineering_page_sections/compact_check_inputs/renderer.py
+      - name: Run targeted input-card contracts
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest -q tests/test_compact_check_inputs.py tests/test_calculation_page_ui_freeze.py || \
+          python -m pytest -q tests/test_calculation_page_ui_freeze.py
+      - name: Commit only promoted renderer
+        run: |
+          if git diff --quiet -- engineering_page_sections/compact_check_inputs/renderer.py; then
+            echo 'No renderer change to commit.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add engineering_page_sections/compact_check_inputs/renderer.py
+          git commit -m 'Use one-step shell for mounted input cards'
+          git push origin HEAD:perf/summary-first-closeout-2026-08-18
