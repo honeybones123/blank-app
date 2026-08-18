@@ -3,6 +3,7 @@ name: Temporary summary-first closeout
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
+  pull_request:
   workflow_dispatch:
 
 permissions:
