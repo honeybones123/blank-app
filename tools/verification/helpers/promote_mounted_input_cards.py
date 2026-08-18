@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# Promotion helper: re-triggered 2026-08-18 after prototype verification.
 PATH = Path("engineering_page_sections/compact_check_inputs/renderer.py")
 text = PATH.read_text(encoding="utf-8")
 
