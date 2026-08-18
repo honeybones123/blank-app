@@ -39,6 +39,7 @@ def sample_opening(page, selector: str, label: str) -> dict:
     style = details.evaluate(
         """el => {
           const s = getComputedStyle(el);
+          const dc = getComputedStyle(el, '::details-content');
           const summary = el.querySelector('summary');
           const body = el.querySelector('[data-testid="stExpanderDetails"]') || el.querySelector(':scope > div');
           const ss = summary ? getComputedStyle(summary) : null;
@@ -47,12 +48,16 @@ def sample_opening(page, selector: str, label: str) -> dict:
             transitionProperty:x.transitionProperty,
             transitionDuration:x.transitionDuration,
             transitionTimingFunction:x.transitionTimingFunction,
+            transitionBehavior:x.transitionBehavior,
+            blockSize:x.blockSize,
+            height:x.height,
+            contentVisibility:x.contentVisibility,
             animationName:x.animationName,
             animationDuration:x.animationDuration,
             overflow:x.overflow,
             display:x.display,
           }) : null;
-          return {details:pick(s), summary:pick(ss), body:pick(bs)};
+          return {details:pick(s), detailsContent:pick(dc), summary:pick(ss), body:pick(bs)};
         }"""
     )
 
@@ -94,6 +99,24 @@ def sample_opening(page, selector: str, label: str) -> dict:
     }
 
 
+def inject_instant_open_css(page) -> None:
+    page.add_style_tag(content=r"""
+[class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] > details::details-content,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] [data-calc-uid]) div[data-testid="stExpander"] > details::details-content {
+  transition: none !important;
+  transition-duration: 0s !important;
+  transition-behavior: normal !important;
+}
+""")
+
+
+def reopen_closed(page, selector: str) -> None:
+    details = page.locator(selector).first
+    if details.evaluate("el => el.open"):
+        details.locator("summary").first.click()
+        page.wait_for_timeout(80)
+
+
 def main() -> None:
     root = Path(__file__).resolve().parents[3]
     port = 9471
@@ -114,12 +137,23 @@ def main() -> None:
             page.wait_for_timeout(800)
 
             input_selector = '[class*="st-key-compact_check_inputs_bending_"] div[data-testid="stExpander"] > details'
-            input_result = sample_opening(page, input_selector, "input_card")
-
             calc_selector = 'div[data-testid="stVerticalBlock"]:has([data-calc-uid]) div[data-testid="stExpander"] > details'
-            calc_result = sample_opening(page, calc_selector, "calc_box")
 
-            result = {"input_card": input_result, "calc_box": calc_result}
+            baseline_input = sample_opening(page, input_selector, "input_card_baseline")
+            baseline_calc = sample_opening(page, calc_selector, "calc_box_baseline")
+
+            reopen_closed(page, input_selector)
+            reopen_closed(page, calc_selector)
+            inject_instant_open_css(page)
+            page.wait_for_timeout(50)
+
+            fixed_input = sample_opening(page, input_selector, "input_card_override")
+            fixed_calc = sample_opening(page, calc_selector, "calc_box_override")
+
+            result = {
+                "baseline": {"input_card": baseline_input, "calc_box": baseline_calc},
+                "override": {"input_card": fixed_input, "calc_box": fixed_calc},
+            }
             print(json.dumps(result, indent=2))
             out = root / "artifacts" / "card-opening-probe.json"
             out.parent.mkdir(parents=True, exist_ok=True)
