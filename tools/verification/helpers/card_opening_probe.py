@@ -24,14 +24,23 @@ def wait_http(url: str, timeout: float = 60.0) -> None:
     raise RuntimeError("Streamlit server did not become ready")
 
 
+def _first_numeric_widget(body):
+    widget = body.locator('input[type="number"]').first
+    if widget.count() == 0:
+        widget = body.locator('input').first
+    return widget
+
+
 def sample_mounted_input_shell(page) -> dict:
-    shell = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__shell"]').first
+    shell_sel = '[class*="st-key-compact_check_inputs_bending_"][class*="__shell"]'
+    body_sel = '[class*="st-key-compact_check_inputs_bending_"][class*="__body"]'
+
+    shell = page.locator(shell_sel).first
     shell.wait_for(state="attached", timeout=30_000)
     button = shell.locator('div[data-testid="stButton"] > button').first
-    body = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__body"]').first
+    body = page.locator(body_sel).first
     body.wait_for(state="attached", timeout=30_000)
 
-    # Force the measured sequence to begin closed.
     if body.evaluate("el => getComputedStyle(el).display !== 'none'"):
         button.click()
         page.wait_for_function(
@@ -78,51 +87,53 @@ def sample_mounted_input_shell(page) -> dict:
         if not distinct or abs(h - distinct[-1]) > 0.5:
             distinct.append(h)
 
+    body = page.locator(body_sel).first
     page.wait_for_function(
         "el => getComputedStyle(el).display !== 'none'",
         arg=body.element_handle(),
         timeout=10_000,
     )
 
-    # Prove a real production widget survives close/reopen. Prefer a number
-    # input because Bending input cards always contain numeric engineering data.
-    widget = body.locator('input[type="number"]').first
-    if widget.count() == 0:
-        widget = body.locator('input').first
+    # Use the real production widget and prove that whatever value the app
+    # accepts after an edit remains identical after shell-only close/reopen.
+    widget = _first_numeric_widget(body)
     widget.wait_for(state="visible", timeout=10_000)
     original = widget.input_value()
-    test_value = "425" if original != "425" else "426"
-    widget.fill(test_value)
-    widget.press("Enter")
-    page.wait_for_timeout(300)
 
-    # Re-resolve shell/body after any Streamlit widget rerun.
-    shell = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__shell"]').first
+    # ArrowUp respects the widget's configured step/min/max better than forcing
+    # an arbitrary engineering value such as 425 into whichever field happens
+    # to be first on the page.
+    widget.focus()
+    widget.press("ArrowUp")
+    widget.press("Enter")
+    page.wait_for_timeout(500)
+
+    shell = page.locator(shell_sel).first
     button = shell.locator('div[data-testid="stButton"] > button').first
-    body = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__body"]').first
-    widget = body.locator('input[type="number"]').first
-    if widget.count() == 0:
-        widget = body.locator('input').first
+    body = page.locator(body_sel).first
+    widget = _first_numeric_widget(body)
     value_after_edit = widget.input_value()
+    edit_committed = value_after_edit != original
 
     button.click()
+    body = page.locator(body_sel).first
     page.wait_for_function(
         "el => getComputedStyle(el).display === 'none'",
         arg=body.element_handle(),
         timeout=10_000,
     )
+
+    shell = page.locator(shell_sel).first
+    button = shell.locator('div[data-testid="stButton"] > button').first
     button.click()
+    body = page.locator(body_sel).first
     page.wait_for_function(
         "el => getComputedStyle(el).display !== 'none'",
         arg=body.element_handle(),
         timeout=10_000,
     )
 
-    # Re-resolve one final time in case the fragment replaced its header DOM.
-    body = page.locator('[class*="st-key-compact_check_inputs_bending_"][class*="__body"]').first
-    widget = body.locator('input[type="number"]').first
-    if widget.count() == 0:
-        widget = body.locator('input').first
+    widget = _first_numeric_widget(body)
     value_after_reopen = widget.input_value()
 
     return {
@@ -130,10 +141,10 @@ def sample_mounted_input_shell(page) -> dict:
         "distinct_visible_body_height_steps": distinct,
         "height_step_count": len(distinct),
         "original_widget_value": original,
-        "test_widget_value": test_value,
         "value_after_edit": value_after_edit,
         "value_after_reopen": value_after_reopen,
-        "state_persisted": value_after_edit == test_value and value_after_reopen == test_value,
+        "edit_committed": edit_committed,
+        "state_persisted": edit_committed and value_after_reopen == value_after_edit,
         "one_step_open": len(distinct) <= 1,
     }
 
@@ -190,19 +201,20 @@ def main() -> None:
             calc_box = sample_calc_expander(page)
             result = {"production_input_card": production_input, "calc_box": calc_box}
 
+            print(json.dumps(result, indent=2))
+            out = root / "artifacts" / "card-opening-probe.json"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(result, indent=2), encoding="utf-8")
+
             if not production_input["one_step_open"]:
                 raise RuntimeError(
                     f"Mounted production input card opened in {production_input['height_step_count']} visible height steps"
                 )
             if not production_input["state_persisted"]:
                 raise RuntimeError(
-                    "Mounted production input card did not preserve widget value through close/reopen"
+                    "Mounted production input card did not preserve an accepted widget edit through close/reopen"
                 )
 
-            print(json.dumps(result, indent=2))
-            out = root / "artifacts" / "card-opening-probe.json"
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps(result, indent=2), encoding="utf-8")
             browser.close()
     finally:
         proc.terminate()
