@@ -1117,13 +1117,17 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
         update_results("bending", {"rows": ROWS})
 
-        # Render summary table using shared helper
-        render_timing_mark("bending_page.runtime.explainer.start")
-        render_page_explainer_expander(_render_bending_explainer)
-        render_timing_mark("bending_page.runtime.explainer.end")
+        # Render the engineering summary before lower-priority explanatory content.
+        # This table is the user's primary first-view result and must be emitted
+        # before the technical-basis expander, inputs, diagrams, or detailed checks.
         clicked_uid = render_clickable_summary_table(
             ROWS, key_prefix="bend_summary", columns=ENGINEERING_CHECK_COLUMNS
         )
+        render_timing_mark("bending_page.runtime.summary_table.rendered")
+
+        render_timing_mark("bending_page.runtime.explainer.start")
+        render_page_explainer_expander(_render_bending_explainer)
+        render_timing_mark("bending_page.runtime.explainer.end")
 
         # Handle clicked summary row: set mode, expand step, set pending scroll
         if clicked_uid:
