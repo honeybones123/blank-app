@@ -2,6 +2,7 @@ name: Temporary styled bending material panel
 on:
   push:
     branches: [perf/summary-first-closeout-2026-08-18]
+  pull_request:
 
 permissions:
   contents: write
