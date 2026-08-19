@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_bending_views_use_client_side_tabs_without_a_rerun_selector() -> None:
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
 
-    assert 'section_tab, side_view_tab = render_stable_tabs(' in source
+    assert 'section_tab, side_view_tab, moment_tab = render_stable_tabs(' in source
     assert 'key="bending_diagram_view"' not in source
     assert 'if diagram_view == "Section":' not in source
 

@@ -1,7 +1,10 @@
 import math
 from contextlib import contextmanager
 import pandas as pd
+import matplotlib.pyplot as plt
 import streamlit as st
+
+from bending_neutral_axis_teaching import neutral_axis_hand_solution
 
 from bending_diagrams import (
     _plot_strain_profile,
@@ -20,12 +23,10 @@ from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jump
 
 @contextmanager
 def _bending_check_info_row(help_text: str):
-    """Render INFO above the calculation content in its owning column."""
-    col_info_title, col_info_button = st.columns([0.9, 0.1])
-    with col_info_title:
-        st.markdown("**Info:**")
+    """Render the technical-basis button at the calc column's top right."""
+    col_info_button, _col_spacer = st.columns([0.28, 0.72])
     with col_info_button:
-        with info_i_button(help_text=help_text):
+        with info_i_button(help_text=help_text, use_container_width=True):
             yield
 
 
@@ -85,6 +86,15 @@ def _render_authoritative_uls_steps(
     residual_kn = float(top_results.get("equilibrium_residual_n", 0.0) or 0.0) / 1000.0
     stresses = tuple(float(value) for value in top_results.get("steel_layer_stresses_mpa", ()) or ())
     stress_text = ", ".join(f"{value:.1f} MPa" for value in stresses) or "No steel layers"
+    steel_depths = tuple(float(value) for value in top_results.get("steel_layer_depths_mm", ()) or ())
+    # These are section coordinates from the authoritative solver, measured
+    # from the top face.  Use the governing tension layer rather than copying
+    # the effective depth ``d`` (which is a design-depth input, not y_s).
+    governing_tension_index = next(
+        (index for index, value in enumerate(stresses) if value < 0.0),
+        0,
+    )
+    y_s = steel_depths[governing_tension_index] if governing_tension_index < len(steel_depths) else d
     limit = float(top_results.get("ductility_limit", 0.36) or 0.36)
     triggered = bool(top_results.get("clause_815_triggered", False))
     clause_status = str(top_results.get("ductility_status", "NOT RUN") or "NOT RUN").upper()
@@ -93,6 +103,545 @@ def _render_authoritative_uls_steps(
     tension_n = float(top_results.get("T_N", 0.0) or 0.0)
     concrete_n = float(top_results.get("C_concrete_N", 0.0) or 0.0)
     compression_steel_n = float(top_results.get("C_steel_N", 0.0) or 0.0)
+    layer_areas = tuple(float(value) for value in top_results.get("steel_layer_areas_mm2", ()) or ())
+    layer_forces = tuple(float(value) for value in top_results.get("steel_layer_forces_n", ()) or ())
+    layer_labels = tuple(str(value) for value in top_results.get("steel_layer_labels", ()) or ())
+    layer_faces = tuple(str(value) for value in top_results.get("steel_layer_faces", ()) or ())
+    if top_results.get("_authoritative_uls") and layer_areas:
+        published_counts = {len(layer_areas), len(steel_depths), len(stresses), len(layer_forces)}
+        if len(published_counts) != 1:
+            raise RuntimeError(
+                "Authoritative bending layer publication mismatch: "
+                f"areas={len(layer_areas)}, depths={len(steel_depths)}, "
+                f"stresses={len(stresses)}, forces={len(layer_forces)}"
+            )
+    Es_uls = float(get_param("Es") or 200000.0)
+    eps_sy = fsy / Es_uls if Es_uls > 0.0 else float("nan")
+    steel_layer_lines = []
+    layer_compatibility_sections = []
+    stress_summary_parts = []
+    final_layer_table_lines = [
+        "| Layer | $A_{s,i}$ (mm²) | $y_i$ (mm) | Relative to NA | $\\varepsilon_{s,i}$ | $f_{s,i}$ (MPa) | State | $F_{s,i}$ (kN) |",
+        "|---|---:|---:|---|---:|---:|---|---:|",
+    ]
+    for index, (area, depth, stress, force) in enumerate(
+        zip(layer_areas, steel_depths, stresses, layer_forces), start=1
+    ):
+        face = layer_faces[index - 1] if index <= len(layer_faces) else "steel"
+        label = layer_labels[index - 1] if index <= len(layer_labels) else f"{face.title()} reinforcement"
+        role = "tension" if stress < 0.0 else "compression" if stress > 0.0 else "approximately zero stress"
+        displayed_force = abs(force) / 1000.0 if role == "tension" else force / 1000.0
+        strain = -0.003 * (depth - dn) / dn if abs(dn) > 1e-9 else float("nan")
+        yielded = math.isfinite(eps_sy) and abs(strain) >= eps_sy
+        if moment_sign == "negative":
+            relative_position = "above neutral axis" if depth > dn else "below neutral axis" if depth < dn else "at neutral axis"
+        else:
+            relative_position = "below neutral axis" if depth > dn else "above neutral axis" if depth < dn else "at neutral axis"
+        force_label = "Tension force" if role == "tension" else "Compression force"
+        state_label = f"{'Yielded' if yielded else 'Elastic'} {role}"
+        relative_to_na = "Below NA" if depth > dn else "Above NA" if depth < dn else "At NA"
+        stress_summary_parts.append(f"{label}: {stress:.1f} MPa")
+        steel_layer_lines.append(
+            f"- {label} ({role}): $A_{{s,{index}}}={area:.1f}\\,\\text{{mm}}^2$, "
+            f"$\\sigma_{{s,{index}}}={stress:.1f}\\,\\text{{MPa}}$, "
+            f"$F_{{s,{index}}}={displayed_force:.3f}\\,\\text{{kN}}$"
+        )
+        layer_compatibility_sections.append(rf"""
+**{label}**
+
+- Steel area: $A_{{s,{index}}}={area:.2f}\,\text{{mm}}^2$
+- Centroid depth: $y_{{{index}}}={depth:.1f}\,\text{{mm}}$
+- Position: {relative_position}
+
+$$\varepsilon_{{s,{index}}}=-0.003\frac{{{depth:.1f}-{dn:.3f}}}{{{dn:.3f}}}={strain:.6f}$$
+
+$$\sigma_{{s,{index}}}=\operatorname{{sign}}(\varepsilon_{{s,{index}}})\min\left(E_s|\varepsilon_{{s,{index}}}|,f_{{sy}}\right)={stress:.1f}\,\text{{MPa}}$$
+
+- Stress state: {role}
+- Yield status: {"yielded" if yielded else "elastic"}
+- {force_label}: ${displayed_force:.3f}\,\text{{kN}}$
+""")
+        final_layer_table_lines.append(
+            f"| {label} | {area:.2f} | {depth:.1f} | {relative_to_na} | {strain:.6f} | "
+            f"{stress:.1f} | {state_label} | {force / 1000.0:.3f} |"
+        )
+    steel_layer_text = "\n".join(steel_layer_lines) or "- Layer areas and forces were not published."
+    layer_compatibility_text = "\n".join(layer_compatibility_sections)
+    identified_stress_text = "; ".join(stress_summary_parts) or stress_text
+    final_layer_table_md = "\n".join(final_layer_table_lines)
+    section_shape = str(top_results.get("section_shape", "RECT") or "RECT").upper()
+    if section_shape == "RECT":
+        concrete_resultant_md = rf"""
+$$A_c=ba$$
+
+$$C_c=\alpha_2f'_cA_c$$
+
+$$C_c=\alpha_2f'_cba$$
+
+The resultant acts at the centroid of the equivalent stress block:
+
+$$y_{{C_c}}=\frac{{a}}{{2}}={block_depth / 2.0:.1f}\,\text{{mm}}$$
+"""
+    else:
+        concrete_area = float(top_results.get("compression_concrete_area_mm2", 0.0) or 0.0)
+        concrete_centroid = float(top_results.get("concrete_centroid_mm", 0.0) or 0.0)
+        concrete_resultant_md = rf"""
+$$C_c=\alpha_2f'_cA_c$$
+
+For this {section_shape} section, the authoritative stress-block area is
+$A_c={concrete_area:.1f}\,\text{{mm}}^2$ and its centroid is
+$y_{{C_c}}={concrete_centroid:.1f}\,\text{{mm}}$ from the extreme compression face.
+"""
+    na_teaching = neutral_axis_hand_solution(
+        b=b,
+        D=D,
+        fc=fc,
+        fsy=fsy,
+        Es=Es_uls,
+        alpha2=alpha2,
+        gamma=gamma,
+        dn=dn,
+        block_depth=block_depth,
+        layer_areas=layer_areas,
+        layer_depths=steel_depths,
+        layer_stresses=stresses,
+        layer_labels=layer_labels,
+        section_shape=section_shape,
+    )
+    iteration_trace = tuple(top_results.get("neutral_axis_iteration_trace", ()) or ())
+    iteration_table_lines = [
+        "| Iteration | $d_n$ (mm) | Concrete compression (kN) | Steel tension (kN) | Steel compression (kN) | Residual (kN) |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for entry in iteration_trace:
+        iteration_table_lines.append(
+            f"| {int(entry.get('iteration', 0))} | {float(entry.get('dn_mm', 0.0)):.3f} | "
+            f"{float(entry.get('concrete_force_n', 0.0)) / 1000.0:.3f} | "
+            f"{float(entry.get('tension_force_n', 0.0)) / 1000.0:.3f} | "
+            f"{float(entry.get('compression_steel_force_n', 0.0)) / 1000.0:.3f} | "
+            f"{float(entry.get('equilibrium_residual_n', 0.0)) / 1000.0:.6f} |"
+        )
+    iteration_table_lines.append(
+        f"| Final | {dn:.3f} | {concrete_n / 1000.0:.3f} | {tension_n / 1000.0:.3f} | "
+        f"{compression_steel_n / 1000.0:.3f} | {residual_kn:.6f} |"
+    )
+    iteration_table_md = "\n".join(iteration_table_lines)
+    geometry_table_lines = [
+        "| Layer | $A_{s,i}$ (mm²) | $y_i$ (mm) |",
+        "|---|---:|---:|",
+    ]
+    relative_to_na_lines = [
+        "| Layer | $y_i$ (mm) | Relative to neutral axis |",
+        "|---|---:|---|",
+    ]
+    for index, (area, depth) in enumerate(zip(layer_areas, steel_depths), start=1):
+        label = layer_labels[index - 1] if index <= len(layer_labels) else f"Layer {index}"
+        geometry_table_lines.append(f"| {label} | {area:.2f} | {depth:.1f} |")
+        side = "Below NA — tension side" if depth > dn else "Above NA — compression side" if depth < dn else "At NA"
+        relative_to_na_lines.append(f"| {label} | {depth:.1f} | {side} |")
+    geometry_table_md = "\n".join(geometry_table_lines)
+    relative_to_na_md = "\n".join(relative_to_na_lines)
+    if len(layer_areas) == 1:
+        neutral_axis_method_md = rf"""
+**Purpose**
+
+Determine the method required to find the neutral-axis depth $d_n$ that satisfies:
+
+$$\boxed{{\sum C=\sum T}}$$
+
+**Inputs and symbol meanings**
+
+- $b={b:.1f}\,\text{{mm}}$: beam width; $f'_c={fc:.1f}\,\text{{MPa}}$: concrete strength.
+- $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$: rectangular stress-block factors.
+- $E_s={Es_uls:.0f}\,\text{{MPa}}$; $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$.
+- $\varepsilon_{{cu}}=0.003$; $\varepsilon_{{sy}}=f_{{sy}}/E_s={eps_sy:.6f}$.
+- $A_{{s,1}}={layer_areas[0]:.2f}\,\text{{mm}}^2$ and $y_1={steel_depths[0]:.1f}\,\text{{mm}}$.
+- $d_n$: neutral-axis depth; $a=\gamma d_n$: equivalent stress-block depth.
+
+**Concrete compression relationship**
+
+$$C_c=\alpha_2f'_cba=\alpha_2f'_cb\gamma d_n$$
+
+The concrete compression force increases directly with neutral-axis depth.
+
+**Direct single-layer solution**
+
+One longitudinal reinforcement layer is present. For a yielded tension layer:
+
+$$T=A_{{st}}f_{{sy}}$$
+
+$$\boxed{{d_n=\frac{{A_{{st}}f_{{sy}}}}{{\alpha_2f'_cb\gamma}}}}$$
+
+The neutral-axis depth can therefore be obtained directly from force equilibrium.
+The strain state and ductility are verified in the following checks.
+"""
+    else:
+        neutral_axis_method_md = rf"""
+**Purpose**
+
+Determine the method required to find the neutral-axis depth $d_n$ that satisfies:
+
+$$\boxed{{\sum C=\sum T}}$$
+
+**Inputs and symbol meanings**
+
+- $b={b:.1f}\,\text{{mm}}$: beam width; $f'_c={fc:.1f}\,\text{{MPa}}$: concrete strength.
+- $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$: rectangular stress-block factors.
+- $E_s={Es_uls:.0f}\,\text{{MPa}}$; $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$.
+- $\varepsilon_{{cu}}=0.003$; $\varepsilon_{{sy}}=f_{{sy}}/E_s={eps_sy:.6f}$.
+- $d_n$: neutral-axis depth; $a=\gamma d_n$: equivalent stress-block depth.
+
+**Concrete compression relationship**
+
+$$C_c=\alpha_2f'_cba=\alpha_2f'_cb\gamma d_n$$
+
+The concrete compression force increases directly with neutral-axis depth.
+
+**General multi-layer solution**
+
+With multiple reinforcement layers, the force in every layer depends on its
+strain relative to the unknown neutral axis. The steel forces therefore cannot
+all be known before $d_n$ is known.
+
+{geometry_table_md}
+
+For every layer:
+
+$$\varepsilon_{{s,i}}=\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
+
+$$f_{{s,i}}=\operatorname{{clip}}\left(E_s\varepsilon_{{s,i}},-f_{{sy}},f_{{sy}}\right)$$
+
+$$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
+
+**“Top” and “bottom” describe physical location only. They do not determine
+whether a layer is in tension or compression.** With compression at the top face:
+
+$$\boxed{{y_i>d_n\Rightarrow\text{{tension side}}}}$$
+
+$$\boxed{{y_i<d_n\Rightarrow\text{{compression side}}}}$$
+
+Because $d_n$ is not yet known, the final state of an additional layer is not
+known in advance.
+
+**Hand-calculation process**
+
+1. Assume a trial $d_n$.
+2. Calculate $C_c=\alpha_2f'_cb\gamma d_n$.
+3. Calculate strain, clipped stress and force in every reinforcement layer.
+4. Compare total compression with total tension.
+5. Adjust $d_n$ and repeat until $\boxed{{\sum C\approx\sum T}}$.
+
+$$d_n\rightarrow\text{{steel strains}}\rightarrow\text{{steel stresses}}\rightarrow\text{{steel forces}}\rightarrow R(d_n)\rightarrow\text{{updated }}d_n$$
+
+$$R(d_n)=\sum C-\sum T$$
+
+**The app performs this repeated neutral-axis search automatically, so the user
+does not need to keep guessing $d_n$ manually.** The section now proceeds to the
+equilibrium check and converged depth.
+"""
+    neutral_axis_equilibrium_md = rf"""
+**Purpose**
+
+Solve the section equilibrium and confirm the neutral-axis depth at which total
+compression and total tension balance.
+
+**Authoritative equilibrium iterations**
+
+{iteration_table_md}
+
+If $\sum T>\sum C$, the compression block is insufficient and the solver generally
+moves toward a larger $d_n$. If $\sum C>\sum T$, it generally moves toward a
+smaller $d_n$.
+
+$$\boxed{{R(d_n)=\sum C-\sum T}}$$
+
+$$\boxed{{R({dn:.6f})={residual_kn:.9f}\,\text{{kN}}\approx0}}$$
+
+**Final neutral-axis depth**
+
+$$\boxed{{d_n={dn:.3f}\,\text{{mm}}}}$$
+
+$$a=\gamma d_n={gamma:.3f}\times{dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
+
+$$\boxed{{a={block_depth:.3f}\,\text{{mm}}}}$$
+
+**Layer position after convergence**
+
+{relative_to_na_md}
+
+**Force equilibrium is satisfied. The final reinforcement strains and stresses
+are calculated in Check 4 using this converged neutral-axis depth.**
+"""
+    na_table_lines = [
+        "| Layer | $A_{s,i}$ (mm²) | $y_i$ (mm) | Assumed regime | Quadratic contribution |",
+        "|---|---:|---:|---|---|",
+    ]
+    na_q_lines = []
+    na_boundary_lines = []
+    na_b_terms = []
+    na_c_terms = []
+    for row in na_teaching["rows"]:
+        na_table_lines.append(
+            f"| {row['label']} | {row['area']:.2f} | {row['depth']:.1f} | "
+            f"{row['state']} | {row['contribution']} |"
+        )
+        if row["q"] > 0.0:
+            na_q_lines.append(
+                f"$$Q_{{{row['index']}}}=A_{{s,{row['index']}}}E_s\\varepsilon_{{cu}}="
+                f"({row['area']:.2f})({Es_uls:.0f})(0.003)="
+                f"{row['q'] / 1000.0:.3f}\\,\\text{{kN}}$$\n\n"
+                f"$$Q_{{{row['index']}}}y_{{{row['index']}}}="
+                f"({row['q'] / 1000.0:.3f})({row['depth']:.1f})="
+                f"{row['qy'] / 1000.0:.3f}\\,\\text{{kN}}\\cdot\\text{{mm}}$$"
+            )
+            na_b_terms.append(f"+{row['q'] / 1000.0:.6f}")
+            na_c_terms.append(f"-({row['q'] / 1000.0:.6f})({row['depth']:.6f})")
+        elif row["state"] == "yielded tension":
+            na_b_terms.append(f"-{row['area'] * fsy / 1000.0:.6f}")
+        elif row["state"] == "yielded compression":
+            na_b_terms.append(f"+{row['area'] * fsy / 1000.0:.6f}")
+        if row["stress"] < 0.0:
+            na_boundary_lines.append(
+                f"**{row['label']} — {row['state']}**\n\n"
+                f"$$d_{{n,y,{row['index']}}}=\\frac{{y_{{{row['index']}}}}}"
+                f"{{1+\\varepsilon_{{sy}}/\\varepsilon_{{cu}}}}="
+                f"{row['yield_boundary']:.3f}\\,\\text{{mm}}$$"
+            )
+    na_table_md = "\n".join(na_table_lines)
+    na_q_md = "\n\n".join(na_q_lines) or "No layers remain elastic in the accepted regime, so $\\sum Q_i=0$."
+    na_boundary_md = "\n".join(na_boundary_lines) or "No tensile reinforcement layers are present."
+    displacement_note = ""
+    b_symbolic = r"C_y-T_y+\sum_{\mathrm{elastic}}Q_i"
+    if na_teaching["displaced"] > 0.0:
+        b_symbolic += r"-\sum_{y_i\leq a}A_{s,i}\alpha_2f'_c"
+        displacement_note = rf"""
+
+Because the equivalent concrete block uses gross area, the authoritative
+solver removes ${na_teaching['displaced'] / 1000.0:.3f}\,\text{{kN}}$ of displaced
+concrete stress at steel layers located inside the block. This correction is
+included in $B$ below.
+"""
+        na_b_terms.append(f"-{na_teaching['displaced'] / 1000.0:.6f}")
+    na_b_substitution = " ".join(na_b_terms) or "0"
+    na_c_substitution = " ".join(na_c_terms) or "0"
+    root_lines = []
+    for root, valid in na_teaching["roots"]:
+        reason = "physically valid and regime-consistent" if valid else "rejected: outside the section or inconsistent with the assumed regime"
+        root_lines.append(f"- $d_n={root:.6f}\\,\\text{{mm}}$: {reason}.")
+    roots_md = "\n".join(root_lines) or "The authoritative regime does not produce a real candidate root."
+    valid_roots = [root for root, valid in na_teaching["roots"] if valid]
+    hand_dn = min(valid_roots, key=lambda value: abs(value - dn)) if valid_roots else float("nan")
+    hand_difference = abs(hand_dn - dn) if math.isfinite(hand_dn) else float("nan")
+    if section_shape == "RECT" and na_teaching["reproduced"]:
+        if na_teaching["linear"]:
+            solve_md = rf"""
+No layers remain elastic, so the equation reduces to:
+
+$$K_cd_n+C_y-T_y=0$$
+
+$$d_n=\frac{{T_y-C_y}}{{K_c}}={dn:.6f}\,\text{{mm}}$$
+"""
+        else:
+            solve_md = rf"""
+The current numerical equation, expressed in kN and mm, is:
+
+$$({na_teaching['A'] / 1000.0:.9f})d_n^2+({na_teaching['B'] / 1000.0:.9f})d_n+({na_teaching['C'] / 1000.0:.9f})=0$$
+
+$$d_n=\frac{{-B\pm\sqrt{{B^2-4AC}}}}{{2A}}$$
+
+Candidate roots:
+
+{roots_md}
+
+The accepted root reproduces the authoritative neutral-axis depth.
+"""
+        neutral_axis_details_md = rf"""
+**Purpose**
+
+Determine the neutral-axis depth $d_n$ that satisfies internal force equilibrium:
+
+$$\boxed{{\sum C=\sum T}}$$
+
+A single yielded tension layer can be solved directly. With multiple layers,
+each steel force depends on $d_n$, so the authoritative solver iterates until
+the residual is approximately zero.
+
+**Inputs and symbol meanings**
+
+- $b={b:.1f}\,\text{{mm}}$: beam width.
+- $f'_c={fc:.1f}\,\text{{MPa}}$: characteristic concrete compressive strength.
+- $\alpha_2={alpha2:.3f}$: rectangular stress-block intensity factor.
+- $\gamma={gamma:.3f}$: rectangular stress-block depth factor.
+- $E_s={Es_uls:.0f}\,\text{{MPa}}$: steel elastic modulus.
+- $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$: steel yield stress.
+- $\varepsilon_{{cu}}=0.003$: ultimate concrete compression strain.
+- $\varepsilon_{{sy}}=f_{{sy}}/E_s={na_teaching['eps_sy']:.6f}$: steel yield strain.
+- $A_{{s,i}}$: area of layer $i$; $y_i$: its depth from the compression face.
+- $d_n$: neutral-axis depth; $a=\gamma d_n$: equivalent block depth.
+
+**Concrete compression force**
+
+$$C_c=\alpha_2f'_cba=\alpha_2f'_cb\gamma d_n$$
+
+The concrete compression force increases directly with $d_n$.
+
+**Case A — one yielded tension layer**
+
+For a simple beam where the governing tension layer yields:
+
+$$T=A_{{st}}f_{{sy}}$$
+
+$$\boxed{{d_n=\frac{{A_{{st}}f_{{sy}}}}{{\alpha_2f'_cb\gamma}}}}$$
+
+No iteration is required for that simplified case. The resulting $d_n$ is then
+checked through strain compatibility and $k_u$.
+
+**Case B — multiple reinforcement layers**
+
+For every layer, strain, stress and force depend on the trial neutral axis:
+
+$$\varepsilon_{{s,i}}=\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
+
+$$f_{{s,i}}=\operatorname{{clip}}\left(E_s\varepsilon_{{s,i}},-f_{{sy}},f_{{sy}}\right)$$
+
+$$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
+
+“Top” and “bottom” describe physical location only. A layer is in tension when
+$y_i>d_n$, and in compression when $y_i<d_n$, for this top-face compression case.
+
+**Authoritative reinforcement layers and accepted regimes**
+
+{na_table_md}
+
+**Stress-regime boundaries**
+
+The boundaries divide possible $d_n$ values into piecewise steel regimes. The
+authoritative solver selects the equilibrium state; Check 3 verifies its final strains.
+
+{na_boundary_md}
+
+**Authoritative equilibrium iterations**
+
+The app performs the trial-and-update process automatically:
+
+$$d_n\rightarrow\text{{steel strains}}\rightarrow\text{{steel stresses}}\rightarrow\text{{steel forces}}\rightarrow R(d_n)\rightarrow\text{{updated }}d_n$$
+
+{iteration_table_md}
+
+When tension exceeds compression, $d_n$ generally increases; when compression
+exceeds tension, $d_n$ generally decreases. The table shows representative
+iterations from the authoritative bisection solve, followed by the converged result.
+
+**Grouped algebra terms**
+
+$$K_c=\alpha_2f'_cb\gamma=({alpha2:.3f})({fc:.1f})({b:.1f})({gamma:.3f})={na_teaching['kc'] / 1000.0:.6f}\,\text{{kN/mm}}$$
+
+$K_c$ is an algebraic convenience representing concrete compression force per
+unit neutral-axis depth; it is not an AS 3600 symbol. Thus $C_c=K_cd_n$.
+
+For each elastic layer, $Q_i=A_{{s,i}}E_s\varepsilon_{{cu}}$ and
+$F_{{s,i}}=Q_i(y_i-d_n)/d_n$ in tension-magnitude form. $Q_i$ is also an
+internal algebraic convenience, not an AS 3600 symbol.
+
+{na_q_md}
+
+$T_y={na_teaching['ty'] / 1000.0:.3f}\,\text{{kN}}$ is yielded tension steel;
+$C_y={na_teaching['cy'] / 1000.0:.3f}\,\text{{kN}}$ is yielded compression steel.
+{displacement_note}
+
+**General equilibrium equation for the accepted regime**
+
+$$\sum C=\sum T$$
+
+$$K_cd_n^2+\left({b_symbolic}\right)d_n-\sum_{{\mathrm{{elastic}}}}Q_i y_i=0$$
+
+$$Ad_n^2+Bd_n+C=0$$
+
+$$\boxed{{A=K_c=\alpha_2f'_cb\gamma}}={na_teaching['A'] / 1000.0:.6f}\,\text{{kN/mm}}$$
+
+$$A=({alpha2:.6f})({fc:.6f})({b:.6f})({gamma:.6f})/1000={na_teaching['A'] / 1000.0:.9f}\,\text{{kN/mm}}$$
+
+$A$ represents the concrete compression contribution.
+
+$$\boxed{{B={b_symbolic}}}={na_teaching['B'] / 1000.0:.6f}\,\text{{kN}}$$
+
+$$B={na_b_substitution}={na_teaching['B'] / 1000.0:.9f}\,\text{{kN}}$$
+
+$B$ combines yielded-steel resultants and the $d_n$-dependent part of elastic steel forces.
+
+$$\boxed{{C=-\sum_{{\mathrm{{elastic}}}}Q_i y_i}}={na_teaching['C'] / 1000.0:.6f}\,\text{{kN}}\cdot\text{{mm}}$$
+
+$C$ contains the depth-weighted contribution of every elastic steel layer.
+
+Numerical substitution:
+
+$$C={na_c_substitution}={na_teaching['C'] / 1000.0:.9f}\,\text{{kN\,mm}}$$
+
+**Solve for neutral-axis depth**
+
+{solve_md}
+
+$$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
+
+**Hand derivation verification**
+
+- Hand-equation result: $d_n={hand_dn:.6f}\,\text{{mm}}$.
+- Authoritative production result: $d_n={dn:.6f}\,\text{{mm}}$.
+- Difference: ${hand_difference:.9f}\,\text{{mm}}$.
+- **Hand derivation verified against authoritative solver — PASS.**
+
+**Authoritative solver verification**
+
+The production section analysis remains the sole source of engineering truth.
+It independently solves the actual residual using its existing bracketed
+bisection method:
+
+$$R(d_n)=C_c(d_n)+\sum_iF_{{s,i}}(d_n)$$
+
+$$R({dn:.6f})={residual_kn:.9f}\,\text{{kN}}\approx0$$
+
+**Result**
+
+$d_n={dn:.3f}\,\text{{mm}}$ and $a={block_depth:.3f}\,\text{{mm}}$.
+The displayed polynomial residual at the authoritative root is
+${na_teaching['polynomial_at_dn'] / 1000.0:.6e}\,\text{{kN}}\cdot\text{{mm}}$.
+
+**Force equilibrium is satisfied. The final strain, stress and force in each reinforcement layer are evaluated in Check 3.**
+"""
+    else:
+        fallback_reason = (
+            f"the authoritative section shape is {section_shape}, so the rectangular "
+            "closed-form stress-block equation is not applicable"
+            if section_shape != "RECT"
+            else "the fixed accepted regime did not reproduce the authoritative neutral-axis depth within numerical tolerance"
+        )
+        neutral_axis_details_md = rf"""
+**Purpose**
+
+Determine $d_n$ from force equilibrium using every authoritative reinforcement layer.
+
+**Why a closed-form hand equation is not displayed**
+
+For this case, {fallback_reason}. Displaying the rectangular quadratic would
+therefore be misleading.
+
+{na_table_md}
+
+**Authoritative solver verification**
+
+The production solver brackets $d_n$ and uses bisection on the actual section residual:
+
+$$R(d_n)=C_c(d_n)+\sum_i F_{{s,i}}(d_n)=0$$
+
+Each trial uses the authoritative section geometry, compatible layer stresses,
+yield limits and displaced-concrete correction. No separate teaching solver is used.
+
+The converged residual is ${residual_kn:.6f}\,\text{{kN}}$.
+
+$$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
+
+**Result:** $d_n={dn:.3f}\,\text{{mm}}$, $a={block_depth:.3f}\,\text{{mm}}$.
+"""
     lever_arm = nominal * 1e6 / tension_n if abs(tension_n) > 1e-9 else 0.0
     utilisation_text = f"{utilisation:.3f}" if math.isfinite(utilisation) else "not finite (zero capacity)"
 
@@ -136,7 +685,7 @@ def _render_authoritative_uls_steps(
     step_expander_calcbox(
         uid="bending_uls_authoritative_1",
         summary_line=(
-            "1.1 Stress-block parameters | "
+            "Check 1 — Stress-block parameters | "
             f"Result: alpha2 = {alpha2:.3f}, gamma = {gamma:.3f}"
         ),
         details_md=rf"""
@@ -166,7 +715,7 @@ $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$.
 """,
         status=None,
         content_before=info_control(
-            "Stress-block parameters", "Check 1.1 — Stress-block parameters",
+            "Stress-block parameters", "Check 1 — Stress-block parameters",
             r"""
 This check determines the equivalent rectangular stress-block factors
 $\alpha_2$ and $\gamma$ used for Ultimate Limit State flexural design.
@@ -199,40 +748,72 @@ resultant, its line of action and therefore the section's bending resistance.
         ),
     )
     step_expander_calcbox(
-        uid="bending_uls_authoritative_2",
+        uid="bending_uls_authoritative_strains",
         summary_line=(
-            "1.2 Strain compatibility and steel stresses | "
-            f"Result: {stress_text}"
+            "Check 4 — Reinforcement strains and stresses | "
+            f"Result: {identified_stress_text}"
         ),
         details_md=rf"""
 **Purpose**
 
-Calculate the compatible strain and stress in every reinforcement layer using the authoritative neutral-axis solution.
+Using the converged neutral-axis depth from Check 3, calculate the final strain,
+stress and force in every reinforcement layer. This explains what each layer is
+actually doing at ULS.
 
 **Inputs**
 
 - Section: $b={b:.1f}\,\text{{mm}}$, $D={D:.1f}\,\text{{mm}}$
-- Effective depth: $d={d:.1f}\,\text{{mm}}$
+- Authoritative neutral-axis depth: $d_n={dn:.3f}\,\text{{mm}}$
 - Ultimate concrete strain: $\varepsilon_{{cu}}=0.003$
-- Steel-layer stresses from the authoritative solver: {stress_text}
+- Steel yield strength: $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$
+- Steel elastic modulus: $E_s={Es_uls:.0f}\,\text{{MPa}}$
 
 **Strain compatibility**
 
-$$\varepsilon_s=\varepsilon_{{cu}}\frac{{d-y_s}}{{d_n}}$$
+**Step 1 — locate each layer relative to the neutral axis**
 
-Steel stress is obtained from the material relationship and limited by the
-applicable steel strength:
+For this top-face compression convention, $y_i>d_n$ means the layer is below
+the neutral axis and in tension; $y_i<d_n$ means it is above the neutral axis
+and in compression. “Top” and “bottom” are physical labels only.
 
-$$\sigma_{{s,i}}=f_s(\varepsilon_{{s,i}})$$
+**Step 2 — calculate steel strain**
 
-**Authoritative result**
+Negative strain and stress represent tension. For every active layer:
 
-- Calculated steel-layer stresses: {stress_text}
-- Ultimate concrete compression strain: $\varepsilon_{{cu}}=0.003$
+$$\varepsilon_{{s,i}}=-\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
+
+$$\varepsilon_{{sy}}=\frac{{f_{{sy}}}}{{E_s}}=\frac{{{fsy:.1f}}}{{{Es_uls:.0f}}}={eps_sy:.6f}$$
+
+**Step 3 — calculate steel stress**
+
+$$\sigma_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})\min\left(E_s|\varepsilon_{{s,i}}|,f_{{sy}}\right)$$
+
+**Step 4 — calculate the force in each layer**
+
+$$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
+
+Layers are classified from their calculated position and stress, not from the
+words “top” or “bottom” in their names.
+
+{layer_compatibility_text}
+
+**Final reinforcement table**
+
+{final_layer_table_md}
+
+The converged neutral axis determines every reinforcement layer’s strain state.
+Reinforcement labelled “top” or “bottom” is not automatically compression or
+tension steel; its stress state depends on its position relative to the neutral axis.
+
+$$\boxed{{T_{{\mathrm{{total}}}}=\sum F_{{s,\mathrm{{tension}}}}={tension_n / 1000.0:.3f}\,\text{{kN}}}}$$
+
+$$\boxed{{C_{{s,\mathrm{{total}}}}=\sum F_{{s,\mathrm{{compression}}}}={compression_steel_n / 1000.0:.3f}\,\text{{kN}}}}$$
+
+**Result:** {identified_stress_text}
 """,
         status=None,
         content_before=info_control(
-            "Strain compatibility and equilibrium", "Check 1.2 — Strain compatibility and force equilibrium",
+            "Reinforcement strains and stresses", "Check 4 — Reinforcement strains and stresses",
             r"""
 This check establishes the linear strain profile and calculates the strain
 and stress in every reinforcement layer.
@@ -265,41 +846,16 @@ stress-block provisions [2].
     )
     render_timing_mark("bending_page.uls_check.1.end")
     step_expander_calcbox(
-        uid="bending_uls_authoritative_3",
+        uid="bending_uls_authoritative_method",
         summary_line=(
-            "1.3 Neutral-axis and block-depth solution | "
-            f"Result: dn = {dn:.1f} mm, a = {block_depth:.1f} mm"
+            "Check 2 — Neutral-axis solution method | "
+            + ("Direct single-layer solution" if len(layer_areas) == 1 else "General multi-layer equilibrium solution")
         ),
-        details_md=rf"""
-**Purpose**
-
-Solve the neutral-axis depth by enforcing internal force equilibrium across
-the complete section.
-
-**Formula**
-
-The solver varies $d_n$ until:
-
-$$\sum C-\sum T=0$$
-
-The equivalent rectangular block depth is then:
-
-$$a=\gamma d_n$$
-
-**Substitution**
-
-The converged equilibrium residual is ${residual_kn:.6f}\,\text{{kN}}$.
-
-$$a={gamma:.3f}\times {dn:.1f}={block_depth:.1f}\,\text{{mm}}$$
-
-**Result**
-
-$d_n={dn:.1f}\,\text{{mm}}$ and $a={block_depth:.1f}\,\text{{mm}}$.
-""",
+        details_md=neutral_axis_method_md,
         status=None,
         content_before=info_control(
-            "Neutral-axis and block-depth solution",
-            "Check 1.3 — Neutral-axis and block-depth solution",
+            "Neutral-axis solution method",
+            "Check 2 — Neutral-axis solution method",
             r"""
 The neutral axis is the position through the section where longitudinal
 bending strain is zero. Concrete on the compression side and reinforcement
@@ -327,58 +883,108 @@ stresses, compression block, lever arm and calculated capacity.
 [2] AS 3600:2018, Clause 8.1.3 — equivalent rectangular stress block.
 """,
         ),
-        diagram_fn=stress_block_diagram(
-            "bending_uls_authoritative_3_diagram", "Neutral axis and block depth",
-            show_dn=True, show_lever_arm=False,
-        ),
     )
     render_timing_mark("bending_page.uls_check.2.end")
     step_expander_calcbox(
+        uid="bending_uls_authoritative_equilibrium",
+        summary_line=(
+            "Check 3 — Neutral-axis equilibrium | "
+            f"Result: dn = {dn:.1f} mm, a = {block_depth:.1f} mm"
+        ),
+        details_md=neutral_axis_equilibrium_md,
+        status=None,
+        content_before=info_control(
+            "Neutral-axis equilibrium",
+            "Check 3 — Neutral-axis equilibrium and converged depth",
+            r"""
+The authoritative section solver balances concrete compression and the forces
+from every reinforcement layer [1]. This check shows representative convergence
+evidence and the final neutral-axis depth.
+
+#### References
+
+[1] AS 3600:2018, Clause 8.1 — strain compatibility and internal equilibrium.
+""",
+        ),
+        diagram_fn=stress_block_diagram(
+            "bending_uls_authoritative_equilibrium_diagram", "Neutral axis and block depth",
+            show_dn=True, show_lever_arm=False,
+        ),
+    )
+    step_expander_calcbox(
         uid="bending_uls_authoritative_4",
         summary_line=(
-            "1.4 Internal force resultants | "
+            "Check 5 — Internal force resultants | "
             f"Result: T = {tension_kn:.1f} kN"
         ),
         details_md=rf"""
 **Purpose**
 
-Resolve the authoritative concrete and reinforcement stresses into the internal ULS force resultants.
+Calculate the internal ULS force resultants using the AS 3600 equivalent rectangular concrete stress block and the calculated reinforcement stresses.
 
 **Inputs**
 
-- Concrete compression block: $\alpha_2={alpha2:.3f}$, $a={block_depth:.1f}\,\text{{mm}}$
+- Concrete stress-block factor: $\alpha_2={alpha2:.3f}$
+- Equivalent stress-block depth: $a={block_depth:.1f}\,\text{{mm}}=\gamma k_ud={gamma:.3f}\times {ku:.3f}\times {d:.1f}\,\text{{mm}}$
+- Concrete compressive strength: $f'_c={fc:.1f}\,\text{{MPa}}$
+- Compression-zone width: $b={b:.1f}\,\text{{mm}}$
 - Steel yield strength: $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$
-- Calculated steel-layer stresses: {stress_text}
+- Active longitudinal reinforcement layers: {len(stresses)}
 
-**Formula**
+**Concrete compression resultant**
 
-$$C_c=\int_A \sigma_c\,dA$$
+The AS 3600 equivalent stress block applies the uniform design stress
+$\alpha_2 f'_c$ over the rectangular compression-block area. No concrete
+stress integration is used.
+
+{concrete_resultant_md}
+
+measured from the extreme compression face.
+
+**Reinforcement force resultants**
 
 $$F_{{s,i}}=A_{{s,i}}\sigma_{{s,i}}$$
 
-$$\sum C=C_c+\sum C_s,\qquad \sum T=\sum T_s$$
+Using the authoritative calculation sign convention:
 
-**Substitution**
+$$T=\sum_{{\sigma_{{s,i}}<0}}\left|A_{{s,i}}\sigma_{{s,i}}\right|$$
 
-- Tension resultant: $T={tension_kn:.1f}\,\text{{kN}}$
-- Concrete compression: $C_c={concrete_kn:.1f}\,\text{{kN}}$
-- Compression-steel resultant: $C_s={compression_steel_kn:.1f}\,\text{{kN}}$
+$$C_s=\sum_{{\sigma_{{s,i}}>0}}A_{{s,i}}\sigma_{{s,i}}$$
+
+{steel_layer_text}
+
+**Calculated resultants**
+
+- Tension-steel resultant: $T={tension_kn:.3f}\,\text{{kN}}$
+- Concrete compression resultant: $C_c={concrete_kn:.3f}\,\text{{kN}}$
+- Compression-steel resultant: $C_s={compression_steel_kn:.3f}\,\text{{kN}}$
+- Total compression: $C=C_c+C_s={concrete_kn + compression_steel_kn:.3f}\,\text{{kN}}$
+
+**Force equilibrium**
+
+$$R=C-T$$
+
+$$R=({concrete_kn:.3f}+{compression_steel_kn:.3f})-{tension_kn:.3f}={residual_kn:.6f}\,\text{{kN}}$$
 
 **Result**
 
-The authoritative force-equilibrium residual is ${residual_kn:.6f}\,\text{{kN}}$.
+The internal compression and tension resultants are in force equilibrium. The authoritative residual is:
+
+$$\boxed{{R={residual_kn:.6f}\,\text{{kN}}}}$$
 """,
         status=None,
         content_before=info_control(
-            "Internal force resultants", "Check 1.4 — Internal force resultants",
+            "Internal force resultants", "Check 5 — Internal force resultants",
             r"""
 This check shows the internal forces developed by the solved strain profile.
 
 #### Concrete and reinforcement resultants
 
-The concrete compression resultant is obtained from the equivalent stress
-block [2]. Reinforcement forces are obtained layer by layer from steel area and
-the stress calculated from that layer's compatible strain.
+The AS 3600 equivalent stress block applies the uniform design stress
+$\alpha_2f'_c$ across its rectangular area, so the concrete compression
+resultant is $C_c=\alpha_2f'_cba$ and acts at $a/2$ from the compression face
+[2]. Reinforcement forces are obtained layer by layer from steel area and the
+stress calculated from that layer's compatible strain.
 
 At equilibrium, the total compression and tension resultants balance [1]. Their
 different lines of action form the internal resisting couple that provides
@@ -405,7 +1011,7 @@ moment capacity.
     step_expander_calcbox(
         uid="bending_uls_authoritative_5",
         summary_line=(
-            "1.5 Force-equilibrium verification | "
+            "Check 6 — Force-equilibrium verification | "
             f"Result: residual = {residual_kn:.6f} kN"
         ),
         details_md=rf"""
@@ -433,7 +1039,7 @@ The residual is within the authoritative solver tolerance.
         status=None,
         content_before=info_control(
             "Force-equilibrium verification",
-            "Check 1.5 — Force-equilibrium verification",
+            "Check 6 — Force-equilibrium verification",
             r"""
 This check proves that the selected neutral axis is an equilibrium solution,
 not merely a geometric estimate.
@@ -460,7 +1066,7 @@ subjected to bending.
     step_expander_calcbox(
         uid="bending_uls_authoritative_6",
         summary_line=(
-            "1.6 Neutral-axis ratio, ductility and strength factor | "
+            "Check 7 — Neutral-axis ratio, ductility and strength factor | "
             f"Result: ku = {ku:.3f}, phi = {phi:.3f}, {clause_status}"
         ),
         details_md=rf"""
@@ -505,7 +1111,7 @@ $k_u={ku:.3f}$, $\phi={phi:.3f}$ and the conditional assessment status is
         status=("PASS" if clause_status == "PASS" else "FAIL" if clause_status == "FAIL" else None),
         content_before=info_control(
             "Neutral-axis ratio, ductility and strength factor",
-            "Check 1.6 — Neutral-axis ratio, ductility and strength factor",
+            "Check 7 — Neutral-axis ratio, ductility and strength factor",
             r"""
 The neutral-axis ratio is
 
@@ -553,7 +1159,7 @@ reported as compliant.
     step_expander_calcbox(
         uid="bending_uls_authoritative_7",
         summary_line=(
-            "1.7 Nominal and design moment capacity | "
+            "Check 8 — Nominal and design moment capacity | "
             f"Result: Mu = {nominal:.1f} kNm, phi Mu = {capacity:.1f} kNm"
         ),
         details_md=rf"""
@@ -588,7 +1194,7 @@ $\phi M_u={capacity:.2f}\,\text{{kNm}}$.
         status=None,
         content_before=info_control(
             "Nominal and design moment capacity",
-            "Check 1.7 — Nominal and design moment capacity",
+            "Check 8 — Nominal and design moment capacity",
             r"""
 The balanced internal compression and tension resultants act at different
 locations and form an internal force couple. Their separation is the lever
@@ -624,7 +1230,7 @@ can be compared with the applied design action.
     step_expander_calcbox(
         uid="bending_uls_authoritative_8",
         summary_line=(
-            "1.8 Final flexural capacity check | "
+            "Check 9 — Final flexural capacity check | "
             f"Result: Mu* = {demand:.1f} kNm vs phi Mu = {capacity:.1f} kNm "
             f"({'PASS' if capacity_ok else 'FAIL'})"
         ),
@@ -657,7 +1263,7 @@ $\phi M_u={capacity:.2f}\,\text{{kNm}}$: **{"PASS" if capacity_ok else "FAIL"}**
         status="PASS" if capacity_ok else "FAIL",
         content_before=info_control(
             "Final flexural capacity check",
-            "Check 1.8 — Final flexural capacity check",
+            "Check 9 — Final flexural capacity check",
             r"""
 This is the final Ultimate Limit State flexural verification. It compares the
 applied design bending moment with the design capacity established in the
@@ -865,7 +1471,7 @@ References:
 
         step_expander_calcbox(
             uid="bending_uls_1_1",
-            summary_line=f"1.1 Stress-block parameters (alpha2 and gamma) | Result: alpha2 = {alpha2_uls:.3f}, gamma = {gamma_uls:.3f}",
+            summary_line=f"Check 1 — Stress-block parameters (alpha2 and gamma) | Result: alpha2 = {alpha2_uls:.3f}, gamma = {gamma_uls:.3f}",
             details_md=section11_details,
             status=None,
             diagram_fn=diagram_1_1,
@@ -1035,7 +1641,7 @@ References:
         
         step_expander_calcbox(
             uid="bending_uls_1_3",
-            summary_line=f"1.2 Steel area and tension force $T$ | Result: T = {T/1000.0:.1f} kN",
+            summary_line=f"Check 2 — Steel area and tension force $T$ | Result: T = {T/1000.0:.1f} kN",
             details_md=section13_details,
             status=None,
             content_before=info_1_3,
@@ -1216,7 +1822,7 @@ A deeper neutral axis generally represents a larger compression zone and lower t
 
         step_expander_calcbox(
             uid="bending_uls_1_4",
-            summary_line=f"1.3 Neutral axis depth $d_n$ and block depth $a$ | Result: d_n = {dn:.1f} mm, a = {a_uls:.1f} mm",
+            summary_line=f"Check 3 — Neutral axis depth $d_n$ and block depth $a$ | Result: d_n = {dn:.1f} mm, a = {a_uls:.1f} mm",
             details_md=section14_details,
             status=None,
             diagram_fn=diagram_1_4,
@@ -1225,7 +1831,7 @@ A deeper neutral axis generally represents a larger compression zone and lower t
 
         step_expander_calcbox(
             uid="bending_uls_1_2",
-            summary_line=f"1.4 Concrete compressive force $C$ | Result: C = {C_kN:.1f} kN",
+            summary_line=f"Check 4 — Concrete compressive force $C$ | Result: C = {C_kN:.1f} kN",
             details_md=section12_details,
             status=None,
             content_before=info_1_2,
@@ -1422,10 +2028,10 @@ This check therefore confirms that the assumed stress distribution and internal 
         step_expander_calcbox(
             uid="bending_uls_1_4a",
             summary_line=(
-                f"1.5 Strain compatibility (epsilon_cu and epsilon_s) | Result: "
+                f"Check 5 — Strain compatibility (epsilon_cu and epsilon_s) | Result: "
                 f"epsilon_s = {eps_s_tension:.5f}"
                 if not math.isnan(eps_s_tension)
-                else "1.5 Strain compatibility (epsilon_cu and epsilon_s) | Result: -"
+                else "Check 5 — Strain compatibility (epsilon_cu and epsilon_s) | Result: -"
             ),
             details_md=section14a_details,
             status=None,
@@ -1444,7 +2050,7 @@ This check therefore confirms that the assumed stress distribution and internal 
         def content_1_5():
             col_ku_title, col_ku_info = st.columns([0.9, 0.1])
             with col_ku_title:
-                st.markdown("**Info:**")
+                pass
             with col_ku_info:
                 with info_i_button(help_text="What does the neutral-axis ratio mean?"):
                     st.markdown(
@@ -1607,7 +2213,7 @@ This check is therefore the final verification that the section will fail in the
         
         step_expander_calcbox(
             uid="bending_uls_1_5",
-            summary_line=f"1.6 Neutral axis ratio k_u | Result: k_u = {ku:.3f} vs k_u,lim = {ku_lim:.2f} -> {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '-'}",
+            summary_line=f"Check 6 — Neutral axis ratio k_u | Result: k_u = {ku:.3f} vs k_u,lim = {ku_lim:.2f} -> {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '-'}",
             details_md=section15_details,
             status=ku_status,
             content_before=info_1_6,
@@ -1767,7 +2373,7 @@ This check converts those internal forces into a bending moment that can be dire
 
         step_expander_calcbox(
             uid="bending_uls_1_6",
-            summary_line=f"1.7 Lever arm z and moment capacity | Result: phi_Mu_cap = {phi_Mu_cap_uls:.2f} kNm",
+            summary_line=f"Check 7 — Lever arm z and moment capacity | Result: phi_Mu_cap = {phi_Mu_cap_uls:.2f} kNm",
             details_md=section16_details,
             status=None,
             diagram_fn=diagram_1_6,
@@ -1880,7 +2486,7 @@ This is the governing acceptance check for flexural strength. Regardless of the 
 
             step_expander_calcbox(
                 uid="bending_uls_1_7",
-                summary_line=f"1.8 Flexural capacity check | Result: M_u* = {Mu_star:.2f} kNm vs phi_Mu_cap = {phi_Mu_cap_uls:.2f} kNm -> {'PASS' if Mu_ok else 'FAIL'}",
+                summary_line=f"Check 8 — Flexural capacity check | Result: M_u* = {Mu_star:.2f} kNm vs phi_Mu_cap = {phi_Mu_cap_uls:.2f} kNm -> {'PASS' if Mu_ok else 'FAIL'}",
                 details_md=section17_details,
                 status=Mu_status,
                 content_before=info_1_8,
@@ -1952,7 +2558,7 @@ $f_{{ct,f}} \\approx {fctf_as:.3f}$ MPa.
     
     step_expander_calcbox(
         uid="bending_min_2_1",
-        summary_line=f"2.1 Concrete flexural tensile strength $f_{{ct,f}}$ | Result: f_{{ct,f}} = {fctf_as:.3f} MPa",
+        summary_line=f"Check 1 — Concrete flexural tensile strength $f_{{ct,f}}$ | Result: f_{{ct,f}} = {fctf_as:.3f} MPa",
         details_md=section21_details,
         status=None,
         render_policy="mounted",
@@ -1990,7 +2596,7 @@ $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
     
     step_expander_calcbox(
         uid="bending_min_2_2",
-        summary_line=f"2.2 Gross section modulus Z_g | Result: Z_g = {Zg:,.3e} mm^3",
+        summary_line=f"Check 2 — Gross section modulus Z_g | Result: Z_g = {Zg:,.3e} mm^3",
         details_md=section22_details,
         status=None,
         render_policy="mounted",
@@ -2028,7 +2634,7 @@ $M_{{cr}} \\approx {Mcr_as:.2f}$ kNm.
     
     step_expander_calcbox(
         uid="bending_min_2_3",
-        summary_line=f"2.3 Cracking moment $M_{{cr}}$ | Result: M_{{cr}} = {Mcr_as:.2f} kNm",
+        summary_line=f"Check 3 — Cracking moment $M_{{cr}}$ | Result: M_{{cr}} = {Mcr_as:.2f} kNm",
         details_md=section23_details,
         status=None,
         render_policy="mounted",
@@ -2074,7 +2680,7 @@ Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
     
     step_expander_calcbox(
         uid="bending_min_2_4",
-        summary_line=f"2.4 Minimum required design capacity (M_u,cap)_min | Result: phi_Mu_cap = {phi_Mu_cap:.2f} kNm vs (M_u,cap)_min = {Mu_min_as:.2f} kNm -> {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else '-'}",
+        summary_line=f"Check 4 — Minimum required design capacity (M_u,cap)_min | Result: phi_Mu_cap = {phi_Mu_cap:.2f} kNm vs (M_u,cap)_min = {Mu_min_as:.2f} kNm -> {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else '-'}",
         details_md=section24_details,
         status=Mu_min_status,
         render_policy="mounted",
@@ -2124,7 +2730,7 @@ Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm^2.
     
     step_expander_calcbox(
         uid="bending_min_2_5",
-        summary_line=f"2.5 Minimum tensile reinforcement A_st,min | Result: A_st = {Ast:.1f} mm^2 vs A_st,min = {Ast_min_as:.1f} mm^2 -> {'PASS' if As_ok else 'FAIL' if As_ok is False else '-'}",
+        summary_line=f"Check 5 — Minimum tensile reinforcement A_st,min | Result: A_st = {Ast:.1f} mm^2 vs A_st,min = {Ast_min_as:.1f} mm^2 -> {'PASS' if As_ok else 'FAIL' if As_ok is False else '-'}",
         details_md=section25_details,
         status=As_status,
         render_policy="mounted",
@@ -2328,7 +2934,7 @@ def render_sls_tab(
     def content_3_1():
         col_n_title, col_n_info = st.columns([0.9, 0.1])
         with col_n_title:
-            st.markdown("**Info:**")
+            pass
         with col_n_info:
             with info_i_button(help_text="What does the modular ratio mean?"):
                 st.markdown(
@@ -2424,7 +3030,7 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
         with _bending_check_info_row(help_text="Modular ratio and transformed steel areas"):
             st.markdown(
                 """
-## Check 3.1 - Modular Ratio (n = Es / Ec)
+## Check 1 - Modular Ratio (n = Es / Ec)
 
 ### Why This Calculation Is Required
 
@@ -2512,7 +3118,7 @@ The modular ratio is the foundation of transformed-section analysis. Every subse
     
     step_expander_calcbox(
         uid="bending_sls_3_1",
-        summary_line=f"3.1 Modular ratio $n = E_s / E_c$ | Result: n = {Es/Ec:.2f}",
+        summary_line=f"Check 1 — Modular ratio $n = E_s / E_c$ | Result: n = {Es/Ec:.2f}",
         details_md=section31_details,
         status=None,
         content_before=info_3_1,
@@ -2768,7 +3374,7 @@ d_n = {dn_val:.2f}\ \text{{mm}}
         with _bending_check_info_row(help_text="Cracked neutral axis depth"):
             st.markdown(
                 """
-## Check 3.2 - Cracked Neutral Axis Depth (dn)
+## Check 2 - Cracked Neutral Axis Depth (dn)
 
 ### Why This Calculation Is Required
 
@@ -2829,7 +3435,7 @@ Determining the cracked neutral axis establishes the geometry of the cracked tra
     
     step_expander_calcbox(
         uid="bending_sls_3_2",
-        summary_line=f"3.2 Neutral axis depth $d_n$ (cracked section) | Result: d_n = {dn_sls:.1f} mm",
+        summary_line=f"Check 2 — Neutral axis depth $d_n$ (cracked section) | Result: d_n = {dn_sls:.1f} mm",
         details_md=section32_details,
         status=None,
         diagram_fn=diagram_3_2,
@@ -3010,7 +3616,7 @@ An accurate value of **Icr** is therefore essential for predicting the real beha
 
     step_expander_calcbox(
         uid="bending_sls_3_3",
-        summary_line=f"3.3 Cracked moment of inertia I_cr | Result: I_cr = {Icr:,.2f} mm^4",
+        summary_line=f"Check 3 — Cracked moment of inertia I_cr | Result: I_cr = {Icr:,.2f} mm^4",
         details_md=section33_details,
         status=None,
         diagram_fn=None,
@@ -3128,7 +3734,7 @@ Accurate prediction of curvature is therefore essential for assessing the servic
 
     step_expander_calcbox(
         uid="bending_sls_3_4",
-        summary_line=f"3.4 Curvature at service moment | Result: kappa = {kappa:.3e} mm^-1",
+        summary_line=f"Check 4 — Curvature at service moment | Result: kappa = {kappa:.3e} mm^-1",
         details_md=section34_details,
         status=None,
         diagram_fn=None,
@@ -3271,7 +3877,7 @@ These calculated strains are then used directly to determine:
 
     step_expander_calcbox(
         uid="bending_sls_3_5",
-        summary_line=f"3.5 Strain distribution epsilon(y) = kappa(y - d_n) | Max strain: {max_strain_label} = {max_strain_val:.5f}",
+        summary_line=f"Check 5 — Strain distribution epsilon(y) = kappa(y - d_n) | Max strain: {max_strain_label} = {max_strain_val:.5f}",
         details_md=section35_details,
         status=None,
         diagram_fn=_sls_3_5_diagram,
@@ -3457,7 +4063,7 @@ Accurate steel stresses are therefore essential for assessing how the reinforced
 
     step_expander_calcbox(
         uid="bending_sls_3_6",
-        summary_line=f"3.6 Steel stresses at SLS (each layer) | Max stress: {max_fs_label} = {max_fs:.1f} MPa",
+        summary_line=f"Check 6 — Steel stresses at SLS (each layer) | Max stress: {max_fs_label} = {max_fs:.1f} MPa",
         details_md=section36_details,
         status=None,
         diagram_fn=None,
@@ -3549,7 +4155,7 @@ Use $f_{{s,ser}} \\approx {fs_tension:.1f}$ MPa in crack-width calculations on t
 """
         step_expander_calcbox(
             uid="bending_sls_3_7",
-            summary_line=f"3.7 Link to crack-width calculation | f_s,ser ~= {fs_tension:.1f} MPa",
+            summary_line=f"Check 7 — Link to crack-width calculation | f_s,ser ~= {fs_tension:.1f} MPa",
             details_md=section37_details,
             status=None,
             diagram_fn=None,

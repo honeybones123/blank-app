@@ -373,7 +373,7 @@ def plot_stress_strain_profiles(
         shared_yaxes=True,
         horizontal_spacing=0.08,
         specs=[[{"type": "xy"}, {"type": "xy"}, {"type": "xy"}]],
-        subplot_titles=["Section", "Strain", "Stress (MPa)"],
+        subplot_titles=["", "Strain", "Stress (MPa)"],
     )
 
     # consistent y-range across panels (0 at top, D at bottom)
@@ -760,7 +760,7 @@ def plot_stress_strain_profiles(
             fig.add_annotation(
                 x=x_d + text_dx_section,
                 y=y_t_plot / 2.0,
-                text=f"d = {geom_d_mm:.0f} mm",
+                text=f"y<sub>s</sub> = {geom_d_mm:.0f} mm",
                 showarrow=False,
                 font=dict(size=9, color="black"),
                 xanchor="left",
@@ -808,7 +808,7 @@ def plot_stress_strain_profiles(
             fig.add_annotation(
                 x=x_d + text_dx_section,
                 y=(y_t_plot + Df) / 2.0,
-                text=f"d = {geom_d_mm:.0f} mm",
+                text=f"y<sub>s</sub> = {geom_d_mm:.0f} mm",
                 showarrow=False,
                 font=dict(size=9, color="black"),
                 xanchor="left",

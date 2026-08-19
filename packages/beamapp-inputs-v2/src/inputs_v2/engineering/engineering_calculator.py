@@ -78,6 +78,14 @@ def _legacy_payload(inputs: BeamInputs, arrangement: ReinforcementArrangement | 
         if arrangement is not None
         else ((bottom_area, d),)
     )
+    bottom_layer_labels = (
+        tuple(
+            f"Bottom reinforcement — {row.bar_count}-N{row.bar_diameter_mm:g}"
+            for row in arrangement.rows
+        )
+        if arrangement is not None
+        else (f"Bottom reinforcement — {bottom_count}-N{bottom_diameter:g}",)
+    )
     top_depth = inputs.top.cover_mm + inputs.top.diameter_mm / 2.0
     return {
         "b": inputs.width_mm, "D": inputs.depth_mm, "L": inputs.span_mm,
@@ -91,6 +99,11 @@ def _legacy_payload(inputs: BeamInputs, arrangement: ReinforcementArrangement | 
         "web_width_mm": inputs.web_width_mm,
         "bottom_layers": bottom_layers,
         "top_layers": ((top_area, top_depth),) if top_area > 0.0 else (),
+        "bottom_layer_labels": bottom_layer_labels,
+        "top_layer_labels": (
+            (f"Top reinforcement — {inputs.top.bars}-N{inputs.top.diameter_mm:g}",)
+            if top_area > 0.0 else ()
+        ),
     }
 
 
@@ -411,6 +424,8 @@ class EngineeringCalculator:
                 web_width_mm=payload["web_width_mm"],
                 bottom_layers=tuple(payload["bottom_layers"]),
                 top_layers=tuple(payload["top_layers"]),
+                bottom_layer_labels=tuple(payload["bottom_layer_labels"]),
+                top_layer_labels=tuple(payload["top_layer_labels"]),
             ),
         )
         # Row-level values consumed by the Runtime-style summary contract.

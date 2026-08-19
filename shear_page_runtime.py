@@ -2099,6 +2099,7 @@ In short:
     _shear_method_summary = str(get_param("k_v_method", "General method") or "General method")
     _shear_input_config = CheckInputPanelConfig(
         page_slug="shear",
+        mount_closed_bodies=True,
         categories=(
                 CheckInputCategory(
                 "design_actions", "Design actions",
@@ -3487,6 +3488,17 @@ div[data-testid="stElementContainer"]:has(#mcft-before-stress-plot)
     padding-bottom: 0 !important;
 }
 /* _render_centered_shear_plotly: style row + wrapper + plotly */
+/* Check 1 uses the same compact calc spacing as the other checks. */
+div[data-testid="stExpander"]:has(#inner_shear_check1) [data-testid="stExpanderDetails"] {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+div[data-testid="stExpander"]:has(#inner_shear_check1) [data-testid="stExpanderDetails"] > div[data-testid="stVerticalBlock"] {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
 div[data-testid="stElementContainer"]:has(#mcft-before-stress-plot)
     ~ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_single) {
     margin-top: -1.75rem !important;

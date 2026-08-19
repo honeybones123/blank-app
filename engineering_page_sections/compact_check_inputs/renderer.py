@@ -16,10 +16,10 @@ def _inject_styles(st_module: Any) -> None:
 <style>
 .compact-check-inputs-heading {
   color: #10234a;
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 17.6px;
+  font-weight: 600;
   line-height: 1.35;
-  margin: 0.25rem 0 0.85rem;
+  margin: 0 0 0.75rem;
 }
 
 /* Existing lazy-expander presentation. */
@@ -96,6 +96,20 @@ def _inject_styles(st_module: Any) -> None:
 }
 
 /* Illustrated icon tiles for the mounted-card headers. */
+[class*="st-key-compact_check_inputs_"][class*="__shell"] div[data-testid="stButton"] > button {
+  justify-content: flex-start !important;
+  align-items: center !important;
+  text-align: left !important;
+}
+[class*="st-key-compact_check_inputs_"][class*="__shell"] div[data-testid="stButton"] > button > div,
+[class*="st-key-compact_check_inputs_"][class*="__shell"] div[data-testid="stButton"] > button p {
+  justify-content: flex-start !important;
+  text-align: left !important;
+  width: 100% !important;
+}
+[class*="st-key-compact_check_inputs_"][class*="__shell"] div[data-testid="stButton"] > button::before {
+  display: none;
+}
 [class*="st-key-compact_check_inputs_"][class*="_design_actions"][class*="__shell"] div[data-testid="stButton"] > button::before {
   background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTAyMzRhIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTE2IDV2MjFNNSA4aDIyTTQgOWw0IDlIMmwyLTlabTI0IDAgNCA5aC02bDItOVpNNyA4bC0zIDFtMjEtMSAzIDFNMTAgMjdIMTIiLz48L3N2Zz4=");
 }
@@ -110,6 +124,7 @@ def _inject_styles(st_module: Any) -> None:
   [class*="st-key-compact_check_inputs_"][class*="_section_material"][class*="__shell"],
   [class*="st-key-compact_check_inputs_"][class*="_reinforcement"][class*="__shell"]
 ) div[data-testid="stButton"] > button::before {
+  display: block;
   content: "";
   flex: 0 0 42px;
   width: 42px;
@@ -123,7 +138,7 @@ def _inject_styles(st_module: Any) -> None:
 }
 
 @media (max-width: 700px) {
-  .compact-check-inputs-heading { font-size: 1.21rem; }
+  .compact-check-inputs-heading { font-size: 17.6px; }
   [class*="st-key-compact_check_inputs_"] div[data-testid="stExpander"] summary { min-height: 3rem; }
   [class*="st-key-compact_check_inputs_"] div[data-testid="stExpanderDetails"] > div[data-testid="stVerticalBlock"],
   [class*="st-key-compact_check_inputs_"][class*="__body"] > div[data-testid="stVerticalBlock"] {
@@ -132,6 +147,16 @@ def _inject_styles(st_module: Any) -> None:
 }
 </style>
 """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_compact_section_heading(st_module: Any, text: str) -> None:
+    """Render the canonical heading used immediately after a page divider."""
+    import html
+
+    st_module.markdown(
+        f'<div class="compact-check-inputs-heading">{html.escape(str(text))}</div>',
         unsafe_allow_html=True,
     )
 
@@ -150,10 +175,7 @@ def compact_check_input_regions(st_module: Any, config: CheckInputPanelConfig):
         '<div class="compact-check-inputs-anchor"></div>',
         unsafe_allow_html=True,
     )
-    st_module.markdown(
-        '<div class="compact-check-inputs-heading">Inputs used for this check</div>',
-        unsafe_allow_html=True,
-    )
+    render_compact_section_heading(st_module, "Inputs used for this check")
 
     with st_module.container(
         border=False,

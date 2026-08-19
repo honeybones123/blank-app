@@ -10,8 +10,8 @@ def test_canonical_calcbox_owns_light_and_heavy_render_policy() -> None:
     end = source.index("\ndef apply_step_summary_card_css", start)
     renderer = source[start:end]
 
-    assert 'render_policy: str = "lazy"' in renderer
-    assert 'diagram_fn is None' in renderer
+    assert 'render_policy: str = "mounted"' in renderer
+    assert 'mount_closed_body = policy in {"mounted", "eager", "client_mounted"}' in renderer
     assert 'on_change="ignore" if mount_closed_body else "rerun"' in renderer
     assert 'if not expander.open and not mount_closed_body:' in renderer
 

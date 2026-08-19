@@ -90,6 +90,7 @@ from engineering_page_sections.compact_check_inputs import (
 )
 from engineering_page_sections.stable_tabs import render_stable_tabs
 from inputs_application.action_source_control import uses_load_analysis_actions
+from ui.diagrams.moment_shear_diagram import figure_bmd_from_state
 
 # Safe option lists for reinforcement inputs
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -121,12 +122,23 @@ def _overlay_authoritative_bending_result(target, bending, ductility, default_de
         "d_mm": float(bending.get("d_mm", default_depth) or default_depth),
         "alpha2": float(bending.get("alpha2", 0.0) or 0.0),
         "gamma": float(bending.get("gamma", 0.0) or 0.0),
+        "section_shape": str(bending.get("section_shape", "RECT") or "RECT"),
         "T_N": float(bending.get("tension_force_n", 0.0) or 0.0),
         "C_concrete_N": float(bending.get("concrete_force_n", 0.0) or 0.0),
         "C_steel_N": float(bending.get("compression_steel_force_n", 0.0) or 0.0),
+        "compression_concrete_area_mm2": float(bending.get("compression_concrete_area_mm2", 0.0) or 0.0),
+        "concrete_centroid_mm": float(bending.get("concrete_centroid_mm", 0.0) or 0.0),
         "equilibrium_residual_n": float(bending.get("equilibrium_residual_n", 0.0) or 0.0),
+        "neutral_axis_iteration_trace": tuple(bending.get("neutral_axis_iteration_trace", ()) or ()),
         "steel_layer_stresses_mpa": tuple(bending.get("steel_layer_stresses_mpa", ()) or ()),
+        "steel_layer_areas_mm2": tuple(bending.get("steel_layer_areas_mm2", ()) or ()),
+        "steel_layer_labels": tuple(bending.get("steel_layer_labels", ()) or ()),
+        "steel_layer_faces": tuple(bending.get("steel_layer_faces", ()) or ()),
         "steel_layer_forces_n": tuple(bending.get("steel_layer_forces_n", ()) or ()),
+        # Preserve the authoritative reinforcement coordinates as well as the
+        # forces/stresses.  The detail cards must not relabel effective depth
+        # ``d`` as the steel-layer coordinate ``y_s``.
+        "steel_layer_depths_mm": tuple(bending.get("steel_layer_depths_mm", ()) or ()),
     })
     if ductility:
         target.update({
@@ -1169,8 +1181,25 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         # Bind JavaScript for opening expanders and scrolling
         bind_summary_clicks()
 
-        st.markdown("---")
-        st.markdown("<div style='margin-top: 0.5rem;'></div>", unsafe_allow_html=True)
+        # Keep the Bending page on one spacing rhythm across major headings,
+        # tabs, diagrams, and the calculation-card stack.
+        st.markdown(
+            """
+            <style>
+            /* Stable-tab scroll hooks are zero-height iframes; remove their
+               Streamlit element-wrapper contribution to vertical spacing. */
+            div[data-testid="stElementContainer"]:has(iframe[height="0"]),
+            div[data-testid="stElementContainer"]:has(iframe[style*="height: 0px"]) {
+                height: 0 !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
         diagram_section_placeholder = st.empty()
         inputs_placeholder = st.empty()
         # The detailed tab body is interactive.  Keep a stable multi-element
@@ -1695,7 +1724,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
 
                         st.markdown("</div>", unsafe_allow_html=True)
-        page_divider()
     render_timing_mark("bending_page.runtime.presentation.inputs.end")
 
     with diagram_section_placeholder.container():
@@ -1708,7 +1736,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             # Heading row with info popover
             col_title, col_info = st.columns([0.95, 0.05])
             with col_title:
-                render_section_title("Section & stress-strain model")
+                pass
             with col_info:
                 with info_i_button(help_text="Concrete stress model options"):
                     st.markdown("**Concrete stress model**")
@@ -1730,14 +1758,13 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     """)
 
             # --- STATE RADIO (ULS / SLS / Uncracked) ---
+            # Resolve the existing selection before building the diagrams; the
+            # controls themselves are rendered below the diagram tabs.
             state_options = ["ULS", "SLS (cracked)", "Uncracked"]
-            main_state = st.radio(
-                "State:",
-                state_options,
-                key="bending_state_main",
-                horizontal=True,
-                index=state_options.index(canonical_state),
-            )
+            selected_state = st.session_state.get("bending_state_main", canonical_state)
+            if selected_state not in state_options:
+                selected_state = canonical_state
+            main_state = selected_state
             st.session_state["bending_state"] = main_state
 
             # --- Build label for the 3-panel diagram using global concrete_stress_model ---
@@ -1763,8 +1790,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.session_state["bending_strain_state_local"] = diagram_state_label
 
             # --- Placeholders let us keep the visible order independent of execution order ---
-            matcurves_placeholder = st.empty()
             diagram_placeholder = st.empty()
+            # Reserve the material/state area after the diagrams.  The
+            # placeholder position, rather than the later fill order, controls
+            # where Streamlit displays these blocks.
+            matcurves_placeholder = st.empty()
 
             # Underlying strain-state math uses the solver's labels
             if main_state.startswith("ULS"):
@@ -1778,20 +1808,22 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 render_timing_mark("bending_page.runtime.checks.start")
                 # ---------------- Step-by-step tabs ----------------
                 apply_step_summary_expander_css()
-                render_section_title("Bending design checks")
+                page_divider()
                 detail_view = st.session_state.get("bending_detail_view", "positive")
                 if detail_view not in _valid_bending_views and _valid_bending_views:
                     detail_view = _valid_bending_views[0]
                 showing_negative = detail_view == "negative" and has_hogging_case
-                if showing_negative:
-                    active_bending_title = "Hogging bending check"
-                    steel_note = "Top steel in tension"
-                else:
-                    active_bending_title = "Sagging bending check"
-                    steel_note = "Bottom steel in tension"
-                st.caption(
-                    f"**{active_bending_title}** — {steel_note}. "
-                    "Demand, capacity, strain/stress diagrams, and steps follow this case."
+                # Put all extra rhythm above the heading; keep no subheading
+                # or additional gap between the title and calculation tabs.
+                st.markdown(
+                    f"""
+                    <div class="bending-checks-heading-block" style="padding-top:28px;margin:0 0 0.75rem;">
+                      <div style="color:#10234a;font-size:17.6px;font-weight:600;line-height:1.35;margin:0;">
+                        Bending design checks
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
                 top_results_active = dict(top_results)
@@ -1877,6 +1909,35 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         summary_mode=False,
                     )
 
+                # Keep the authoritative calculation sequence pedagogical:
+                # neutral-axis solution must precede strain compatibility.
+                # Reorder the complete rendered cards, including their mounted
+                # bodies, rather than duplicating either calculation.
+                import streamlit.components.v1 as components
+                components.html(
+                    """
+                    <script>
+                    (() => {
+                      const doc = window.parent.document;
+                      const cards = [...doc.querySelectorAll('[data-testid="stExpander"]')];
+                      const find = (prefix) => cards.find((card) => {
+                        const text = (card.innerText || '').replace(/\\s+/g, ' ').trim();
+                        return text.startsWith(prefix);
+                      });
+                      const strain = find('Check 2 — Strain compatibility') || find('Check 2 - Strain compatibility');
+                      const neutral = find('Check 3 — Neutral-axis') || find('Check 3 - Neutral-axis');
+                      if (!strain || !neutral) return;
+                      const strainBlock = strain.closest('[data-testid="stLayoutWrapper"]') || strain.parentElement;
+                      const neutralBlock = neutral.closest('[data-testid="stLayoutWrapper"]') || neutral.parentElement;
+                      if (strainBlock && neutralBlock && strainBlock.parentElement === neutralBlock.parentElement) {
+                        neutralBlock.parentElement.insertBefore(neutralBlock, strainBlock);
+                      }
+                    })();
+                    </script>
+                    """,
+                    height=0,
+                )
+
                 # Handle pending scroll after content has rendered
                 pending_scroll_uid = st.session_state.get("bending_pending_scroll_uid")
                 if pending_scroll_uid:
@@ -1927,11 +1988,12 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     moment_sign=st.session_state.get("bending_detail_view", "positive"),
                 )
                 render_timing_mark("bending_page.runtime.diagram.figure.end")
-                diagram_options = ["Section", "Side view"]
+                render_section_title("Bending Diagrams")
+                diagram_options = ["Section & stress-strain models", "Side view", "Bending moment"]
                 # Both views stay mounted in client-side tabs. Switching views must
                 # not run Python, replace the focused selector, or move the page's
                 # scroll anchor.
-                section_tab, side_view_tab = render_stable_tabs(
+                section_tab, side_view_tab, moment_tab = render_stable_tabs(
                     st,
                     labels=diagram_options,
                     scope_id="bending-section-diagrams",
@@ -1956,11 +2018,47 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         st.session_state,
                         stress_strain_fig=fig_ss,
                     )
+                with moment_tab:
+                    # Match Shear: use resolved arrays when available, with a
+                    # scalar-action fallback so the diagram is never empty.
+                    import numpy as np
+
+                    mode = str(st.session_state.get("actions_mode", "manual") or "manual").strip().lower()
+                    L_m = max(float(get_param("L", 3000.0) or 3000.0) / 1000.0, 0.1)
+                    moment_x = list(st.session_state.get("moment_x") or [])
+                    moment_values = list(st.session_state.get("moment_values") or [])
+                    if not (mode == "design" and moment_x and moment_values and len(moment_x) == len(moment_values)):
+                        moment_x = np.linspace(0.0, L_m, 100).tolist()
+                        mu = float(Mu_uls_active or 0.0)
+                        support_type = str(get_param("support_type", "simply_supported") or "simply_supported").strip().lower()
+                        x_norm = np.asarray(moment_x, dtype=float) / L_m
+                        if "cantilever" in support_type:
+                            moment_values = (mu * (1.0 - x_norm)).tolist()
+                        else:
+                            moment_values = (4.0 * mu * x_norm * (1.0 - x_norm)).tolist()
+                    bmd_state = {
+                        "x_plot": moment_x,
+                        "M_plot": moment_values,
+                        "support_positions_plot": list(st.session_state.get("bmd_support_positions_m") or []),
+                        "support_types_plot": list(st.session_state.get("bmd_support_types") or []),
+                        "L": float(moment_x[-1]),
+                        "preview_x_m": None,
+                        "design_x_m": None,
+                        "preview_M": None,
+                        "x_pad": max(float(moment_x[-1]) * 0.08, 0.12),
+                        "support_type": str(st.session_state.get("support_type") or "simply_supported").strip().lower(),
+                    }
+                    render_plotly_diagram(
+                        figure_bmd_from_state(bmd_state, show_m_peak=True),
+                        key="bending_moment_diagram",
+                        title="Bending moment diagram",
+                        config={"displayModeBar": False},
+                    )
                 render_timing_mark("bending_page.runtime.diagram.end")
 
             # --------------------------------------------------
-            # Material stress–strain curves (concrete + steel),
-            # rendered *after* SLS tab but shown above it.
+            # Material stress–strain curves (concrete + steel), rendered below
+            # the section diagrams together with the state selector.
             # --------------------------------------------------
             with matcurves_placeholder.container():
                 def _render_material_model_content():
@@ -2026,6 +2124,18 @@ for the same strain pattern.
                         )
                     except Exception as e:
                         st.warning("Material curves view failed to render (browser/graphics). Try refreshing the page.")
+                st.markdown("**State:**")
+                st.radio(
+                    "State:",
+                    state_options,
+                    key="bending_state_main",
+                    horizontal=True,
+                    index=state_options.index(main_state),
+                    label_visibility="collapsed",
+                )
+                st.session_state["bending_state"] = st.session_state.get(
+                    "bending_state_main", main_state
+                )
                 render_lazy_expander(
                     "ℹ️ Stress–strain model & material behaviour",
                     _render_material_model_content,

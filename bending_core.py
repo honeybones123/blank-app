@@ -21,6 +21,7 @@ from calculations.bending import (
     solve_bending_capacity,
 )
 from calculations.materials import derive_concrete_modulus_from_fc
+from inputs_application.authoritative_check_packs import current_authoritative_family
 
 
 # ------------------------------------------------------------
@@ -459,7 +460,7 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
             db_t = float(db_top) if db_top is not None else 16.0
             As = bar_area_mm2(nb_t, db_t)
 
-    return compute_stress_strain_state_values(
+    state_values = compute_stress_strain_state_values(
         state=state,
         b=b,
         D=D,
@@ -471,5 +472,25 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
         Ec=Ec,
         Es=Es,
     )
+
+    # The ULS diagram is explanatory evidence for the calculation cards.  Its
+    # strain line must therefore use the same revision-matched neutral-axis
+    # solution, not the retired single-layer diagram approximation.
+    if state == "ULS":
+        authoritative = current_authoritative_family(st.session_state, "bending")
+        try:
+            dn = float(authoritative.get("dn_mm")) if authoritative else float("nan")
+            d_authoritative = float(authoritative.get("d_mm")) if authoritative else float("nan")
+            if math.isfinite(dn) and math.isfinite(d_authoritative) and dn > 1e-9:
+                state_values.update(
+                    c=dn,
+                    eps_c=-0.003,
+                    eps_s=0.003 * (d_authoritative - dn) / dn,
+                    d=d_plot,
+                )
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    return state_values
 
     # AS3600 α2–γ

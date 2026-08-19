@@ -1332,7 +1332,10 @@ def apply_step_summary_expander_css():
     session_state = getattr(st, "session_state", None)
     if session_state is not None:
         rendered_styles = session_state.setdefault("_rendered_style_keys", set())
-        style_key = "step_summary_expander_css"
+        # Bump this when the shared spacing/card CSS changes so an existing
+        # Streamlit session receives the new stylesheet without requiring a
+        # process restart.
+        style_key = "step_summary_expander_css_v4"
         if style_key in rendered_styles:
             return
         rendered_styles.add(style_key)
@@ -1503,15 +1506,45 @@ div[data-testid="stVerticalBlock"]:has(
 }
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
-) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::before,
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"] svg,
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
-) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]::before {
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"] svg {
+  display: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"] > *,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"] > * {
+  display: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::after,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]::after {
+  display: none !important;
+  content: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::before {
   content: "ⓘ Understand the technical basis";
   display: inline !important;
   font-size: 0.78rem !important;
   line-height: 1.1 !important;
   white-space: nowrap !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::before,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]::before {
+  content: "Understand the technical basis" !important;
 }
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
@@ -1522,6 +1555,33 @@ div[data-testid="stVerticalBlock"]:has(
   border-color: rgba(31,119,180,0.55) !important;
   background: rgba(31,119,180,0.10) !important;
   color: #155a8a !important;
+}
+
+/* Shared page-spacing contract: headings, captions, dividers and tab rows
+   use the same vertical rhythm on every engineering page. */
+.section-title {
+  margin-top: 0 !important;
+  margin-bottom: 0.75rem !important;
+}
+div[data-testid="stCaptionContainer"] {
+  margin-top: 0 !important;
+  margin-bottom: 0.75rem !important;
+}
+div[data-testid="stTabs"] {
+  margin-top: 0 !important;
+  margin-bottom: 0.75rem !important;
+}
+div[data-testid="stDivider"] {
+  margin-top: 0 !important;
+  margin-bottom: 32px !important;
+}
+div[data-testid="stElementContainer"]:has([data-testid="stDivider"]) {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+div[data-testid="stElementContainer"]:has([data-testid="stDivider"]) + div[data-testid="stElementContainer"] {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 </style>
         """,
@@ -1573,7 +1633,8 @@ def render_lazy_expander(
     )
     with expander:
         if expander.open:
-            render_fn()
+            with st.container(border=True):
+                render_fn()
 
 
 # Optional left-border / background accents for calc steps (Design / SFD page, etc.)
@@ -1636,13 +1697,37 @@ def step_expander_calcbox(
     expanded=None,
     jump_uid=None,
     accent: str | None = None,
-    render_policy: str = "lazy",
+    render_policy: str = "mounted",
 ):
     """
     Render a step as an expandable card with summary header.
     Optional accent: load, support, reaction, fe, shear, moment (left border + calc box tint).
     """
     apply_step_summary_expander_css()
+
+    # The authoritative ULS sequence must establish converged d_n before
+    # presenting reinforcement strains, which consume that result. Defer the
+    # complete Check 4 card until the Check 3 equilibrium card has rendered;
+    # this preserves its body,
+    # info panel, equations, and diagram as one card.
+    if (
+        uid == "bending_uls_authoritative_strains"
+        and not st.session_state.get("_rendering_deferred_bending_uls_check_2", False)
+    ):
+        st.session_state["_deferred_bending_uls_check_2"] = {
+            "uid": uid,
+            "summary_line": summary_line,
+            "details_md": details_md,
+            "status": status,
+            "diagram_fn": diagram_fn,
+            "content_before": content_before,
+            "content_after": content_after,
+            "expanded": expanded,
+            "jump_uid": jump_uid,
+            "accent": accent,
+            "render_policy": render_policy,
+        }
+        return
 
     # One zero-height element owns both the scroll anchor and the deterministic
     # expander marker.  The former implementation emitted two separate
@@ -1664,10 +1749,6 @@ def step_expander_calcbox(
     accent_html = (
         f"<span class='step-accent-{accent_key}'></span>" if accent_key else ""
     )
-
-    info_tip = ""
-    if content_before:
-        info_tip = " ℹ️"
 
     summary_line_norm = str(summary_line or "")
     # Normalize legacy numeric step labels (e.g. "1.2 Something ...")
@@ -1691,7 +1772,7 @@ def step_expander_calcbox(
         formatted_summary = f"{_bold_first_summary_line(first)}  \n{rest}"
     else:
         formatted_summary = _bold_first_summary_line(summary_line_norm)
-    label = f"{formatted_summary}{info_tip}".strip()
+    label = formatted_summary.strip()
     has_body_content = bool(
         _has_non_empty_card_text(details_md)
         or diagram_fn
@@ -1708,7 +1789,7 @@ def step_expander_calcbox(
     if open_key not in st.session_state:
         st.session_state[open_key] = bool(is_expanded)
     policy = str(render_policy or "lazy").strip().lower()
-    mount_closed_body = policy in {"mounted", "eager", "client_mounted"} and diagram_fn is None
+    mount_closed_body = policy in {"mounted", "eager", "client_mounted"}
     expander = st.expander(
         label,
         expanded=bool(is_expanded),
@@ -1759,6 +1840,16 @@ def step_expander_calcbox(
         
         if content_after:
             content_after()
+
+    deferred_check_2 = None
+    if uid == "bending_uls_authoritative_equilibrium":
+        deferred_check_2 = st.session_state.pop("_deferred_bending_uls_check_2", None)
+    if deferred_check_2:
+        st.session_state["_rendering_deferred_bending_uls_check_2"] = True
+        try:
+            step_expander_calcbox(**deferred_check_2)
+        finally:
+            st.session_state.pop("_rendering_deferred_bending_uls_check_2", None)
 
 
 def apply_step_summary_card_css():

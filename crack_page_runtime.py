@@ -523,6 +523,7 @@ You can:
             st,
             CheckInputPanelConfig(
                 page_slug="crack_as5100",
+                mount_closed_bodies=True,
                 categories=(
                     CheckInputCategory(
                         "method",
@@ -583,6 +584,7 @@ You can:
             st,
             CheckInputPanelConfig(
                 page_slug="crack_c766",
+                mount_closed_bodies=True,
                 categories=(
                     CheckInputCategory(
                         "method",
@@ -655,6 +657,7 @@ You can:
         st,
         CheckInputPanelConfig(
             page_slug="crack",
+            mount_closed_bodies=True,
             categories=(
                 CheckInputCategory(
                     "method",

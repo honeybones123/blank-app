@@ -553,6 +553,7 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
         st,
         CheckInputPanelConfig(
             page_slug="shrinkage",
+            mount_closed_bodies=True,
             categories=(
                 CheckInputCategory(
                     category_id="method",

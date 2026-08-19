@@ -444,6 +444,7 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
         st,
         CheckInputPanelConfig(
             page_slug="creep",
+            mount_closed_bodies=True,
             categories=(
                 CheckInputCategory(
                     category_id="section_member",

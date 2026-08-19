@@ -440,6 +440,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         st,
         CheckInputPanelConfig(
             page_slug="deflection",
+            mount_closed_bodies=True,
             categories=(
                 CheckInputCategory(
                     "section_geometry",
