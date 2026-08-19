@@ -1,0 +1,37 @@
+name: Temporary bending material-panel redesign
+on:
+  push:
+    branches: [perf/summary-first-closeout-2026-08-18]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  redesign:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/summary-first-closeout-2026-08-18
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Redesign bending material teaching panel
+        run: python tools/verification/helpers/redesign_bending_material_panel.py
+      - name: Compile bending runtime
+        run: python -m py_compile bending_page_runtime.py
+      - name: Commit redesigned panel
+        run: |
+          if git diff --quiet -- bending_page_runtime.py; then
+            echo 'No bending runtime change to commit.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add bending_page_runtime.py
+          git commit -m 'Redesign stress strain teaching panel'
+          git push origin HEAD:perf/summary-first-closeout-2026-08-18
