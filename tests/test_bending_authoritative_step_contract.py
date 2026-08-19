@@ -66,7 +66,12 @@ def test_authoritative_strain_explanation_identifies_and_classifies_each_layer()
     assert r"\varepsilon_{{s,i}}=-\varepsilon_{{cu}}" in source
     assert r"\operatorname{{sign}}(\varepsilon_{{s,i}})" in source
     assert 'role = "tension" if stress < 0.0' in source
-    assert '"yielded" if yielded else "elastic"' in source
+    assert "_teaching_steel_response_state" in source
+    assert "Elastic trial stress" in source
+    assert "Final steel stress" in source
+    assert "Steel has yielded, so the final stress is limited to the yield strength." in source
+    assert "Steel remains elastic." in source
+    assert "clipped stress" not in source
     assert "not from the" in source and "words “top” or “bottom”" in source
 
 

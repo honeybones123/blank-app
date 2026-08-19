@@ -3,6 +3,7 @@ import math
 import pytest
 
 from bending_neutral_axis_teaching import neutral_axis_hand_solution
+from bending_tabs import _teaching_steel_response_state
 
 
 def _derive(*, areas, depths, stresses, dn, b=250.0, D=300.0, fc=40.0, fsy=500.0, alpha2=0.79, gamma=0.87):
@@ -45,6 +46,27 @@ def test_teaching_neutral_axis_root_matches_the_published_reference_depth():
 
     assert roots
     assert min(abs(root - published_dn) for root in roots) <= 1e-6
+
+
+@pytest.mark.parametrize(
+    ("strain", "final_stress", "expected"),
+    (
+        (-0.001, -200.0, "Elastic tension"),
+        (-0.004, -500.0, "Yielded tension"),
+        (0.001, 200.0, "Elastic compression"),
+        (0.004, 500.0, "Yielded compression"),
+    ),
+)
+def test_teaching_steel_states_follow_published_stress_sign_and_yield_limit(
+    strain, final_stress, expected
+):
+    trial, yielded, state = _teaching_steel_response_state(
+        strain=strain, final_stress_mpa=final_stress, Es_mpa=200000.0, fsy_mpa=500.0
+    )
+
+    assert state == expected
+    assert yielded is (abs(trial) > 500.0)
+    assert abs(final_stress) <= 500.0
 
 
 def test_all_yielded_layers_reduce_to_linear_equilibrium():

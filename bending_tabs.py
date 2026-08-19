@@ -64,6 +64,21 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     return _shared_make_sls_32_stress_block_figure(D_mm, d_mm, dn_mm, layers_tension)
 
 
+def _teaching_steel_response_state(
+    *, strain: float, final_stress_mpa: float, Es_mpa: float, fsy_mpa: float
+) -> tuple[float, bool, str]:
+    """Classify a published steel result for the Check 4 teaching display only."""
+
+    elastic_trial_stress = float(Es_mpa) * float(strain)
+    yielded = math.isfinite(elastic_trial_stress) and abs(elastic_trial_stress) > float(fsy_mpa) + 1e-9
+    role = (
+        "tension" if final_stress_mpa < 0.0
+        else "compression" if final_stress_mpa > 0.0
+        else "approximately zero stress"
+    )
+    return elastic_trial_stress, yielded, f"{'Yielded' if yielded else 'Elastic'} {role}"
+
+
 def _render_authoritative_uls_steps(
     *, top_results, b: float, D: float, fc: float, fsy: float,
     demand: float, moment_sign: str,
@@ -141,6 +156,12 @@ def _render_authoritative_uls_steps(
         "| Layer | $A_{s,i}$ (mm²) | $y_i$ (mm) | Relative to NA | $\\varepsilon_{s,i}$ | $f_{s,i}$ (MPa) | State | $F_{s,i}$ (kN) |",
         "|---|---:|---:|---|---:|---:|---|---:|",
     ]
+    final_layer_table_lines[0] = (
+        "| Layer | $A_{s,i}$ (mm^2) | $y_i$ (mm) | $\\varepsilon_{s,i}$ | "
+        "Elastic trial stress (MPa) | "
+        "Final steel stress (MPa) | State | $F_{s,i}$ (kN) |"
+    )
+    final_layer_table_lines[1] = "|---|---:|---:|---:|---:|---:|---|---:|"
     for index, (area, depth, stress, force) in enumerate(
         zip(layer_areas, steel_depths, stresses, layer_forces), start=1
     ):
@@ -149,14 +170,11 @@ def _render_authoritative_uls_steps(
         role = "tension" if stress < 0.0 else "compression" if stress > 0.0 else "approximately zero stress"
         displayed_force = abs(force) / 1000.0 if role == "tension" else force / 1000.0
         strain = -0.003 * (depth - dn) / dn if abs(dn) > 1e-9 else float("nan")
-        yielded = math.isfinite(eps_sy) and abs(strain) >= eps_sy
-        if moment_sign == "negative":
-            relative_position = "above neutral axis" if depth > dn else "below neutral axis" if depth < dn else "at neutral axis"
-        else:
-            relative_position = "below neutral axis" if depth > dn else "above neutral axis" if depth < dn else "at neutral axis"
+        elastic_trial_stress, yielded, state_label = _teaching_steel_response_state(
+            strain=strain, final_stress_mpa=stress, Es_mpa=Es_uls, fsy_mpa=fsy
+        )
+        comparison_symbol = ">" if yielded else r"\leq"
         force_label = "Tension force" if role == "tension" else "Compression force"
-        state_label = f"{'Yielded' if yielded else 'Elastic'} {role}"
-        relative_to_na = "Below NA" if depth > dn else "Above NA" if depth < dn else "At NA"
         stress_summary_parts.append(f"{label}: {stress:.1f} MPa")
         steel_layer_lines.append(
             f"- {label} ({role}): $A_{{s,{index}}}={area:.1f}\\,\\text{{mm}}^2$, "
@@ -164,23 +182,21 @@ def _render_authoritative_uls_steps(
             f"$F_{{s,{index}}}={displayed_force:.3f}\\,\\text{{kN}}$"
         )
         layer_compatibility_sections.append(rf"""
-**{label}**
-
-- Steel area: $A_{{s,{index}}}={area:.2f}\,\text{{mm}}^2$
-- Centroid depth: $y_{{{index}}}={depth:.1f}\,\text{{mm}}$
-- Position: {relative_position}
+**{label}** ($A_{{s,{index}}}={area:.2f}\,\text{{mm}}^2$, $y_{{{index}}}={depth:.1f}\,\text{{mm}}$)
 
 $$\varepsilon_{{s,{index}}}=-0.003\frac{{{depth:.1f}-{dn:.3f}}}{{{dn:.3f}}}={strain:.6f}$$
 
-$$\sigma_{{s,{index}}}=\operatorname{{sign}}(\varepsilon_{{s,{index}}})\min\left(E_s|\varepsilon_{{s,{index}}}|,f_{{sy}}\right)={stress:.1f}\,\text{{MPa}}$$
+$$f_{{s,\mathrm{{elastic}},{index}}}=E_s\varepsilon_{{s,{index}}}=({Es_uls:.0f})({strain:.6f})={elastic_trial_stress:.1f}\,\text{{MPa}}$$
 
-- Stress state: {role}
-- Yield status: {"yielded" if yielded else "elastic"}
-- {force_label}: ${displayed_force:.3f}\,\text{{kN}}$
+$$|f_{{s,\mathrm{{elastic}},{index}}}|={abs(elastic_trial_stress):.1f}\,\text{{MPa}} {comparison_symbol} f_{{sy}}={fsy:.1f}\,\text{{MPa}}$$
+
+$$f_{{s,{index}}}={stress:.1f}\,\text{{MPa}}\quad\text{{({state_label})}}$$
+
+$$F_{{s,{index}}}={displayed_force:.3f}\,\text{{kN}}\quad\text{{({force_label.lower()})}}$$
 """)
         final_layer_table_lines.append(
-            f"| {label} | {area:.2f} | {depth:.1f} | {relative_to_na} | {strain:.6f} | "
-            f"{stress:.1f} | {state_label} | {force / 1000.0:.3f} |"
+            f"| {label} | {area:.2f} | {depth:.1f} | {strain:.6f} | "
+            f"{elastic_trial_stress:.1f} | {stress:.1f} | {state_label} | {force / 1000.0:.3f} |"
         )
     steel_layer_text = "\n".join(steel_layer_lines) or "- Layer areas and forces were not published."
     layer_compatibility_text = "\n".join(layer_compatibility_sections)
@@ -334,7 +350,7 @@ For every layer:
 
 $$\varepsilon_{{s,i}}=\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
 
-$$f_{{s,i}}=\operatorname{{clip}}\left(E_s\varepsilon_{{s,i}},-f_{{sy}},f_{{sy}}\right)$$
+$$f_{{s,i}}\text{{ is obtained from }}E_s\varepsilon_{{s,i}}\text{{ and limited to }}\pm f_{{sy}}$$
 
 $$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
 
@@ -352,7 +368,7 @@ known in advance.
 
 1. Assume a trial $d_n$.
 2. Calculate $C_c=\alpha_2f'_cb\gamma d_n$.
-3. Calculate strain, clipped stress and force in every reinforcement layer.
+3. Calculate strain, steel stress and force in every reinforcement layer.
 4. Compare total compression with total tension.
 5. Adjust $d_n$ and repeat until $\boxed{{\sum C\approx\sum T}}$.
 
@@ -389,10 +405,6 @@ $$\boxed{{d_n={dn:.3f}\,\text{{mm}}}}$$
 $$a=\gamma d_n={gamma:.3f}\times{dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
 
 $$\boxed{{a={block_depth:.3f}\,\text{{mm}}}}$$
-
-**Layer position after convergence**
-
-{relative_to_na_md}
 
 **Force equilibrium is satisfied. The final reinforcement strains and stresses
 are calculated in Check 4 using this converged neutral-axis depth.**
@@ -781,7 +793,7 @@ resultant, its line of action and therefore the section's bending resistance.
             show_dn=False, show_lever_arm=False,
         ),
     )
-    render_check_4 = lambda: step_expander_calcbox(
+    step_expander_calcbox(
         uid="bending_uls_authoritative_strains",
         summary_line=(
             "Check 4 — Reinforcement strains and stresses | "
@@ -796,33 +808,41 @@ actually doing at ULS.
 
 **Inputs**
 
-- Section: $b={b:.1f}\,\text{{mm}}$, $D={D:.1f}\,\text{{mm}}$
-- Authoritative neutral-axis depth: $d_n={dn:.3f}\,\text{{mm}}$
-- Ultimate concrete strain: $\varepsilon_{{cu}}=0.003$
-- Steel yield strength: $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$
+- Neutral-axis depth: $d_n={dn:.3f}\,\text{{mm}}$
 - Steel elastic modulus: $E_s={Es_uls:.0f}\,\text{{MPa}}$
+- Steel yield strength: $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$
 
 **Strain compatibility**
 
-**Step 1 — locate each layer relative to the neutral axis**
+**Step 1 — calculate steel strain**
 
-For this top-face compression convention, $y_i>d_n$ means the layer is below
-the neutral axis and in tension; $y_i<d_n$ means it is above the neutral axis
-and in compression. “Top” and “bottom” are physical labels only.
-
-**Step 2 — calculate steel strain**
-
-Negative strain and stress represent tension. For every active layer:
+Negative stress denotes tension and positive stress denotes compression in this
+bending sign convention. For every active layer:
 
 $$\varepsilon_{{s,i}}=-\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
 
 $$\varepsilon_{{sy}}=\frac{{f_{{sy}}}}{{E_s}}=\frac{{{fsy:.1f}}}{{{Es_uls:.0f}}}={eps_sy:.6f}$$
 
-**Step 3 — calculate steel stress**
+**Step 2 — calculate elastic trial stress and compare with yield**
 
-$$\sigma_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})\min\left(E_s|\varepsilon_{{s,i}}|,f_{{sy}}\right)$$
+$$f_{{s,\mathrm{{elastic}},i}}=E_s\varepsilon_{{s,i}}$$
 
-**Step 4 — calculate the force in each layer**
+This is the stress the reinforcement would have if it remained elastic.
+
+If the elastic trial stress is within yield:
+
+$$|E_s\varepsilon_{{s,i}}|\leq f_{{sy}}\quad\Rightarrow\quad f_{{s,i}}=E_s\varepsilon_{{s,i}}$$
+
+If the elastic trial stress exceeds yield:
+
+$$|E_s\varepsilon_{{s,i}}|>f_{{sy}}\quad\Rightarrow\quad f_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})f_{{sy}}$$
+
+The elastic trial stress is calculated first. If its magnitude exceeds the
+yield strength, the final steel stress is capped at $\pm f_{{sy}}$.
+Steel has yielded, so the final stress is limited to the yield strength.
+Steel remains elastic. This occurs when the elastic trial stress is within yield.
+
+**Step 3 — calculate the force in each layer**
 
 $$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
 
@@ -831,37 +851,15 @@ words “top” or “bottom” in their names.
 
 {layer_compatibility_text}
 
-**Final reinforcement table**
-
-{final_layer_table_md}
-
-The converged neutral axis determines every reinforcement layer’s strain state.
-Reinforcement labelled “top” or “bottom” is not automatically compression or
-tension steel; its stress state depends on its position relative to the neutral axis.
-
-$$\boxed{{T_{{\mathrm{{total}}}}=\sum F_{{s,\mathrm{{tension}}}}={tension_n / 1000.0:.3f}\,\text{{kN}}}}$$
-
-$$\boxed{{C_{{s,\mathrm{{total}}}}=\sum F_{{s,\mathrm{{compression}}}}={compression_steel_n / 1000.0:.3f}\,\text{{kN}}}}$$
-
 **Result:** {identified_stress_text}
 """,
         status=None,
         content_before=info_control(
             "Reinforcement strains and stresses", "Check 4 — Reinforcement strains and stresses",
             r"""
-This check establishes the linear strain profile and calculates the strain
-and stress in every reinforcement layer.
-
-#### Strain assumptions
-
-Plane sections are assumed to remain plane [1], so strain varies linearly from
-the extreme compression fibre to each reinforcement layer. Each layer's
-strain is converted to stress using the steel stress–strain relationship;
-the analysis does not assume that every layer has yielded.
-
-This confirms whether each layer is elastic, yielded in tension or acting in
-compression before its force is used in equilibrium [1]. Compression steel is
-therefore not incorrectly treated as yielded tension steel.
+Using the neutral-axis depth already solved in Check 3, this check calculates
+the final strain, elastic trial stress, final steel stress and force for each
+active reinforcement layer.
 
 #### Why this check matters
 
@@ -949,7 +947,6 @@ evidence and the final neutral-axis depth.
             show_dn=True, show_lever_arm=False,
         ),
     )
-    render_check_4()
     step_expander_calcbox(
         uid="bending_uls_authoritative_4",
         summary_line=(
