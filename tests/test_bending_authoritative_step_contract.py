@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_authoritative_bending_uls_uses_the_nine_step_explanatory_sequence() -> None:
+def test_authoritative_bending_uls_uses_the_eight_step_explanatory_sequence() -> None:
     source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
 
     expected_titles = (
@@ -14,13 +14,13 @@ def test_authoritative_bending_uls_uses_the_nine_step_explanatory_sequence() -> 
         "Check 3 — Neutral-axis equilibrium",
         "Check 4 — Reinforcement strains and stresses",
         "Check 5 — Internal force resultants",
-        "Check 6 — Force-equilibrium verification",
-        "Check 7 — Neutral-axis ratio, ductility and strength factor",
-        "Check 8 — Nominal and design moment capacity",
-        "Check 9 — Final flexural capacity check",
+        "Check 6 — Neutral-axis ratio, ductility and strength factor",
+        "Check 7 — Nominal and design moment capacity",
+        "Check 8 — Final flexural capacity check",
     )
     for title in expected_titles:
         assert title in source
+    assert "Check 6 — Force-equilibrium verification" not in source
 
     renderer = (ROOT / "widgets_helpers.py").read_text(encoding="utf-8")
     assert 'uid == "bending_uls_authoritative_strains"' in renderer
@@ -40,12 +40,13 @@ def test_authoritative_bending_diagrams_follow_the_equations_they_explain() -> N
 
 def test_authoritative_force_resultant_explanation_uses_rectangular_stress_block() -> None:
     source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
-    force_box = source[source.index('uid="bending_uls_authoritative_4"'):source.index('uid="bending_uls_authoritative_5"')]
+    force_box = source[source.index('uid="bending_uls_authoritative_4"'):source.index('uid="bending_uls_authoritative_6"')]
 
     assert r"C_c=\int_A" not in force_box
     assert r"C_c=\alpha_2f'_cba" in force_box
     assert r"y_{{C_c}}=\frac{{a}}{{2}}" in source
-    assert r"R=C-T" in force_box
+    assert "Neutral-axis equilibrium\nwas already established in Check 3" in force_box
+    assert r"R=C-T" not in force_box
     assert "concrete_kn + compression_steel_kn" in force_box
     assert "steel_layer_areas_mm2" in source
 
@@ -109,9 +110,9 @@ def test_authoritative_bending_info_preserves_detailed_heading_and_references() 
 def test_authoritative_bending_info_cites_each_numbered_reference_inline() -> None:
     source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
     authoritative = source[source.index("def _render_authoritative_uls_steps("):]
-    info_bodies = authoritative.split("content_before=info_control(")[1:10]
+    info_bodies = authoritative.split("content_before=info_control(")[1:9]
 
-    assert len(info_bodies) == 9
+    assert len(info_bodies) == 8
     for index, body in enumerate(info_bodies, start=1):
         prose, references = body.split("#### References", 1)
         references = references.split('""",', 1)[0]

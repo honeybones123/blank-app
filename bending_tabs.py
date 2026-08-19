@@ -227,19 +227,27 @@ $y_{{C_c}}={concrete_centroid:.1f}\,\text{{mm}}$ from the extreme compression fa
     )
     iteration_trace = tuple(top_results.get("neutral_axis_iteration_trace", ()) or ())
     iteration_table_lines = [
-        "| Iteration | $d_n$ (mm) | Concrete compression (kN) | Steel tension (kN) | Steel compression (kN) | Residual (kN) |",
+        "| Solver step | $d_n$ (mm) | Concrete compression (kN) | Steel tension (kN) | Steel compression (kN) | Residual (kN) |",
         "|---:|---:|---:|---:|---:|---:|",
     ]
-    for entry in iteration_trace:
+    # Keep the teaching table readable: it is evidence of convergence, not a
+    # dump of every internal bisection trial.
+    trace_indices = tuple(
+        index for index in (0, 1, len(iteration_trace) // 2, len(iteration_trace) - 1)
+        if 0 <= index < len(iteration_trace)
+    )
+    for position, index in enumerate(dict.fromkeys(trace_indices)):
+        entry = iteration_trace[index]
+        label = "Initial" if position == 0 else "Intermediate"
         iteration_table_lines.append(
-            f"| {int(entry.get('iteration', 0))} | {float(entry.get('dn_mm', 0.0)):.3f} | "
+            f"| {label} | {float(entry.get('dn_mm', 0.0)):.3f} | "
             f"{float(entry.get('concrete_force_n', 0.0)) / 1000.0:.3f} | "
             f"{float(entry.get('tension_force_n', 0.0)) / 1000.0:.3f} | "
             f"{float(entry.get('compression_steel_force_n', 0.0)) / 1000.0:.3f} | "
             f"{float(entry.get('equilibrium_residual_n', 0.0)) / 1000.0:.6f} |"
         )
     iteration_table_lines.append(
-        f"| Final | {dn:.3f} | {concrete_n / 1000.0:.3f} | {tension_n / 1000.0:.3f} | "
+        f"| **Converged** | {dn:.3f} | {concrete_n / 1000.0:.3f} | {tension_n / 1000.0:.3f} | "
         f"{compression_steel_n / 1000.0:.3f} | {residual_kn:.6f} |"
     )
     iteration_table_md = "\n".join(iteration_table_lines)
@@ -661,6 +669,19 @@ $$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
 """
     lever_arm = nominal * 1e6 / tension_n if abs(tension_n) > 1e-9 else 0.0
     utilisation_text = f"{utilisation:.3f}" if math.isfinite(utilisation) else "not finite (zero capacity)"
+    concrete_centroid = float(top_results.get("concrete_centroid_mm", block_depth / 2.0) or block_depth / 2.0)
+    moment_terms = []
+    for label, depth, stress, force in zip(layer_labels, steel_depths, stresses, layer_forces):
+        if stress < 0.0:
+            force_kn = abs(force) / 1000.0
+            arm_mm = depth - concrete_centroid
+        else:
+            force_kn = force / 1000.0
+            arm_mm = concrete_centroid - depth
+        moment_terms.append(
+            rf"- {label}: ${force_kn:.3f}\,\text{{kN}}\times{arm_mm:.3f}\,\text{{mm}}"
+        )
+    moment_terms_md = "\n".join(moment_terms) or "- No active reinforcement-layer forces were published."
 
     def info_control(help_text: str, heading: str, body: str):
         def render_info():
@@ -703,32 +724,34 @@ $$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
         uid="bending_uls_authoritative_1",
         summary_line=(
             "Check 1 — Stress-block parameters | "
-            f"Result: alpha2 = {alpha2:.3f}, gamma = {gamma:.3f}"
+            f"Concrete stress block | alpha2 = {alpha2:.3f}, gamma = {gamma:.3f}"
         ),
         details_md=rf"""
 **Purpose**
 
-Determine the AS 3600 ULS rectangular stress-block factors used by the authoritative section analysis.
+Define the AS 3600 rectangular concrete compression block used by the authoritative ULS section analysis.
 
 **Inputs**
 
 - Concrete strength: $f'_c={fc:.1f}\,\text{{MPa}}$
+- Compression-zone width: $b={b:.1f}\,\text{{mm}}$
+- Stress-block factors: $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$
 
 **Formula**
 
-$$\alpha_2=\max(0.67,0.85-0.0015f'_c)$$
+$$a=\gamma d_n$$
 
-$$\gamma=\max(0.67,0.97-0.0025f'_c)$$
+$$C_c=\alpha_2f'_cba=\alpha_2f'_cb\gamma d_n$$
 
 **Substitution**
 
-$$\alpha_2=\max(0.67,0.85-0.0015\times {fc:.1f})={alpha2:.3f}$$
+$$C_c=({alpha2:.3f})({fc:.1f})({b:.1f})({gamma:.3f})d_n$$
 
-$$\gamma=\max(0.67,0.97-0.0025\times {fc:.1f})={gamma:.3f}$$
+$$\boxed{{C_c={alpha2 * fc * b * gamma / 1000.0:.3f}d_n\,\text{{kN}}}}$$
 
 **Result**
 
-$\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$.
+Once $d_n$ is known, the concrete compression force is known. Check 2 explains how $d_n$ is found.
 """,
         status=None,
         content_before=info_control(
@@ -764,7 +787,7 @@ resultant, its line of action and therefore the section's bending resistance.
             show_dn=False, show_lever_arm=False,
         ),
     )
-    step_expander_calcbox(
+    render_check_4 = lambda: step_expander_calcbox(
         uid="bending_uls_authoritative_strains",
         summary_line=(
             "Check 4 — Reinforcement strains and stresses | "
@@ -870,6 +893,10 @@ stress-block provisions [2].
         ),
         details_md=neutral_axis_method_md,
         status=None,
+        diagram_fn=stress_block_diagram(
+            "bending_uls_authoritative_method_diagram", "Concrete stress block",
+            show_dn=False, show_lever_arm=False,
+        ),
         content_before=info_control(
             "Neutral-axis solution method",
             "Check 2 — Neutral-axis solution method",
@@ -928,6 +955,7 @@ evidence and the final neutral-axis depth.
             show_dn=True, show_lever_arm=False,
         ),
     )
+    render_check_4()
     step_expander_calcbox(
         uid="bending_uls_authoritative_4",
         summary_line=(
@@ -977,17 +1005,11 @@ $$C_s=\sum_{{\sigma_{{s,i}}>0}}A_{{s,i}}\sigma_{{s,i}}$$
 - Compression-steel resultant: $C_s={compression_steel_kn:.3f}\,\text{{kN}}$
 - Total compression: $C=C_c+C_s={concrete_kn + compression_steel_kn:.3f}\,\text{{kN}}$
 
-**Force equilibrium**
-
-$$R=C-T$$
-
-$$R=({concrete_kn:.3f}+{compression_steel_kn:.3f})-{tension_kn:.3f}={residual_kn:.6f}\,\text{{kN}}$$
-
 **Result**
 
-The internal compression and tension resultants are in force equilibrium. The authoritative residual is:
-
-$$\boxed{{R={residual_kn:.6f}\,\text{{kN}}}}$$
+These are the final internal forces used for capacity. Neutral-axis equilibrium
+was already established in Check 3; its authoritative residual was
+$R={residual_kn:.6f}\,\text{{kN}}$.
 """,
         status=None,
         content_before=info_control(
@@ -1026,70 +1048,15 @@ moment capacity.
     )
     render_timing_mark("bending_page.uls_check.3.end")
     step_expander_calcbox(
-        uid="bending_uls_authoritative_5",
-        summary_line=(
-            "Check 6 — Force-equilibrium verification | "
-            f"Result: residual = {residual_kn:.6f} kN"
-        ),
-        details_md=rf"""
-**Purpose**
-
-Verify that the authoritative neutral-axis solution satisfies internal force
-equilibrium.
-
-**Formula**
-
-$$R=\sum C-\sum T$$
-
-**Substitution**
-
-- Concrete compression: $C_c={concrete_kn:.1f}\,\text{{kN}}$
-- Compression-steel resultant: $C_s={compression_steel_kn:.1f}\,\text{{kN}}$
-- Tension resultant: $T={tension_kn:.1f}\,\text{{kN}}$
-
-$$R={residual_kn:.6f}\,\text{{kN}}$$
-
-**Result**
-
-The residual is within the authoritative solver tolerance.
-""",
-        status=None,
-        content_before=info_control(
-            "Force-equilibrium verification",
-            "Check 6 — Force-equilibrium verification",
-            r"""
-This check proves that the selected neutral axis is an equilibrium solution,
-not merely a geometric estimate.
-
-#### Equilibrium requirement
-
-All concrete and reinforcement compression forces are balanced against the
-tensile reinforcement forces. The remaining residual records the numerical
-closure of that solution and should be effectively zero within the solver's
-tolerance [1].
-
-This verification must be completed before the internal resultants can be
-used to calculate moment capacity.
-
-#### References
-
-[1] AS 3600:2018, Clause 8.1 — internal force equilibrium for members
-subjected to bending.
-""",
-        ),
-        render_policy="mounted",
-    )
-    render_timing_mark("bending_page.uls_check.4.end")
-    step_expander_calcbox(
         uid="bending_uls_authoritative_6",
         summary_line=(
-            "Check 7 — Neutral-axis ratio, ductility and strength factor | "
+            "Check 6 — Neutral-axis ratio, ductility and strength factor | "
             f"Result: ku = {ku:.3f}, phi = {phi:.3f}, {clause_status}"
         ),
         details_md=rf"""
 **Purpose**
 
-Calculate the neutral-axis ratio and the AS 3600 bending strength-reduction factor.
+Assess ductility using the neutral-axis ratio and report the authoritative AS 3600 strength-reduction factor.
 
 **Inputs**
 
@@ -1100,13 +1067,13 @@ Calculate the neutral-axis ratio and the AS 3600 bending strength-reduction fact
 
 $$k_u=\frac{{d_n}}{{d}}$$
 
-$$\phi=\min(0.85,\max(0.65,1.24-13k_u/12))$$
-
 **Substitution**
 
 $$k_u=\frac{{{dn:.1f}}}{{{d:.1f}}}={ku:.3f}$$
 
-$$\phi=\min(0.85,\max(0.65,1.24-13\times {ku:.3f}/12))={phi:.3f}$$
+The production bending calculation publishes $\phi={phi:.3f}$ together with
+the applicable ductility and Clause 8.1.5 assessment. This teaching check does
+not derive a separate $\phi$ rule.
 
 **Clause 8.1.5 conditional assessment**
 
@@ -1128,7 +1095,7 @@ $k_u={ku:.3f}$, $\phi={phi:.3f}$ and the conditional assessment status is
         status=("PASS" if clause_status == "PASS" else "FAIL" if clause_status == "FAIL" else None),
         content_before=info_control(
             "Neutral-axis ratio, ductility and strength factor",
-            "Check 7 — Neutral-axis ratio, ductility and strength factor",
+            "Check 6 — Neutral-axis ratio, ductility and strength factor",
             r"""
 The neutral-axis ratio is
 
@@ -1176,7 +1143,7 @@ reported as compliant.
     step_expander_calcbox(
         uid="bending_uls_authoritative_7",
         summary_line=(
-            "Check 8 — Nominal and design moment capacity | "
+            "Check 7 — Nominal and design moment capacity | "
             f"Result: Mu = {nominal:.1f} kNm, phi Mu = {capacity:.1f} kNm"
         ),
         details_md=rf"""
@@ -1187,17 +1154,23 @@ internal-force solution.
 
 **Inputs**
 
-- Tension resultant: $T={tension_kn:.1f}\,\text{{kN}}$
-- Authoritative lever arm: $z={lever_arm:.1f}\,\text{{mm}}$
+- Concrete resultant position: $y_c=a/2={concrete_centroid:.3f}\,\text{{mm}}$
 - Strength-reduction factor: $\phi={phi:.3f}$
 
 **Formula**
 
 $$M_u=\sum F_i z_i$$
 
+Using the final steel forces from Check 5, the authoritative layer force and
+lever-arm terms are:
+
+{moment_terms_md}
+
 $$\phi M_u=\phi\,M_u$$
 
 **Substitution**
+
+The authoritative internal-force model gives:
 
 $$M_u={nominal:.2f}\,\text{{kNm}}$$
 
@@ -1211,7 +1184,7 @@ $\phi M_u={capacity:.2f}\,\text{{kNm}}$.
         status=None,
         content_before=info_control(
             "Nominal and design moment capacity",
-            "Check 8 — Nominal and design moment capacity",
+            "Check 7 — Nominal and design moment capacity",
             r"""
 The balanced internal compression and tension resultants act at different
 locations and form an internal force couple. Their separation is the lever
@@ -1247,7 +1220,7 @@ can be compared with the applied design action.
     step_expander_calcbox(
         uid="bending_uls_authoritative_8",
         summary_line=(
-            "Check 9 — Final flexural capacity check | "
+            "Check 8 — Final flexural capacity check | "
             f"Result: Mu* = {demand:.1f} kNm vs phi Mu = {capacity:.1f} kNm "
             f"({'PASS' if capacity_ok else 'FAIL'})"
         ),
@@ -1280,7 +1253,7 @@ $\phi M_u={capacity:.2f}\,\text{{kNm}}$: **{"PASS" if capacity_ok else "FAIL"}**
         status="PASS" if capacity_ok else "FAIL",
         content_before=info_control(
             "Final flexural capacity check",
-            "Check 9 — Final flexural capacity check",
+            "Check 8 — Final flexural capacity check",
             r"""
 This is the final Ultimate Limit State flexural verification. It compares the
 applied design bending moment with the design capacity established in the
