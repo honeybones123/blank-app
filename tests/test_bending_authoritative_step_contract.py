@@ -9,7 +9,7 @@ def test_authoritative_bending_uls_uses_the_eight_step_explanatory_sequence() ->
     source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
 
     expected_titles = (
-        "Check 1 — Stress-block parameters",
+        "Check 1 — Concrete stress block",
         "Check 2 — Neutral-axis solution method",
         "Check 3 — Neutral-axis equilibrium",
         "Check 4 — Reinforcement strains and stresses",
@@ -26,6 +26,13 @@ def test_authoritative_bending_uls_uses_the_eight_step_explanatory_sequence() ->
     assert 'uid == "bending_uls_authoritative_strains"' in renderer
     assert 'uid == "bending_uls_authoritative_equilibrium"' in renderer
     assert "_rendering_deferred_bending_uls_check_2" in renderer
+    forbidden_teaching_text = (
+        "Hand derivation verified against authoritative solver",
+        "Authoritative production result",
+        "Hand-equation result",
+        "Authoritative solver verification",
+    )
+    assert not any(text in source for text in forbidden_teaching_text)
 
 
 def test_authoritative_bending_diagrams_follow_the_equations_they_explain() -> None:
@@ -72,7 +79,7 @@ def test_neutral_axis_checks_split_method_from_converged_equilibrium() -> None:
     assert "General multi-layer solution" in source
     assert "geometry_table_md" in source
     assert "relative_to_na_md" in source
-    assert "Authoritative equilibrium iterations" in source
+    assert "Representative equilibrium steps" in source
     assert "iteration_table_md" in source
     assert "active_indices = tuple(index for index, area in enumerate(layer_areas) if area > 1e-9)" in source
     assert "A zero-bar top row is a UI configuration aid" in source

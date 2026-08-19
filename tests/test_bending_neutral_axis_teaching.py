@@ -32,6 +32,21 @@ def test_current_yielded_bottom_and_elastic_top_reproduces_authoritative_root():
     assert result["polynomial_at_dn"] == pytest.approx(0.0, abs=1e-6)
 
 
+def test_teaching_neutral_axis_root_matches_the_published_reference_depth():
+    """Parity remains an internal regression check, never card content."""
+    published_dn = 26.614138620848223
+    result = _derive(
+        areas=(235.61944901923448, 157.07963267948966),
+        depths=(255.0, 45.0),
+        stresses=(-500.0, -414.4983606138398),
+        dn=published_dn,
+    )
+    roots = [root for root, valid in result["roots"] if valid]
+
+    assert roots
+    assert min(abs(root - published_dn) for root in roots) <= 1e-6
+
+
 def test_all_yielded_layers_reduce_to_linear_equilibrium():
     areas = (600.0, 400.0)
     kc = 0.79 * 40.0 * 250.0 * 0.87

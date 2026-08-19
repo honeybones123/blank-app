@@ -370,7 +370,7 @@ equilibrium check and converged depth.
 Solve the section equilibrium and confirm the neutral-axis depth at which total
 compression and total tension balance.
 
-**Authoritative equilibrium iterations**
+**Representative equilibrium steps**
 
 {iteration_table_md}
 
@@ -545,7 +545,7 @@ authoritative solver selects the equilibrium state; Check 3 verifies its final s
 
 {na_boundary_md}
 
-**Authoritative equilibrium iterations**
+**Representative equilibrium steps**
 
 The app performs the trial-and-update process automatically:
 
@@ -555,7 +555,7 @@ $$d_n\rightarrow\text{{steel strains}}\rightarrow\text{{steel stresses}}\rightar
 
 When tension exceeds compression, $d_n$ generally increases; when compression
 exceeds tension, $d_n$ generally decreases. The table shows representative
-iterations from the authoritative bisection solve, followed by the converged result.
+steps from the automatic equilibrium search, followed by the converged result.
 
 **Grouped algebra terms**
 
@@ -608,18 +608,15 @@ $$C={na_c_substitution}={na_teaching['C'] / 1000.0:.9f}\,\text{{kN\,mm}}$$
 
 $$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
 
-**Hand derivation verification**
+**Equilibrium result**
 
-- Hand-equation result: $d_n={hand_dn:.6f}\,\text{{mm}}$.
-- Authoritative production result: $d_n={dn:.6f}\,\text{{mm}}$.
-- Difference: ${hand_difference:.9f}\,\text{{mm}}$.
-- **Hand derivation verified against authoritative solver — PASS.**
+- $d_n={dn:.6f}\,\text{{mm}}$.
+- $a={block_depth:.6f}\,\text{{mm}}$.
+- $R(d_n)={residual_kn:.9f}\,\text{{kN}}\approx0$.
 
-**Authoritative solver verification**
+**Equilibrium method**
 
-The production section analysis remains the sole source of engineering truth.
-It independently solves the actual residual using its existing bracketed
-bisection method:
+The app completes the repeated neutral-axis search using the section residual:
 
 $$R(d_n)=C_c(d_n)+\sum_iF_{{s,i}}(d_n)$$
 
@@ -628,10 +625,7 @@ $$R({dn:.6f})={residual_kn:.9f}\,\text{{kN}}\approx0$$
 **Result**
 
 $d_n={dn:.3f}\,\text{{mm}}$ and $a={block_depth:.3f}\,\text{{mm}}$.
-The displayed polynomial residual at the authoritative root is
-${na_teaching['polynomial_at_dn'] / 1000.0:.6e}\,\text{{kN}}\cdot\text{{mm}}$.
-
-**Force equilibrium is satisfied. The final strain, stress and force in each reinforcement layer are evaluated in Check 3.**
+**Force equilibrium is satisfied. The final strain, stress and force in each reinforcement layer are evaluated in Check 4.**
 """
     else:
         fallback_reason = (
@@ -652,14 +646,14 @@ therefore be misleading.
 
 {na_table_md}
 
-**Authoritative solver verification**
+**Equilibrium result**
 
-The production solver brackets $d_n$ and uses bisection on the actual section residual:
+The app completes the repeated neutral-axis search using the section residual:
 
 $$R(d_n)=C_c(d_n)+\sum_i F_{{s,i}}(d_n)=0$$
 
-Each trial uses the authoritative section geometry, compatible layer stresses,
-yield limits and displaced-concrete correction. No separate teaching solver is used.
+Each trial uses the section geometry, compatible layer stresses, yield limits
+and displaced-concrete correction.
 
 The converged residual is ${residual_kn:.6f}\,\text{{kN}}$.
 
@@ -723,8 +717,8 @@ $$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
     step_expander_calcbox(
         uid="bending_uls_authoritative_1",
         summary_line=(
-            "Check 1 — Stress-block parameters | "
-            f"Concrete stress block | alpha2 = {alpha2:.3f}, gamma = {gamma:.3f}"
+            "Check 1 — Concrete stress block | "
+            f"alpha2 = {alpha2:.3f}, gamma = {gamma:.3f}"
         ),
         details_md=rf"""
 **Purpose**
@@ -755,7 +749,7 @@ Once $d_n$ is known, the concrete compression force is known. Check 2 explains h
 """,
         status=None,
         content_before=info_control(
-            "Stress-block parameters", "Check 1 — Stress-block parameters",
+            "Concrete stress block", "Check 1 — Concrete stress block",
             r"""
 This check determines the equivalent rectangular stress-block factors
 $\alpha_2$ and $\gamma$ used for Ultimate Limit State flexural design.
@@ -783,7 +777,7 @@ resultant, its line of action and therefore the section's bending resistance.
 """,
         ),
         diagram_fn=stress_block_diagram(
-            "bending_uls_authoritative_1_diagram", "Stress-block parameters",
+            "bending_uls_authoritative_1_diagram", "Concrete stress block",
             show_dn=False, show_lever_arm=False,
         ),
     )
@@ -1149,8 +1143,7 @@ reported as compliant.
         details_md=rf"""
 **Purpose**
 
-Calculate nominal and design bending capacity from the authoritative
-internal-force solution.
+Calculate nominal and design bending capacity from the final internal forces.
 
 **Inputs**
 
@@ -1161,8 +1154,7 @@ internal-force solution.
 
 $$M_u=\sum F_i z_i$$
 
-Using the final steel forces from Check 5, the authoritative layer force and
-lever-arm terms are:
+Using the final steel forces from Check 5, the layer force and lever-arm terms are:
 
 {moment_terms_md}
 
@@ -1170,7 +1162,7 @@ $$\phi M_u=\phi\,M_u$$
 
 **Substitution**
 
-The authoritative internal-force model gives:
+Summing the force-times-lever-arm contributions gives:
 
 $$M_u={nominal:.2f}\,\text{{kNm}}$$
 
@@ -1358,7 +1350,7 @@ def render_uls_tab(
         C_N = alpha2_uls * fc * b * a_uls  # N
 
         # --------------------------------------------------
-        # 1.1 Stress-block parameters (Î±2 and Î³)
+        # 1.1 Concrete stress block (Î±2 and Î³)
         # --------------------------------------------------
         # Section 1.1 details
         section11_details = f"""
@@ -1428,7 +1420,7 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
             render_plotly_diagram(
                 fig_uls_11,
                 key="bending_uls_1_1_diagram",
-                title="Stress-block parameters",
+                title="Concrete stress block",
                 config={"displayModeBar": False},
             )
 
@@ -1461,7 +1453,7 @@ References:
 
         step_expander_calcbox(
             uid="bending_uls_1_1",
-            summary_line=f"Check 1 — Stress-block parameters (alpha2 and gamma) | Result: alpha2 = {alpha2_uls:.3f}, gamma = {gamma_uls:.3f}",
+            summary_line=f"Check 1 — Concrete stress block (alpha2 and gamma) | Result: alpha2 = {alpha2_uls:.3f}, gamma = {gamma_uls:.3f}",
             details_md=section11_details,
             status=None,
             diagram_fn=diagram_1_1,

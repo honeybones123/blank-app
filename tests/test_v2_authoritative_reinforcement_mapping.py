@@ -129,6 +129,41 @@ def test_top_reinforcement_edit_invalidates_uls_and_sls_publication() -> None:
     assert top_result.current_calculations["families"]["crack_control"]["action_source"] == "ACTUAL_SLS_ACTIONS"
 
 
+def test_teaching_force_lever_arm_sum_matches_published_nominal_moment() -> None:
+    """Keep the user-facing Check 7 decomposition numerically honest."""
+    snapshot = EngineeringInputSnapshot(
+        geometry={"b": 250.0, "D": 300.0, "L": 2000.0, "sec_shape": "RECT"},
+        materials={"fc": 40.0, "fsy": 500.0},
+        reinforcement={
+            "bot_row_1_bars": 3, "bot_row_1_dia": 10,
+            "top_row_1_bars": 2, "top_row_1_dia": 10,
+            "cover_bot": 40.0, "cover_top": 40.0,
+            "lig_d": 0, "lig_legs": 0, "s_lig": 200.0,
+        },
+        design_actions={"Mu": 200.0, "SLS_M": 100.0},
+    )
+    family = calculate_v2_authoritative_result(
+        engineering_snapshot=snapshot, resolved_inputs={}, input_revision=1
+    ).current_calculations["families"]["bending"]
+    centroid = float(family["concrete_centroid_mm"])
+    teaching_moment_knm = sum(
+        (
+            abs(float(force)) * (float(depth) - centroid)
+            if float(stress) < 0.0
+            else float(force) * (centroid - float(depth))
+        )
+        for depth, stress, force in zip(
+            family["steel_layer_depths_mm"],
+            family["steel_layer_stresses_mpa"],
+            family["steel_layer_forces_n"],
+        )
+    ) / 1e6
+
+    assert teaching_moment_knm == pytest.approx(
+        float(family["Mu_nom_kNm"]), abs=1e-9
+    )
+
+
 def test_engineering_snapshot_payload_is_recursively_immutable() -> None:
     snapshot = EngineeringInputSnapshot(
         geometry={"b": 275.0, "nested": {"values": [1, 2]}},
