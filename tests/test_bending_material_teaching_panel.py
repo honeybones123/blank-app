@@ -1,19 +1,42 @@
 from pathlib import Path
 
+from engineering_page_sections import bending_diagrams
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_bending_runtime_delegates_material_lesson_to_styled_component() -> None:
-    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+def test_bending_diagram_runtime_hook_replaces_only_material_lesson() -> None:
+    calls = []
+
+    def original(label, render_body, *args, **kwargs):
+        calls.append((label, render_body, args, kwargs))
+        return "rendered"
+
+    namespace = {
+        "render_lazy_expander": original,
+        "st": object(),
+        "_plot_material_stress_strain_curves": lambda: None,
+        "render_plotly_diagram": lambda *args, **kwargs: None,
+    }
+    bending_diagrams.bind_runtime(namespace)
+    wrapped = namespace["render_lazy_expander"]
+
+    ordinary_body = lambda: None
+    assert wrapped("Other", ordinary_body, key="other_expander") == "rendered"
+    assert calls[-1][0] == "Other"
+    assert calls[-1][1] is ordinary_body
 
     assert (
-        "from engineering_page_sections.bending_material_teaching import "
-        "render_bending_material_teaching_panel"
-    ) in source
-    assert "render_bending_material_teaching_panel(" in source
-    assert "plot_material_curves=_plot_material_stress_strain_curves" in source
-    assert "strain_display" not in source[source.index("def _render_material_model_content"):]
+        wrapped(
+            "Old material title",
+            ordinary_body,
+            key="bending_material_model_expander",
+        )
+        == "rendered"
+    )
+    assert calls[-1][0] == "ℹ️ From strain to stress to internal force"
+    assert calls[-1][1] is not ordinary_body
 
 
 def test_material_lesson_matches_the_approved_reading_order() -> None:
