@@ -2321,16 +2321,17 @@ def _render_reo_row_controls(
     bars_shared_key: str,
     spacing_shared_key: str,
     dia_shared_key: str,
+    allow_zero_bars: bool = False,
 ) -> None:
     """Bars or Spacing, then bar diameter; label-left / widget-right rows; keys unchanged."""
     if mode == "Count":
         valid_count_options = [
             int(option)
             for option in list(count_options or [])
-            # The row exists because it is within the authoritative active-row
-            # count.  An active row therefore cannot publish either zero bars
-            # (inactive) or one bar (invalid longitudinal detailing).
-            if int(option) >= 2
+            # Bottom tension rows require at least two bars. A top row may be
+            # explicitly set to zero so users can model no top steel without
+            # hiding the row configuration; one bar remains invalid.
+            if (allow_zero_bars and int(option) == 0) or int(option) >= 2
         ]
         select_row(
             "Bars",
@@ -2524,6 +2525,7 @@ def render_longitudinal_reo_rows(
             bars_shared_key=bars_shared_key,
             spacing_shared_key=spacing_shared_key,
             dia_shared_key=dia_shared_key,
+            allow_zero_bars=section_norm == "top",
         )
 
 

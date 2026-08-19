@@ -73,6 +73,8 @@ def test_neutral_axis_checks_split_method_from_converged_equilibrium() -> None:
     assert "relative_to_na_md" in source
     assert "Authoritative equilibrium iterations" in source
     assert "iteration_table_md" in source
+    assert "active_indices = tuple(index for index, area in enumerate(layer_areas) if area > 1e-9)" in source
+    assert "A zero-bar top row is a UI configuration aid" in source
 
 
 def test_app_prefers_its_own_authoritative_inputs_package() -> None:

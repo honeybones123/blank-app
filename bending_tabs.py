@@ -85,16 +85,7 @@ def _render_authoritative_uls_steps(
     compression_steel_kn = float(top_results.get("C_steel_N", 0.0) or 0.0) / 1000.0
     residual_kn = float(top_results.get("equilibrium_residual_n", 0.0) or 0.0) / 1000.0
     stresses = tuple(float(value) for value in top_results.get("steel_layer_stresses_mpa", ()) or ())
-    stress_text = ", ".join(f"{value:.1f} MPa" for value in stresses) or "No steel layers"
     steel_depths = tuple(float(value) for value in top_results.get("steel_layer_depths_mm", ()) or ())
-    # These are section coordinates from the authoritative solver, measured
-    # from the top face.  Use the governing tension layer rather than copying
-    # the effective depth ``d`` (which is a design-depth input, not y_s).
-    governing_tension_index = next(
-        (index for index, value in enumerate(stresses) if value < 0.0),
-        0,
-    )
-    y_s = steel_depths[governing_tension_index] if governing_tension_index < len(steel_depths) else d
     limit = float(top_results.get("ductility_limit", 0.36) or 0.36)
     triggered = bool(top_results.get("clause_815_triggered", False))
     clause_status = str(top_results.get("ductility_status", "NOT RUN") or "NOT RUN").upper()
@@ -115,6 +106,32 @@ def _render_authoritative_uls_steps(
                 f"areas={len(layer_areas)}, depths={len(steel_depths)}, "
                 f"stresses={len(stresses)}, forces={len(layer_forces)}"
             )
+    # A zero-bar top row is a UI configuration aid, not an engineering steel
+    # layer.  Keep the teaching path aligned with the solver's physical-layer
+    # rule so it switches back to the direct solution as soon as the published
+    # top layer has zero area.
+    active_indices = tuple(index for index, area in enumerate(layer_areas) if area > 1e-9)
+    layer_areas = tuple(layer_areas[index] for index in active_indices)
+    steel_depths = tuple(steel_depths[index] for index in active_indices)
+    stresses = tuple(stresses[index] for index in active_indices)
+    layer_forces = tuple(layer_forces[index] for index in active_indices)
+    layer_labels = tuple(
+        layer_labels[index] if index < len(layer_labels) else ""
+        for index in active_indices
+    )
+    layer_faces = tuple(
+        layer_faces[index] if index < len(layer_faces) else ""
+        for index in active_indices
+    )
+    stress_text = ", ".join(f"{value:.1f} MPa" for value in stresses) or "No steel layers"
+    # These are section coordinates from the authoritative solver, measured
+    # from the top face.  Use the governing tension layer rather than copying
+    # the effective depth ``d`` (which is a design-depth input, not y_s).
+    governing_tension_index = next(
+        (index for index, value in enumerate(stresses) if value < 0.0),
+        0,
+    )
+    y_s = steel_depths[governing_tension_index] if governing_tension_index < len(steel_depths) else d
     Es_uls = float(get_param("Es") or 200000.0)
     eps_sy = fsy / Es_uls if Es_uls > 0.0 else float("nan")
     steel_layer_lines = []

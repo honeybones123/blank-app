@@ -171,3 +171,18 @@ def test_active_top_layer_is_published_as_elastic_tension_for_shallow_na() -> No
     assert tuple(entry["iteration"] for entry in trace) == (1, 2, 3, 100)
     assert trace[-1]["dn_mm"] == pytest.approx(result["dn_mm"], rel=1e-9)
     assert trace[-1]["equilibrium_residual_n"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_zero_area_top_row_is_not_published_as_a_steel_layer() -> None:
+    """A visible zero-bar top row must not turn a singly reinforced beam multi-layer."""
+    result = calculate_bending_capacity(
+        moment_sign="positive",
+        demand_knm=100.0,
+        values=_values(
+            bottom_layers=((1200.0, 550.0),),
+            top_layers=((0.0, 50.0),),
+        ),
+    )
+
+    assert result["steel_layer_areas_mm2"] == pytest.approx((1200.0,))
+    assert result["steel_layer_faces"] == ("bottom",)

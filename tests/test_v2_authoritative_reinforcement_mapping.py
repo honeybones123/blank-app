@@ -39,6 +39,37 @@ def test_inactive_second_row_is_not_counted_by_authoritative_calculation() -> No
     ) == ((6, 16),)
 
 
+def test_zero_top_row_overrides_a_stale_legacy_top_bar_alias() -> None:
+    """A deliberate no-top-steel selection must reach the V2 solver as zero."""
+    snapshot = EngineeringInputSnapshot(
+        geometry={"b": 250.0, "D": 300.0, "L": 2000.0, "sec_shape": "RECT"},
+        materials={"fc": 40.0, "fsy": 500.0},
+        reinforcement={
+            "bot_row_1_bars": 3,
+            "bot_row_1_dia": 10,
+            "cover_bot": 40.0,
+            # Legacy field can remain from an earlier edit.  The row-model
+            # field is the current user choice and must take precedence.
+            "top_bars": 2,
+            "top_row_1_bars": 0,
+            "db_top": 10,
+            "cover_top": 40.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+        },
+        design_actions={"Mu": 0.0, "Vu": 0.0, "Tu": 0.0, "Nu": 0.0},
+    )
+
+    current, _rows, _loads = _beam_inputs_from_snapshot(
+        snapshot, _v2_api(), revision=1
+    )
+    result = _v2_api()["EngineeringCalculator"]().calculate(current).families["bending"]
+
+    assert current.top.bars == 0
+    assert result["steel_layer_faces"] == ("bottom",)
+
+
 def test_engineering_snapshot_payload_is_recursively_immutable() -> None:
     snapshot = EngineeringInputSnapshot(
         geometry={"b": 275.0, "nested": {"values": [1, 2]}},
