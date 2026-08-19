@@ -999,7 +999,11 @@ def render_bending():
             _bend_page_title = "Sagging bending capacity"
         else:
             _bend_page_title = "Bending capacity"
-        render_result_page_title(_bend_page_title)
+        # The app shell owns the active page heading. Keep this fallback only
+        # for direct renderer use, otherwise the shell and page would both
+        # render the same title on every rerun.
+        if not st.session_state.get("_shared_page_title_owned_by_shell", False):
+            render_result_page_title(_bend_page_title)
 
         def _render_bending_explainer() -> None:
             render_timing_mark("bending_page.runtime.explainer.body.start")

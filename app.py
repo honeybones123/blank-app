@@ -6560,6 +6560,16 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     def _render_selected_page_in_content_slot() -> None:
         def _render_page_beneath_shared_title() -> None:
             st.title(_active_page_title(selected_slug))
+            # Page modules retain a direct-render title fallback for isolated
+            # tests and standalone use. When dispatched through the shared
+            # shell, suppress that fallback so reruns cannot produce a second
+            # copy of the active page heading.
+            st.markdown(
+                "<style data-testid='shared-page-title-dedup'>"
+                ".result-page-title{display:none !important;}"
+                "</style>",
+                unsafe_allow_html=True,
+            )
             st.markdown(
                 '<span id="shared-page-content-anchor" aria-hidden="true"></span>',
                 unsafe_allow_html=True,
