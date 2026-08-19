@@ -1685,6 +1685,61 @@ def _has_non_empty_card_text(value) -> bool:
     return len(text) >= 3
 
 
+_CALC_DISPLAY_STANDARD = "standard"
+_CALC_DISPLAY_STEP_BY_STEP = "step_by_step"
+
+
+def _calc_display_mode_key(section_uid: str) -> str:
+    return f"calc_display_mode__{section_uid}"
+
+
+def _calc_step_progress_key(uid: str) -> str:
+    return f"calc_step_progress__{uid}"
+
+
+def render_calculation_display_control(section_uid: str) -> str:
+    """Render one non-engineering display preference for a calculation section."""
+    mode_key = _calc_display_mode_key(section_uid)
+    if mode_key not in st.session_state:
+        st.session_state[mode_key] = _CALC_DISPLAY_STANDARD
+
+    with st.popover("Calculation display", help="Choose how calculation working is displayed."):
+        st.caption("Standard shows the complete calculation. Step-by-step reveals the working progressively.")
+        selected = st.radio(
+            "Display mode",
+            options=("Standard", "Step-by-step"),
+            index=0 if st.session_state[mode_key] == _CALC_DISPLAY_STANDARD else 1,
+            key=f"{mode_key}__selector",
+            label_visibility="collapsed",
+        )
+        st.session_state[mode_key] = (
+            _CALC_DISPLAY_STEP_BY_STEP if selected == "Step-by-step" else _CALC_DISPLAY_STANDARD
+        )
+    return str(st.session_state[mode_key])
+
+
+def _visible_progressive_steps(progressive_steps, current_step: int) -> str:
+    """Return explicitly prepared display steps up to the requested position."""
+    steps = tuple(str(step).strip() for step in (progressive_steps or ()) if str(step).strip())
+    if not steps:
+        return ""
+    visible_count = max(1, min(int(current_step), len(steps)))
+    return "\n\n".join(steps[:visible_count])
+
+
+def _progressive_steps_from_headings(details_md: str) -> tuple[str, ...]:
+    """Use authored bold headings as progressive boundaries for a calc box."""
+    content = str(details_md or "").strip()
+    if not content:
+        return ()
+    blocks = tuple(
+        block.strip()
+        for block in re.split(r"(?m)(?=^\*\*[^*]+\*\*\s*$)", content)
+        if block.strip()
+    )
+    return blocks or (content,)
+
+
 @st.fragment
 def step_expander_calcbox(
     uid: str,
@@ -1698,6 +1753,8 @@ def step_expander_calcbox(
     jump_uid=None,
     accent: str | None = None,
     render_policy: str = "mounted",
+    display_section: str | None = None,
+    progressive_steps=None,
 ):
     """
     Render a step as an expandable card with summary header.
@@ -1726,6 +1783,8 @@ def step_expander_calcbox(
             "jump_uid": jump_uid,
             "accent": accent,
             "render_policy": render_policy,
+            "display_section": display_section,
+            "progressive_steps": progressive_steps,
         }
         return
 
@@ -1813,13 +1872,33 @@ def step_expander_calcbox(
         if not expander.open and not mount_closed_body:
             return
 
+        progressive_steps = tuple(
+            str(step).strip() for step in (progressive_steps or ()) if str(step).strip()
+        )
+        display_mode = (
+            str(st.session_state.get(_calc_display_mode_key(display_section), _CALC_DISPLAY_STANDARD))
+            if display_section
+            else _CALC_DISPLAY_STANDARD
+        )
+        if display_section and not progressive_steps:
+            progressive_steps = _progressive_steps_from_headings(details_md)
+        progress_key = _calc_step_progress_key(uid)
+        if progressive_steps and progress_key not in st.session_state:
+            st.session_state[progress_key] = 1
+        is_progressive = bool(progressive_steps) and display_mode == _CALC_DISPLAY_STEP_BY_STEP
+        rendered_details_md = (
+            _visible_progressive_steps(progressive_steps, st.session_state[progress_key])
+            if is_progressive
+            else details_md
+        )
+
         if diagram_fn:
             col_calc, col_fig = st.columns([2.0, 1.0], gap="large")
             with col_calc:
                 if content_before:
                     content_before()
                 calcbox(
-                    details_md,
+                    rendered_details_md,
                     status=status,
                     uid=f"{uid}__details",
                     accent=accent_key,
@@ -1832,7 +1911,7 @@ def step_expander_calcbox(
             if content_before:
                 content_before()
             calcbox(
-                details_md,
+                rendered_details_md,
                 status=status,
                 uid=f"{uid}__details",
                 accent=accent_key,
@@ -1840,6 +1919,35 @@ def step_expander_calcbox(
         
         if content_after:
             content_after()
+
+        if is_progressive:
+            total_steps = len(progressive_steps)
+            current_step = max(1, min(int(st.session_state[progress_key]), total_steps))
+            def set_progress(value: int) -> None:
+                st.session_state[progress_key] = max(1, min(int(value), total_steps))
+
+            st.caption(f"Step {current_step} of {total_steps}")
+            back, next_step, show_all, restart, _spacer = st.columns([1, 1, 1.2, 1, 3])
+            with back:
+                st.button(
+                    "Back", key=f"{uid}__progress_back", disabled=current_step == 1,
+                    on_click=set_progress, args=(current_step - 1,),
+                )
+            with next_step:
+                st.button(
+                    "Next", key=f"{uid}__progress_next", disabled=current_step == total_steps,
+                    on_click=set_progress, args=(current_step + 1,),
+                )
+            with show_all:
+                st.button(
+                    "Show all", key=f"{uid}__progress_all", disabled=current_step == total_steps,
+                    on_click=set_progress, args=(total_steps,),
+                )
+            with restart:
+                st.button(
+                    "Restart", key=f"{uid}__progress_restart", disabled=current_step == 1,
+                    on_click=set_progress, args=(1,),
+                )
 
     deferred_check_2 = None
     if uid == "bending_uls_authoritative_equilibrium":

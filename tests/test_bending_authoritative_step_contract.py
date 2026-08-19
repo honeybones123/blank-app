@@ -125,7 +125,7 @@ def test_multi_layer_neutral_axis_method_uses_a_six_step_calcbox() -> None:
     source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
     method_card = source[
         source.index("neutral_axis_method_md = rf\"\"\""):
-        source.index('uid="bending_uls_authoritative_method"')
+        source.index("# These are deliberately authored display blocks")
     ]
 
     assert method_card.count("**Step ") == 6

@@ -18,7 +18,7 @@ from ui.diagrams.stress_strain_diagram import (
     make_sls_32_stress_block_figure as _shared_make_sls_32_stress_block_figure,
     make_sls_strain_distribution_figure as _shared_make_sls_strain_distribution_figure,
 )
-from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button, render_plotly_diagram, render_pyplot_diagram
+from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button, render_plotly_diagram, render_pyplot_diagram, render_calculation_display_control
 
 
 @contextmanager
@@ -337,6 +337,76 @@ $$R(d_n)\approx0$$
 If $R(d_n)\ne0$, adjust $d_n$ and repeat Steps 1–5 until $R(d_n)\approx0$.
 Check 3 shows the converged neutral-axis depth and resulting reinforcement response.
 """
+    # These are deliberately authored display blocks, rather than inferred
+    # from markdown. Each equation stays with its professional explanation.
+    if len(layer_areas) == 1:
+        neutral_axis_progressive_steps = (
+            rf"""**Purpose**
+
+Determine how the neutral-axis depth $d_n$ is found from internal force equilibrium.
+
+$$\boxed{{\sum C=\sum T}}$$
+
+**Step 1 â€” Concrete compression**
+
+$$C_c=\alpha_2f'_cba=\alpha_2f'_cb\gamma d_n$$""",
+            rf"""**Step 2 â€” Tension force**
+
+$$T=A_{{st}}f_{{sy}}$$
+
+At equilibrium, $C_c=T$.""",
+            rf"""**Step 3 â€” Solve and accept the neutral axis**
+
+$$\boxed{{d_n=\frac{{A_{{st}}f_{{sy}}}}{{\alpha_2f'_cb\gamma}}}}$$
+
+With one active yielded tension layer, $d_n$ can be obtained directly from force equilibrium.""",
+        )
+    else:
+        neutral_axis_progressive_steps = (
+            rf"""**Purpose**
+
+Determine how the neutral-axis depth $d_n$ is found from internal force equilibrium.
+
+$$\boxed{{\sum C=\sum T}}$$
+
+The app starts with a trial $d_n$, calculates the concrete and reinforcement forces,
+checks equilibrium, and adjusts $d_n$ until the section balances.
+
+**Step 1 â€” Concrete compression**
+
+Calculate the concrete compression force for the trial neutral-axis depth.
+
+$$C_c=\alpha_2 f'_c b\gamma d_n$$""",
+            rf"""**Step 2 â€” Reinforcement strain**
+
+Calculate the strain in each reinforcement layer from its position relative to the neutral axis.
+
+$$\varepsilon_{{s,i}}=-\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$""",
+            rf"""**Step 3 â€” Reinforcement stress**
+
+Convert the steel strain into stress and limit it to the steel yield strength.
+
+$$f_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})\min\left(E_s|\varepsilon_{{s,i}}|,f_{{sy}}\right)$$""",
+            rf"""**Step 4 â€” Reinforcement force**
+
+Convert the steel stress into the force carried by each reinforcement layer.
+
+$$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$""",
+            rf"""**Step 5 â€” Equilibrium residual**
+
+Calculate the difference between total compression and total tension.
+
+$$R(d_n)=\sum C-\sum T$$""",
+            rf"""**Step 6 â€” Accept the neutral axis**
+
+Accept the neutral-axis depth when equilibrium is reached.
+
+$$R(d_n)\approx0$$
+
+If $R(d_n)\ne0$, adjust $d_n$ and repeat Steps 1â€“5 until $R(d_n)\approx0$.
+Check 3 shows the converged neutral-axis depth and resulting reinforcement response.""",
+        )
+
     neutral_axis_equilibrium_md = rf"""
 **Purpose**
 
@@ -730,7 +800,12 @@ $$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
             trial=True,
         )
 
-    step_expander_calcbox(
+    def render_uls_calcbox(*args, **kwargs):
+        """Keep one Bending ULS display preference across every check card."""
+        kwargs.setdefault("display_section", "bending_uls")
+        return step_expander_calcbox(*args, **kwargs)
+
+    render_uls_calcbox(
         uid="bending_uls_authoritative_1",
         summary_line=(
             "Check 1 — Concrete stress block | "
@@ -797,7 +872,7 @@ resultant, its line of action and therefore the section's bending resistance.
             show_dn=False, show_lever_arm=False,
         ),
     )
-    step_expander_calcbox(
+    render_uls_calcbox(
         uid="bending_uls_authoritative_strains",
         summary_line=(
             "Check 4 — Reinforcement strains and stresses | "
@@ -858,7 +933,7 @@ stress-block provisions [2].
     )
     render_timing_mark("bending_page.uls_check.1.end")
 
-    step_expander_calcbox(
+    render_uls_calcbox(
         uid="bending_uls_authoritative_method",
         summary_line=(
             "Check 2 — Neutral-axis solution method | "
@@ -867,6 +942,8 @@ stress-block provisions [2].
         details_md=neutral_axis_method_md,
         status=None,
         diagram_fn=trial_method_diagrams,
+        display_section="bending_uls",
+        progressive_steps=neutral_axis_progressive_steps,
         content_before=info_control(
             "Neutral-axis solution method",
             "Check 2 — Neutral-axis solution method",
@@ -944,7 +1021,7 @@ stresses, compression block, lever arm and calculated capacity.
         ),
     )
     render_timing_mark("bending_page.uls_check.2.end")
-    step_expander_calcbox(
+    render_uls_calcbox(
         uid="bending_uls_authoritative_equilibrium",
         summary_line=(
             "Check 3 — Neutral-axis equilibrium | "
@@ -970,7 +1047,7 @@ evidence and the final neutral-axis depth.
             show_dn=True, show_lever_arm=False,
         ),
     )
-    step_expander_calcbox(
+    render_uls_calcbox(
         uid="bending_uls_authoritative_4",
         summary_line=(
             "Check 5 — Internal force resultants | "
@@ -1062,7 +1139,7 @@ moment capacity.
         diagram_fn=force_diagram("bending_uls_authoritative_4_diagram", "Internal force resultants"),
     )
     render_timing_mark("bending_page.uls_check.3.end")
-    step_expander_calcbox(
+    render_uls_calcbox(
         uid="bending_uls_authoritative_6",
         summary_line=(
             "Check 6 — Neutral-axis ratio, ductility and strength factor | "
@@ -1155,7 +1232,7 @@ reported as compliant.
     )
     render_timing_mark("bending_page.uls_check.5.end")
     capacity_ok = capacity > 0.0 and demand <= capacity
-    step_expander_calcbox(
+    render_uls_calcbox(
         uid="bending_uls_authoritative_7",
         summary_line=(
             "Check 7 — Nominal and design moment capacity | "
@@ -1230,7 +1307,7 @@ can be compared with the applied design action.
         diagram_fn=force_diagram("bending_uls_authoritative_7_diagram", "ULS force model and capacity"),
     )
     render_timing_mark("bending_page.uls_check.6.end")
-    step_expander_calcbox(
+    render_uls_calcbox(
         uid="bending_uls_authoritative_8",
         summary_line=(
             "Check 8 — Final flexural capacity check | "
@@ -1334,6 +1411,7 @@ def render_uls_tab(
 
     # Apply CSS for compact collapsed steps
     apply_step_expander_css()
+    render_calculation_display_control("bending_uls")
 
     if top_results.get("_authoritative_uls"):
         _render_authoritative_uls_steps(
