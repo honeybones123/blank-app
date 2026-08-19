@@ -126,8 +126,63 @@ def test_compression_steel_uses_strain_compatibility_in_force_and_moment() -> No
     assert result["steel_layer_stresses_mpa"][1] == pytest.approx(compression_stress)
     assert result["Mu_nom_kNm"] == pytest.approx(expected_moment, rel=1e-9)
     assert abs(result["equilibrium_residual_n"]) < 1e-6
+    assert result["steel_layer_areas_mm2"] == pytest.approx((ast, asc))
+    assert sum(-force for force in result["steel_layer_forces_n"] if force < 0.0) == pytest.approx(result["tension_force_n"])
+    assert sum(force for force in result["steel_layer_forces_n"] if force > 0.0) == pytest.approx(result["compression_steel_force_n"])
+    assert result["concrete_force_n"] + result["compression_steel_force_n"] - result["tension_force_n"] == pytest.approx(result["equilibrium_residual_n"], abs=1e-6)
 
 
 def test_phi_is_bounded_by_table_222_limits() -> None:
     assert bending_strength_reduction_factor(0.10) == pytest.approx(0.85)
     assert bending_strength_reduction_factor(0.90) == pytest.approx(0.65)
+
+
+def test_active_top_layer_is_published_as_elastic_tension_for_shallow_na() -> None:
+    bottom_area = 3.0 * math.pi * 10.0**2 / 4.0
+    top_area = 2.0 * math.pi * 10.0**2 / 4.0
+    result = calculate_bending_capacity(
+        moment_sign="positive",
+        demand_knm=200.0,
+        values=BendingCapacityInput(
+            width_mm=250.0,
+            depth_mm=300.0,
+            concrete_strength_mpa=40.0,
+            reinforcement_strength_mpa=500.0,
+            capacity_factor=0.85,
+            bottom_steel_area_mm2=bottom_area,
+            top_steel_area_mm2=top_area,
+            positive_effective_depth_mm=255.0,
+            top_steel_depth_mm=45.0,
+            bottom_layer_labels=("Bottom reinforcement — 3-N10",),
+            top_layer_labels=("Top reinforcement — 2-N10",),
+        ),
+    )
+
+    assert result["steel_layer_labels"] == (
+        "Bottom reinforcement — 3-N10",
+        "Top reinforcement — 2-N10",
+    )
+    assert result["steel_layer_depths_mm"] == pytest.approx((255.0, 45.0))
+    assert result["steel_layer_stresses_mpa"] == pytest.approx((-500.0, -414.4983606))
+    assert result["steel_layer_forces_n"] == pytest.approx((-117809.7245, -65109.2502))
+    assert sum(-force for force in result["steel_layer_forces_n"] if force < 0.0) == pytest.approx(result["tension_force_n"])
+    assert result["concrete_force_n"] == pytest.approx(result["tension_force_n"])
+    trace = result["neutral_axis_iteration_trace"]
+    assert tuple(entry["iteration"] for entry in trace) == (1, 2, 3, 100)
+    assert trace[-1]["dn_mm"] == pytest.approx(result["dn_mm"], rel=1e-9)
+    assert trace[-1]["equilibrium_residual_n"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_zero_area_top_row_is_not_published_as_a_steel_layer() -> None:
+    """A visible zero-bar top row must not turn a singly reinforced beam multi-layer."""
+    result = calculate_bending_capacity(
+        moment_sign="positive",
+        demand_knm=100.0,
+        values=_values(
+            bottom_layers=((1200.0, 550.0),),
+            top_layers=((0.0, 50.0),),
+        ),
+    )
+
+    assert result["steel_layer_areas_mm2"] == pytest.approx((1200.0,))
+    assert result["steel_layer_faces"] == ("bottom",)

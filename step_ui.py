@@ -164,17 +164,15 @@ def render_expandable_step(
         label,
         expanded=bool(is_expanded_state),
         key=open_key,
-        on_change="rerun",
+        on_change="ignore",
     )
     with expander:
-        # Keep the semantic status marker mounted so collapsed PASS/FAIL cards
-        # retain their colour, but do not construct any hidden body content.
+        # Keep the semantic status marker and full body mounted so opening and
+        # closing remains a browser-side expander operation.
         st.markdown(
             f"<div id='inner_{step_id}'><span class='{status_class}'></span></div>",
             unsafe_allow_html=True,
         )
-        if not expander.open:
-            return
         
         # Vertical calc stack: diagram either inside (above calcbox) or already drawn outside expander.
         _has_calc = bool(calc_md or calc_render_fn)
@@ -187,12 +185,11 @@ def render_expandable_step(
         diagram_calc_inside_vertical = bool(
             diagram_outside_expander and diagram_render_fn and _has_calc
         )
-        if info_render_fn and not diagram_full_above_calc and not diagram_calc_inside_vertical:
-            info_render_fn()
-        
         if diagram_calc_inside_vertical:
             if anchor_id:
                 st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
+            if info_render_fn:
+                info_render_fn()
             if calc_render_fn:
                 calc_render_fn()
             else:
@@ -205,6 +202,8 @@ def render_expandable_step(
             diagram_render_fn()
             if anchor_id:
                 st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
+            if info_render_fn:
+                info_render_fn()
             if calc_render_fn:
                 calc_render_fn()
             else:
@@ -220,6 +219,8 @@ def render_expandable_step(
                 # Add anchor before calcbox if provided
                 if anchor_id:
                     st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
+                if info_render_fn:
+                    info_render_fn()
                 if calc_render_fn:
                     calc_render_fn()
                 else:
@@ -236,6 +237,8 @@ def render_expandable_step(
             # Add anchor before calcbox if provided
             if anchor_id:
                 st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
+            if info_render_fn:
+                info_render_fn()
             if calc_render_fn:
                 calc_render_fn()
             else:

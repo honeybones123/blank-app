@@ -1,11 +1,17 @@
 import os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
+LOCAL_INPUTS_SRC = os.path.join(ROOT, "packages", "beamapp-inputs-v2", "src")
 # Runtime is the canonical application source.  Keep it ahead of editable
 # installs and earlier development checkouts so similarly named page modules
 # cannot be resolved from a stale workspace.
-while ROOT in sys.path:
-    sys.path.remove(ROOT)
+for local_path in (ROOT, LOCAL_INPUTS_SRC):
+    while local_path in sys.path:
+        sys.path.remove(local_path)
 sys.path.insert(0, ROOT)
+# The application and its authoritative calculation package must come from the
+# same checkout.  An older editable ``inputs_v2`` install otherwise wins and
+# silently drops the reinforcement-layer evidence required by Check 2.
+sys.path.insert(0, LOCAL_INPUTS_SRC)
 
 
 def _local_trace_log_path(filename: str) -> str:

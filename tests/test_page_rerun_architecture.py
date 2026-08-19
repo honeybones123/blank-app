@@ -147,6 +147,9 @@ def test_direct_app_reruns_are_confined_to_shell_transition_owners() -> None:
         # their unscoped call is a compatibility fallback for older Streamlit
         # and test doubles, not ordinary Runtime authority.
         "inputs_application/engineering_workspace.py",
+        # Mounted input cards own only a fragment-scoped header visibility
+        # transition; their widget bodies stay mounted outside that fragment.
+        "engineering_page_sections/mounted_card_shell.py",
     }
     offenders: dict[str, list[int]] = {}
     for path in ROOT.rglob("*.py"):

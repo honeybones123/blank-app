@@ -90,6 +90,7 @@ from engineering_page_sections.compact_check_inputs import (
 )
 from engineering_page_sections.stable_tabs import render_stable_tabs
 from inputs_application.action_source_control import uses_load_analysis_actions
+from ui.diagrams.moment_shear_diagram import figure_bmd_from_state
 
 # Safe option lists for reinforcement inputs
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -121,12 +122,23 @@ def _overlay_authoritative_bending_result(target, bending, ductility, default_de
         "d_mm": float(bending.get("d_mm", default_depth) or default_depth),
         "alpha2": float(bending.get("alpha2", 0.0) or 0.0),
         "gamma": float(bending.get("gamma", 0.0) or 0.0),
+        "section_shape": str(bending.get("section_shape", "RECT") or "RECT"),
         "T_N": float(bending.get("tension_force_n", 0.0) or 0.0),
         "C_concrete_N": float(bending.get("concrete_force_n", 0.0) or 0.0),
         "C_steel_N": float(bending.get("compression_steel_force_n", 0.0) or 0.0),
+        "compression_concrete_area_mm2": float(bending.get("compression_concrete_area_mm2", 0.0) or 0.0),
+        "concrete_centroid_mm": float(bending.get("concrete_centroid_mm", 0.0) or 0.0),
         "equilibrium_residual_n": float(bending.get("equilibrium_residual_n", 0.0) or 0.0),
+        "neutral_axis_iteration_trace": tuple(bending.get("neutral_axis_iteration_trace", ()) or ()),
         "steel_layer_stresses_mpa": tuple(bending.get("steel_layer_stresses_mpa", ()) or ()),
+        "steel_layer_areas_mm2": tuple(bending.get("steel_layer_areas_mm2", ()) or ()),
+        "steel_layer_labels": tuple(bending.get("steel_layer_labels", ()) or ()),
+        "steel_layer_faces": tuple(bending.get("steel_layer_faces", ()) or ()),
         "steel_layer_forces_n": tuple(bending.get("steel_layer_forces_n", ()) or ()),
+        # Preserve the authoritative reinforcement coordinates as well as the
+        # forces/stresses.  The detail cards must not relabel effective depth
+        # ``d`` as the steel-layer coordinate ``y_s``.
+        "steel_layer_depths_mm": tuple(bending.get("steel_layer_depths_mm", ()) or ()),
     })
     if ductility:
         target.update({
@@ -1117,13 +1129,17 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
         update_results("bending", {"rows": ROWS})
 
-        # Render summary table using shared helper
-        render_timing_mark("bending_page.runtime.explainer.start")
-        render_page_explainer_expander(_render_bending_explainer)
-        render_timing_mark("bending_page.runtime.explainer.end")
+        # Render the engineering summary before lower-priority explanatory content.
+        # This table is the user's primary first-view result and must be emitted
+        # before the technical-basis expander, inputs, diagrams, or detailed checks.
         clicked_uid = render_clickable_summary_table(
             ROWS, key_prefix="bend_summary", columns=ENGINEERING_CHECK_COLUMNS
         )
+        render_timing_mark("bending_page.runtime.summary_table.rendered")
+
+        render_timing_mark("bending_page.runtime.explainer.start")
+        render_page_explainer_expander(_render_bending_explainer)
+        render_timing_mark("bending_page.runtime.explainer.end")
 
         # Handle clicked summary row: set mode, expand step, set pending scroll
         if clicked_uid:
@@ -1165,8 +1181,25 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         # Bind JavaScript for opening expanders and scrolling
         bind_summary_clicks()
 
-        st.markdown("---")
-        st.markdown("<div style='margin-top: 0.5rem;'></div>", unsafe_allow_html=True)
+        # Keep the Bending page on one spacing rhythm across major headings,
+        # tabs, diagrams, and the calculation-card stack.
+        st.markdown(
+            """
+            <style>
+            /* Stable-tab scroll hooks are zero-height iframes; remove their
+               Streamlit element-wrapper contribution to vertical spacing. */
+            div[data-testid="stElementContainer"]:has(iframe[height="0"]),
+            div[data-testid="stElementContainer"]:has(iframe[style*="height: 0px"]) {
+                height: 0 !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
         diagram_section_placeholder = st.empty()
         inputs_placeholder = st.empty()
         # The detailed tab body is interactive.  Keep a stable multi-element
@@ -1691,7 +1724,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
 
                         st.markdown("</div>", unsafe_allow_html=True)
-        page_divider()
     render_timing_mark("bending_page.runtime.presentation.inputs.end")
 
     with diagram_section_placeholder.container():
@@ -1704,7 +1736,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             # Heading row with info popover
             col_title, col_info = st.columns([0.95, 0.05])
             with col_title:
-                render_section_title("Section & stress-strain model")
+                pass
             with col_info:
                 with info_i_button(help_text="Concrete stress model options"):
                     st.markdown("**Concrete stress model**")
@@ -1726,14 +1758,13 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     """)
 
             # --- STATE RADIO (ULS / SLS / Uncracked) ---
+            # Resolve the existing selection before building the diagrams; the
+            # controls themselves are rendered below the diagram tabs.
             state_options = ["ULS", "SLS (cracked)", "Uncracked"]
-            main_state = st.radio(
-                "State:",
-                state_options,
-                key="bending_state_main",
-                horizontal=True,
-                index=state_options.index(canonical_state),
-            )
+            selected_state = st.session_state.get("bending_state_main", canonical_state)
+            if selected_state not in state_options:
+                selected_state = canonical_state
+            main_state = selected_state
             st.session_state["bending_state"] = main_state
 
             # --- Build label for the 3-panel diagram using global concrete_stress_model ---
@@ -1759,8 +1790,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.session_state["bending_strain_state_local"] = diagram_state_label
 
             # --- Placeholders let us keep the visible order independent of execution order ---
-            matcurves_placeholder = st.empty()
             diagram_placeholder = st.empty()
+            # Reserve the material/state area after the diagrams.  The
+            # placeholder position, rather than the later fill order, controls
+            # where Streamlit displays these blocks.
+            matcurves_placeholder = st.empty()
 
             # Underlying strain-state math uses the solver's labels
             if main_state.startswith("ULS"):
@@ -1774,20 +1808,22 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 render_timing_mark("bending_page.runtime.checks.start")
                 # ---------------- Step-by-step tabs ----------------
                 apply_step_summary_expander_css()
-                render_section_title("Bending design checks")
+                page_divider()
                 detail_view = st.session_state.get("bending_detail_view", "positive")
                 if detail_view not in _valid_bending_views and _valid_bending_views:
                     detail_view = _valid_bending_views[0]
                 showing_negative = detail_view == "negative" and has_hogging_case
-                if showing_negative:
-                    active_bending_title = "Hogging bending check"
-                    steel_note = "Top steel in tension"
-                else:
-                    active_bending_title = "Sagging bending check"
-                    steel_note = "Bottom steel in tension"
-                st.caption(
-                    f"**{active_bending_title}** — {steel_note}. "
-                    "Demand, capacity, strain/stress diagrams, and steps follow this case."
+                # Put all extra rhythm above the heading; keep no subheading
+                # or additional gap between the title and calculation tabs.
+                st.markdown(
+                    f"""
+                    <div class="bending-checks-heading-block" style="padding-top:28px;margin:0 0 0.75rem;">
+                      <div style="color:#10234a;font-size:17.6px;font-weight:600;line-height:1.35;margin:0;">
+                        Bending design checks
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
                 top_results_active = dict(top_results)
@@ -1873,6 +1909,35 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         summary_mode=False,
                     )
 
+                # Keep the authoritative calculation sequence pedagogical:
+                # neutral-axis solution must precede strain compatibility.
+                # Reorder the complete rendered cards, including their mounted
+                # bodies, rather than duplicating either calculation.
+                import streamlit.components.v1 as components
+                components.html(
+                    """
+                    <script>
+                    (() => {
+                      const doc = window.parent.document;
+                      const cards = [...doc.querySelectorAll('[data-testid="stExpander"]')];
+                      const find = (prefix) => cards.find((card) => {
+                        const text = (card.innerText || '').replace(/\\s+/g, ' ').trim();
+                        return text.startsWith(prefix);
+                      });
+                      const strain = find('Check 2 — Strain compatibility') || find('Check 2 - Strain compatibility');
+                      const neutral = find('Check 3 — Neutral-axis') || find('Check 3 - Neutral-axis');
+                      if (!strain || !neutral) return;
+                      const strainBlock = strain.closest('[data-testid="stLayoutWrapper"]') || strain.parentElement;
+                      const neutralBlock = neutral.closest('[data-testid="stLayoutWrapper"]') || neutral.parentElement;
+                      if (strainBlock && neutralBlock && strainBlock.parentElement === neutralBlock.parentElement) {
+                        neutralBlock.parentElement.insertBefore(neutralBlock, strainBlock);
+                      }
+                    })();
+                    </script>
+                    """,
+                    height=0,
+                )
+
                 # Handle pending scroll after content has rendered
                 pending_scroll_uid = st.session_state.get("bending_pending_scroll_uid")
                 if pending_scroll_uid:
@@ -1923,11 +1988,12 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     moment_sign=st.session_state.get("bending_detail_view", "positive"),
                 )
                 render_timing_mark("bending_page.runtime.diagram.figure.end")
-                diagram_options = ["Section", "Side view"]
+                render_section_title("Bending Diagrams")
+                diagram_options = ["Section & stress-strain models", "Side view", "Bending moment"]
                 # Both views stay mounted in client-side tabs. Switching views must
                 # not run Python, replace the focused selector, or move the page's
                 # scroll anchor.
-                section_tab, side_view_tab = render_stable_tabs(
+                section_tab, side_view_tab, moment_tab = render_stable_tabs(
                     st,
                     labels=diagram_options,
                     scope_id="bending-section-diagrams",
@@ -1952,78 +2018,259 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         st.session_state,
                         stress_strain_fig=fig_ss,
                     )
+                with moment_tab:
+                    # Match Shear: use resolved arrays when available, with a
+                    # scalar-action fallback so the diagram is never empty.
+                    import numpy as np
+
+                    mode = str(st.session_state.get("actions_mode", "manual") or "manual").strip().lower()
+                    L_m = max(float(get_param("L", 3000.0) or 3000.0) / 1000.0, 0.1)
+                    moment_x = list(st.session_state.get("moment_x") or [])
+                    moment_values = list(st.session_state.get("moment_values") or [])
+                    if not (mode == "design" and moment_x and moment_values and len(moment_x) == len(moment_values)):
+                        moment_x = np.linspace(0.0, L_m, 100).tolist()
+                        mu = float(Mu_uls_active or 0.0)
+                        support_type = str(get_param("support_type", "simply_supported") or "simply_supported").strip().lower()
+                        x_norm = np.asarray(moment_x, dtype=float) / L_m
+                        if "cantilever" in support_type:
+                            moment_values = (mu * (1.0 - x_norm)).tolist()
+                        else:
+                            moment_values = (4.0 * mu * x_norm * (1.0 - x_norm)).tolist()
+                    bmd_state = {
+                        "x_plot": moment_x,
+                        "M_plot": moment_values,
+                        "support_positions_plot": list(st.session_state.get("bmd_support_positions_m") or []),
+                        "support_types_plot": list(st.session_state.get("bmd_support_types") or []),
+                        "L": float(moment_x[-1]),
+                        "preview_x_m": None,
+                        "design_x_m": None,
+                        "preview_M": None,
+                        "x_pad": max(float(moment_x[-1]) * 0.08, 0.12),
+                        "support_type": str(st.session_state.get("support_type") or "simply_supported").strip().lower(),
+                    }
+                    render_plotly_diagram(
+                        figure_bmd_from_state(bmd_state, show_m_peak=True),
+                        key="bending_moment_diagram",
+                        title="Bending moment diagram",
+                        config={"displayModeBar": False},
+                    )
                 render_timing_mark("bending_page.runtime.diagram.end")
 
             # --------------------------------------------------
-            # Material stress–strain curves (concrete + steel),
-            # rendered *after* SLS tab but shown above it.
+            # Material stress–strain curves (concrete + steel), rendered below
+            # the section diagrams together with the state selector.
             # --------------------------------------------------
             with matcurves_placeholder.container():
+                st.markdown("**State:**")
+                st.radio(
+                    "State:",
+                    state_options,
+                    key="bending_state_main",
+                    horizontal=True,
+                    index=state_options.index(main_state),
+                    label_visibility="collapsed",
+                )
+                st.session_state["bending_state"] = st.session_state.get(
+                    "bending_state_main", main_state
+                )
+
                 def _render_material_model_content():
-                    st.markdown(
-                        f"""
-**Current state:** `{main_state}`
-
-This diagram shows how **concrete** and **steel** share strain in a reinforced
-concrete section, and how we go from **strain → stress → force**:
-
-- In the **elastic range** we use **Hooke's law**
-
-  - Steel:  $\\sigma_s = E_s \\, \\varepsilon_s$
-
-  - Concrete (short-term):  $\\sigma_c = E_c \\, \\varepsilon_c$
-
-- Once we know the **stress** we get the **resultant force** by
-  $$F = \\sigma \\; A$$
-
-  where $A$ is the relevant steel or concrete area (e.g. $A_{{st}}$ for tension bars,
-  $b \\times a$ for the ULS concrete block).
-
-- For **steel** we assume a **linear elastic** branch up to the yield stress
-  $f_{{sy}}$ (your session value, typically about 500 MPa), then a near-horizontal
-  plastic region with slight hardening and softening – similar to a test curve.
-
-- For **concrete in compression** we use a **non-linear parabolic** stress–strain curve.
-  At ULS we replace this with the **AS 3600 rectangular** $\\alpha_2$–$\\gamma$
-  stress block, chosen so it has the **same resultant force and lever arm** as
-  the underlying parabolic distribution.
-
-- At **SLS** and in the *uncracked* state we still assume a **linear strain profile**,
-  but with lower stresses (service-level actions). The vertical dotted lines on
-  the plots mark the **SLS** and **ULS** points for concrete and steel.
-
-**Sign convention note**
-
-- In the main **strain panel** (section / stress–strain figure), strains follow an
-  **AS 3600–style display**: **compression ε < 0** to the **left** of the vertical
-  ε = 0 axis and **tension ε > 0** to the **right**. Underlying solver values are unchanged;
-  the figure maps them for drawing via a small display layer (`strain_display`).
-
-- The **concrete stress–strain panel** still uses the usual **constitutive convention**
-  (compression strain shown as **positive** on that curve’s horizontal axis).
-
-- In the **steel material curve**, the x-axis is **$|\\varepsilon_s| \\ge 0$** (magnitude).
-  Points marked from ULS/SLS use absolute strain for that plot while still representing
-  the same steel response.
-
-The difference between the concrete and steel curves – mainly their **slopes**
-($E_c$ vs $E_s$) – is what drives the different **forces** that develop at SLS and ULS
-for the same strain pattern.
-
-"""
+                    selected_state = str(
+                        st.session_state.get("bending_state_main", main_state) or main_state
                     )
-                    fig_mat = _plot_material_stress_strain_curves()
-                    try:
-                        render_plotly_diagram(
-                            fig_mat,
-                            key="bending_material_stress_strain_curves",
-                            title="Material stress-strain curves",
-                            config={"displayModeBar": False},
+                    state_low = selected_state.strip().lower()
+                    is_uls = state_low.startswith("uls")
+                    is_sls = "sls" in state_low
+                    is_uncracked = "uncracked" in state_low
+
+                    # Major teaching section 1: read top-to-bottom. Keep this full width so
+                    # the panel reads like an engineering explanation, not a poster.
+                    with st.container(border=True):
+                        st.markdown("### How do strain, stress and force relate?")
+                        st.markdown(
+                            "When a reinforced-concrete beam bends, different parts of the section "
+                            "shorten or elongate by different amounts. We describe this deformation "
+                            "using **strain**. The calculation then converts strain into stress, and "
+                            "stress into the internal forces carried by the section."
                         )
-                    except Exception as e:
-                        st.warning("Material curves view failed to render (browser/graphics). Try refreshing the page.")
+
+                        stage_cols = st.columns(3, gap="medium")
+                        with stage_cols[0]:
+                            with st.container(border=True):
+                                st.markdown("**Strain**")
+                                st.caption("How much the material deforms.")
+                        with stage_cols[1]:
+                            with st.container(border=True):
+                                st.markdown("**Stress**")
+                                st.caption("The internal intensity of force developed by that deformation.")
+                        with stage_cols[2]:
+                            with st.container(border=True):
+                                st.markdown("**Force**")
+                                st.caption("The total internal action produced when stress acts over an area.")
+
+                        st.markdown("#### 1 — Where does the strain come from?")
+                        st.markdown(
+                            "For normal beam bending, **plane sections are assumed to remain plane**. "
+                            "The longitudinal strain therefore varies linearly through the section depth. "
+                            "The Section / Strain / Stress diagram above shows this compatible linear "
+                            "strain profile for the selected state."
+                        )
+                        st.markdown(
+                            "Once the neutral axis is known, strain is zero at the neutral axis and the "
+                            "strain at any other depth follows directly from the geometry of that linear profile."
+                        )
+                        st.latex(r"\varepsilon_{s,i}=-\varepsilon_{cu}\frac{y_i-d_n}{d_n}")
+                        st.info(
+                            "Strain is determined from the section geometry and the assumed neutral-axis "
+                            "depth $d_n$."
+                        )
+
+                        st.markdown("#### 2 — How does strain become stress?")
+                        st.markdown(
+                            "Knowing the strain does not yet tell us the force carried by the material. "
+                            "We first convert strain into **stress**. Within the elastic range, stress is "
+                            "related to strain by **Hooke's law**:"
+                        )
+                        st.latex(r"\sigma=E\varepsilon")
+                        st.markdown(
+                            "Here, $\sigma$ is stress, $E$ is the elastic modulus (material stiffness), "
+                            "and $\varepsilon$ is strain. For the same strain, a material with a larger "
+                            "$E$ develops a larger stress. This is why the strain profile must be combined "
+                            "with the material stress–strain relationship before internal forces can be found."
+                        )
+                        hooke_cols = st.columns(2, gap="large")
+                        with hooke_cols[0]:
+                            st.markdown("**Concrete — approximately elastic range**")
+                            st.latex(r"f_c\approx E_c\varepsilon_c")
+                        with hooke_cols[1]:
+                            st.markdown("**Reinforcement — elastic range**")
+                            st.latex(r"f_s=E_s\varepsilon_s")
+
+                        st.markdown(f"#### Selected state — {selected_state}")
+                        if is_uls:
+                            st.markdown(
+                                "At ULS the section is taken to its ultimate flexural condition. The extreme "
+                                "concrete compression strain is taken as $\varepsilon_{cu}=0.003$. "
+                                "Reinforcement stress is obtained from strain and is limited to the applicable "
+                                "yield strength $f_{sy}$. Concrete compression for section strength is represented "
+                                "by the AS 3600 equivalent rectangular stress block."
+                            )
+                            st.latex(r"\varepsilon_{cu}=0.003\qquad |f_s|\leq f_{sy}")
+                        elif is_sls:
+                            st.markdown(
+                                "At cracked SLS the section is analysed under service actions after flexural "
+                                "cracking. Tensile concrete is neglected in the cracked flexural section analysis, "
+                                "while concrete compression and reinforcement stresses follow the compatible "
+                                "service strain profile."
+                            )
+                        elif is_uncracked:
+                            st.markdown(
+                                "In the uncracked state the concrete section remains effective in tension and "
+                                "compression. The elastic material relationships are therefore directly useful "
+                                "for converting the compatible strain profile into concrete and steel stresses."
+                            )
+
+                        fig_mat = _plot_material_stress_strain_curves()
+                        try:
+                            render_plotly_diagram(
+                                fig_mat,
+                                key="bending_material_stress_strain_curves",
+                                title="Material stress-strain curves",
+                                config={"displayModeBar": False},
+                            )
+                        except Exception:
+                            st.warning(
+                                "Material curves view failed to render (browser/graphics). Try refreshing the page."
+                            )
+
+                        behaviour_cols = st.columns(2, gap="large")
+                        with behaviour_cols[0]:
+                            with st.container(border=True):
+                                st.markdown("**Concrete behaviour**")
+                                st.markdown(
+                                    "Concrete is approximately elastic at low stress but becomes increasingly "
+                                    "nonlinear as compression increases."
+                                )
+                                if is_uls:
+                                    st.markdown(
+                                        "At ULS, AS 3600 represents the concrete compression zone using an "
+                                        "equivalent rectangular stress block for section-strength calculations."
+                                    )
+                                    st.info(
+                                        "The material stress–strain curve describes concrete behaviour; the ULS "
+                                        "rectangular stress block is the code representation used for section strength."
+                                    )
+                        with behaviour_cols[1]:
+                            with st.container(border=True):
+                                st.markdown("**Reinforcement behaviour**")
+                                st.markdown(
+                                    "Reinforcement behaves approximately linear-elastically up to yield. The "
+                                    "initial slope of the steel stress–strain relationship is $E_s$."
+                                )
+                                st.latex(r"f_s=E_s\varepsilon_s")
+                                if is_uls:
+                                    st.markdown(
+                                        "Once yield is reached, the ULS section calculation limits reinforcement "
+                                        "stress to the applicable steel yield strength."
+                                    )
+                                    st.latex(r"|f_s|\leq f_{sy}")
+
+                    # Major teaching section 2: deliberately stacked directly below section 1.
+                    with st.container(border=True):
+                        st.markdown("### From stress to internal force and equilibrium")
+                        st.markdown(
+                            "Stress is force per unit area. Once the stress and the area over which it acts "
+                            "are known, the corresponding internal force can be calculated."
+                        )
+                        st.latex(r"F=\sigma A")
+
+                        force_cols = st.columns(2, gap="large")
+                        with force_cols[0]:
+                            with st.container(border=True):
+                                st.markdown("**Concrete compression**")
+                                if is_uls:
+                                    st.markdown(
+                                        "For ULS, the equivalent concrete stress $\alpha_2 f'_c$ acts over the "
+                                        "rectangular compression-block area $ba$, where $a=\gamma d_n$."
+                                    )
+                                    st.latex(r"a=\gamma d_n")
+                                    st.latex(r"C_c=\alpha_2 f'_cba")
+                                elif is_sls:
+                                    st.markdown(
+                                        "For cracked SLS, the concrete compression stress distribution acting over "
+                                        "the cracked compression zone produces the concrete compression resultant."
+                                    )
+                                else:
+                                    st.markdown(
+                                        "For the uncracked state, the concrete stress distribution acting over the "
+                                        "effective concrete section produces the concrete resultant."
+                                    )
+                        with force_cols[1]:
+                            with st.container(border=True):
+                                st.markdown("**Reinforcement layer $i$**")
+                                st.markdown(
+                                    "The stress in each reinforcement layer acts over that layer's steel area."
+                                )
+                                st.latex(r"F_{s,i}=A_{s,i}f_{s,i}")
+
+                        st.markdown("#### Why do we need these forces?")
+                        st.markdown(
+                            "The internal concrete and reinforcement forces must balance to satisfy section "
+                            "equilibrium. If they do not balance, the assumed section state — including the "
+                            "neutral-axis position where applicable — is not the equilibrium solution."
+                        )
+                        st.latex(r"\sum C=\sum T")
+                        st.markdown(
+                            "Changing the neutral-axis depth changes the strain profile, which changes the "
+                            "material stresses and therefore the internal forces. The section solution therefore "
+                            "closes the loop:"
+                        )
+                        st.markdown(
+                            "**Neutral axis → Strain → Stress → Force → Equilibrium**"
+                        )
+
                 render_lazy_expander(
-                    "ℹ️ Stress–strain model & material behaviour",
+                    "ℹ️ From strain to stress to internal force",
                     _render_material_model_content,
                     key="bending_material_model_expander",
                 )

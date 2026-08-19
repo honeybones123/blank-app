@@ -34,8 +34,8 @@ class LongitudinalReinforcement:
     diameter_mm: int = 10
     cover_mm: float = 40.0
 
-    def validated(self) -> "BottomReinforcement":
-        if self.bars < 2 or self.bars > 12:
+    def validated(self, *, allow_zero_bars: bool = False) -> "LongitudinalReinforcement":
+        if (self.bars == 0 and not allow_zero_bars) or self.bars < 0 or self.bars > 12 or self.bars == 1:
             raise ValueError("Longitudinal reinforcement bar count must be between 2 and 12.")
         if self.spacing_mm < 50.0 or self.spacing_mm > 500.0:
             raise ValueError("Longitudinal reinforcement spacing must be between 50 and 500 mm.")
@@ -288,7 +288,9 @@ class BeamInputs:
         if self.side_cover_mm < 10.0 or self.side_cover_mm > 150.0:
             raise ValueError("Side cover must be between 10 and 150 mm.")
         self.bottom.validated()
-        self.top.validated()
+        # Compression/top reinforcement is optional for a singly reinforced
+        # section.  Bottom reinforcement remains subject to the 2–12 bar rule.
+        self.top.validated(allow_zero_bars=True)
         self.shear.validated()
         self.materials.validated()
         self.actions.validated()

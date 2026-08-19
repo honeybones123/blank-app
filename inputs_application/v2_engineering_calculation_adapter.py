@@ -61,8 +61,13 @@ def _v2_longitudinal_bar_count(
     mapping: Mapping[str, Any],
     *keys: str,
     default: int,
+    allow_zero: bool = False,
 ) -> int:
     bars = _integer(mapping, *keys, default=default)
+    # Top steel is optional.  A configured zero is an engineering value, not a
+    # missing/invalid count that should silently recover the old default.
+    if allow_zero and bars == 0:
+        return 0
     return bars if 2 <= bars <= 12 else int(default)
 
 
@@ -345,17 +350,22 @@ def _beam_inputs_from_snapshot(
         mode=api["LayoutMode"].COUNT,
         bars=_v2_longitudinal_bar_count(
             reinforcement,
-            "top_bars",
             "top_row_1_bars",
+            "top1_count",
+            "top_bars",
             default=2,
+            allow_zero=True,
         ),
         spacing_mm=_v2_longitudinal_spacing(
             reinforcement,
-            "top_spacing",
             "top_row_1_spacing",
+            "top1_spacing",
+            "top_spacing",
         ),
         diameter_mm=_v2_longitudinal_diameter(
             reinforcement,
+            "top_row_1_dia",
+            "db_top_1",
             "db_top",
             "top_dia",
         ),

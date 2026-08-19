@@ -142,7 +142,8 @@ def render_v2_design_guide_card(
     with design_guide_slot.container():
         st_module.markdown(
             "<style>"
-            ".inputs-v2-root .inputs-v2-card-label{color:#343a40;font-size:1.05rem;font-weight:700;border-bottom:1px solid #dce3ec;padding-bottom:.55rem;margin:.25rem 0 .85rem;}"
+             ".inputs-v2-root .inputs-v2-card-label{color:#343a40;font-size:1.05rem;font-weight:700;border-bottom:1px solid #dce3ec;padding-bottom:.55rem;margin:.25rem 0 .85rem;}"
+             ".inputs-v2-root,.inputs-v2-root ~ div[data-testid=\"stExpander\"],div[data-testid=\"stVerticalBlock\"]:has(.inputs-v2-root) > div[data-testid=\"stLayoutWrapper\"]{width:min(100%,1200px);max-width:1200px;}"
             ".inputs-v2-brain-runtime-loading-shell{display:none;align-items:center;gap:.7rem;min-height:58px;padding:.85rem 1rem;margin:.7rem 0;border:1px solid #cbd5e1;border-left:5px solid #98a2b3;border-radius:10px;background:#fff;color:#475569;}"
             ".inputs-v2-brain-runtime-loading-icon{font-size:1.25rem;line-height:1;}"
             ".inputs-v2-brain-runtime-loading-copy{font-weight:700;color:#334155;}"
@@ -203,10 +204,10 @@ def render_v2_design_guide_card(
             "div[data-testid=\"stVerticalBlock\"][class*=\"st-key-v2_design_guide_apply_scope_warn\"] div[data-testid=\"stButton\"]>button:not(:disabled){background:#f08c00 !important;border-color:#f08c00 !important;color:#fff !important;}"
             "div[data-testid=\"stVerticalBlock\"][class*=\"st-key-v2_design_guide_apply_scope_info\"] div[data-testid=\"stButton\"]>button:not(:disabled){background:#64748b !important;border-color:#64748b !important;color:#fff !important;}"
             "</style>"
-            '<div class="inputs-v2-root"><div class="inputs-v2-card-label">Design Brain</div>'
+             '<div class="inputs-v2-root"><div class="inputs-v2-card-label">Design Guide</div>'
             '<div data-testid="inputs-v2-design-brain-runtime-loading" class="inputs-v2-brain-runtime-loading-shell" role="status" aria-live="polite">'
             '<span class="inputs-v2-brain-runtime-loading-icon" aria-hidden="true">&#129504;</span>'
-            '<span class="inputs-v2-brain-runtime-loading-copy">Updating Design Brain'
+             '<span class="inputs-v2-brain-runtime-loading-copy">Updating Design Guide'
             '<span class="inputs-v2-brain-runtime-loading-dot"></span>'
             '<span class="inputs-v2-brain-runtime-loading-dot"></span>'
             '<span class="inputs-v2-brain-runtime-loading-dot"></span>'
@@ -221,12 +222,12 @@ def render_v2_design_guide_card(
                 unsafe_allow_html=True,
             )
             with st_module.expander(
-                "**NO LOADS**  **Design Brain waiting for actions**  |  Governing utilisation: 0.00",
+                 "**NO LOADS**  **Design Guide waiting for actions**  |  Governing utilisation: 0.00",
                 expanded=False,
             ):
                 st_module.markdown(
                     '<div class="inputs-v2-root inputs-v2-design-guide-copy empty">'
-                    'No design actions entered. Add loads and the Design Brain will check and optimise your beam.'
+                     'No design actions entered. Add loads and the Design Guide will check and optimise your beam.'
                     '</div>',
                     unsafe_allow_html=True,
                 )

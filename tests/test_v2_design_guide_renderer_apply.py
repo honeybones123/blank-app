@@ -45,7 +45,7 @@ def test_card_contains_scoped_morning_transaction_shell() -> None:
     ).read_text(encoding="utf-8-sig")
 
     assert "inputs-v2-design-brain-runtime-loading" in source
-    assert "Updating Design Brain" in source
+    assert "Updating Design Guide" in source
     assert 'stStatusWidget' in source
     assert 'st-key-v2_design_guide_apply_scope' in source
     assert "stAppViewContainer" in source

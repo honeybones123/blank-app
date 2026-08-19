@@ -1,3 +1,6 @@
+from copy import copy
+from dataclasses import astuple
+from functools import lru_cache
 from typing import Any, Dict, Tuple
 
 import math
@@ -10,11 +13,18 @@ from calculations.shear import (
     shear_truth_status_from_util as _truth_status_from_util,
 )
 from engineering_check_ui import sync_legacy_value_limit
-from shear_calculation_runtime import ShearInputs, run_shear_calc
+from shear_calculation_runtime import ShearInputs, ShearResults, run_shear_calc
 from state_runtime_gateway import resolve_design_actions
 from inputs_application.authoritative_check_packs import (
     authoritative_check_pack_or_unavailable,
 )
+
+
+@lru_cache(maxsize=128)
+def _run_shear_calc_for_inputs(input_values: tuple[Any, ...]) -> ShearResults:
+    """Reuse the existing pure shear calculation for identical typed inputs."""
+
+    return run_shear_calc(ShearInputs(*input_values))
 
 
 def _normalise_canonical_shear_truth_bundle(
@@ -220,9 +230,14 @@ def build_live_canonical_shear_state(st_state: Dict[str, Any]) -> Dict[str, Any]
 
 
 def build_shear_calc_bundle_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Single run of shear_core from session: live_state, actions, results, phi, k_d, use_general_kv."""
+    """Single shear-core result for the current typed inputs, reused when inputs are identical."""
     ctx = _shear_calc_context(st_state)
-    res = run_shear_calc(ctx["inputs"])
+    # ``run_shear_calc`` is explicitly a pure typed calculation. Cache only by
+    # every ShearInputs field, then copy the result before applying the existing
+    # session-dependent canonical overlay below. This removes repeated work in
+    # one render without introducing a second engineering implementation.
+    input_values = tuple(astuple(ctx["inputs"]))
+    res = copy(_run_shear_calc_for_inputs(input_values))
     # When auto spacing is off, keep live run_shear_calc outputs so manual link spacing
     # (shear_s_lig â†’ s_lig) drives Ï†V_u in the UI. When on, prefer canonical Ï†V_u from
     # _compute_shear_capacity (sectional check uses governing envelope spacing in-memory;
@@ -246,6 +261,8 @@ def build_shear_calc_bundle_from_state(st_state: Dict[str, Any]) -> Dict[str, An
         "k_d": ctx["k_d"],
         "use_general_kv": ctx["use_general_kv"],
     }
+
+
 def build_shear_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:
     """Project the current V2 shear result without a page-local fallback."""
 

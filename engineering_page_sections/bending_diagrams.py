@@ -2,12 +2,63 @@
 
 from __future__ import annotations
 
+
+def _install_material_teaching_override(namespace: dict) -> None:
+    """Replace only the bending material expander body with the styled lesson.
+
+    ``bending_page_runtime`` already delegates diagram helpers through
+    ``bind_runtime``.  Use that existing seam so the large page coordinator does
+    not need a second copy of the teaching markup.  Engineering state and plot
+    builders remain owned by the runtime; this wrapper changes presentation only.
+    """
+
+    original = namespace.get("render_lazy_expander")
+    if original is None or getattr(original, "_sb_material_teaching_override", False):
+        return
+
+    def render_lazy_expander_with_material_lesson(label, render_body, *args, **kwargs):
+        if kwargs.get("key") != "bending_material_model_expander":
+            return original(label, render_body, *args, **kwargs)
+
+        def render_styled_material_lesson() -> None:
+            from engineering_page_sections.bending_material_teaching import (
+                render_bending_material_teaching_panel,
+            )
+
+            st_module = namespace["st"]
+            selected_state = str(
+                st_module.session_state.get(
+                    "bending_state_main",
+                    st_module.session_state.get("bending_state", "ULS"),
+                )
+                or "ULS"
+            )
+            render_bending_material_teaching_panel(
+                selected_state=selected_state,
+                plot_material_curves=namespace["_plot_material_stress_strain_curves"],
+                render_plotly_diagram=namespace["render_plotly_diagram"],
+            )
+
+        return original(
+            "ℹ️ From strain to stress to internal force",
+            render_styled_material_lesson,
+            *args,
+            **kwargs,
+        )
+
+    render_lazy_expander_with_material_lesson._sb_material_teaching_override = True
+    namespace["render_lazy_expander"] = render_lazy_expander_with_material_lesson
+
+
 def bind_runtime(namespace: dict) -> None:
     globals().update({key: value for key, value in namespace.items() if not key.startswith("__")})
+    _install_material_teaching_override(namespace)
+
 
 def _coalesce_num(v, default: float) -> float:
     """Return default only if v is None (preserves 0)."""
     return default if v is None else float(v)
+
 
 def _get_build_beam_3d_figure_pure():
     """Get the cached or uncached version of _build_beam_3d_figure_pure based on debug mode."""
@@ -22,6 +73,7 @@ def _get_build_beam_3d_figure_pure():
     except ImportError:
         # Debug module not available: use cache
         return st.cache_resource(show_spinner=False)(_build_beam_3d_figure_pure_impl)
+
 
 def _build_beam_3d_figure_pure_impl(
     b,
@@ -63,16 +115,17 @@ def _build_beam_3d_figure_pure_impl(
         debug_bust=debug_bust,
     )
 
+
 def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "ULS", layout=None):
     """
     Wrapper function that reads from session state and calls the cached pure function.
-    
+
     Args:
         layout: Optional pre-computed section layout dict. If None, will compute from session state.
     """
     # Get all inputs from results (matches shear pattern)
     results = st.session_state.get("results", {})
-    
+
     # --- ARCHITECTURE LOCK: bending diagrams must use results (with fallback to shared) ---
     # Note: Geometry values (b, D, d) are not in results - they're in shared state.
     # The guard ensures results dict exists and diagrams use the fallback pattern correctly.
@@ -82,7 +135,7 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
                 "[ARCHITECTURE VIOLATION] Bending diagrams require results dict to exist. "
                 "Call update_results() or run compute functions first."
             )
-    
+
     # If layout is provided, extract reo_layout from it
     if layout is not None:
         reo_layout = layout.get("reo_layout")
@@ -110,11 +163,11 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
             nb_or_s_top_2=results.get("nb_or_s_top_2", 0.0), db_top_2=results.get("db_top_2", 16.0),
             rowgap_bot=results.get("rowgap_bot", 60.0), rowgap_top=results.get("rowgap_top", 60.0),
         )
-    
+
     # Get ligature spacing from results
     s_lig = results.get("s_lig", get_param("s_lig", 200.0))
     s_lig = float(s_lig) if s_lig is not None else 200.0
-    
+
     # Cache-busting for debug mode
     debug_bust = None
     try:
@@ -141,7 +194,6 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
     return _build_fn(
         b, D, L, Mu_star, phi_Mu_cap, c, strain_state,
         reo_layout, results.get("cover_bot", 40.0), results.get("cover_top", 40.0),
-        results.get("cover_side", 40.0), results.get("rowgap_bot", 60.0), results.get("rowgap_top", 60.0), 
+        results.get("cover_side", 40.0), results.get("rowgap_bot", 60.0), results.get("rowgap_top", 60.0),
         results.get("lig_d", 10.0), results.get("lig_legs", 2), s_lig, debug_bust=debug_bust
     )
-

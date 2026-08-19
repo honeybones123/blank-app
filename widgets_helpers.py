@@ -1332,7 +1332,10 @@ def apply_step_summary_expander_css():
     session_state = getattr(st, "session_state", None)
     if session_state is not None:
         rendered_styles = session_state.setdefault("_rendered_style_keys", set())
-        style_key = "step_summary_expander_css"
+        # Bump this when the shared spacing/card CSS changes so an existing
+        # Streamlit session receives the new stylesheet without requiring a
+        # process restart.
+        style_key = "step_summary_expander_css_v4"
         if style_key in rendered_styles:
             return
         rendered_styles.add(style_key)
@@ -1503,15 +1506,45 @@ div[data-testid="stVerticalBlock"]:has(
 }
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
-) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::before,
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"] svg,
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
-) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]::before {
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"] svg {
+  display: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"] > *,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"] > * {
+  display: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::after,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+ ) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]::after {
+  display: none !important;
+  content: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::before {
   content: "ⓘ Understand the technical basis";
   display: inline !important;
   font-size: 0.78rem !important;
   line-height: 1.1 !important;
   white-space: nowrap !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[kind="secondary"]::before,
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] [data-calc-uid]
+) div[data-testid="stExpander"] div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]::before {
+  content: "Understand the technical basis" !important;
 }
 div[data-testid="stVerticalBlock"]:has(
   > div[data-testid="stElementContainer"] [data-calc-uid]
@@ -1522,6 +1555,33 @@ div[data-testid="stVerticalBlock"]:has(
   border-color: rgba(31,119,180,0.55) !important;
   background: rgba(31,119,180,0.10) !important;
   color: #155a8a !important;
+}
+
+/* Shared page-spacing contract: headings, captions, dividers and tab rows
+   use the same vertical rhythm on every engineering page. */
+.section-title {
+  margin-top: 0 !important;
+  margin-bottom: 0.75rem !important;
+}
+div[data-testid="stCaptionContainer"] {
+  margin-top: 0 !important;
+  margin-bottom: 0.75rem !important;
+}
+div[data-testid="stTabs"] {
+  margin-top: 0 !important;
+  margin-bottom: 0.75rem !important;
+}
+div[data-testid="stDivider"] {
+  margin-top: 0 !important;
+  margin-bottom: 32px !important;
+}
+div[data-testid="stElementContainer"]:has([data-testid="stDivider"]) {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+div[data-testid="stElementContainer"]:has([data-testid="stDivider"]) + div[data-testid="stElementContainer"] {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 </style>
         """,
@@ -1573,7 +1633,8 @@ def render_lazy_expander(
     )
     with expander:
         if expander.open:
-            render_fn()
+            with st.container(border=True):
+                render_fn()
 
 
 # Optional left-border / background accents for calc steps (Design / SFD page, etc.)
@@ -1624,6 +1685,61 @@ def _has_non_empty_card_text(value) -> bool:
     return len(text) >= 3
 
 
+_CALC_DISPLAY_STANDARD = "standard"
+_CALC_DISPLAY_STEP_BY_STEP = "step_by_step"
+
+
+def _calc_display_mode_key(section_uid: str) -> str:
+    return f"calc_display_mode__{section_uid}"
+
+
+def _calc_step_progress_key(uid: str) -> str:
+    return f"calc_step_progress__{uid}"
+
+
+def render_calculation_display_control(section_uid: str) -> str:
+    """Render one non-engineering display preference for a calculation section."""
+    mode_key = _calc_display_mode_key(section_uid)
+    if mode_key not in st.session_state:
+        st.session_state[mode_key] = _CALC_DISPLAY_STANDARD
+
+    with st.popover("Calculation display", help="Choose how calculation working is displayed."):
+        st.caption("Standard shows the complete calculation. Step-by-step reveals the working progressively.")
+        selected = st.radio(
+            "Display mode",
+            options=("Standard", "Step-by-step"),
+            index=0 if st.session_state[mode_key] == _CALC_DISPLAY_STANDARD else 1,
+            key=f"{mode_key}__selector",
+            label_visibility="collapsed",
+        )
+        st.session_state[mode_key] = (
+            _CALC_DISPLAY_STEP_BY_STEP if selected == "Step-by-step" else _CALC_DISPLAY_STANDARD
+        )
+    return str(st.session_state[mode_key])
+
+
+def _visible_progressive_steps(progressive_steps, current_step: int) -> str:
+    """Return explicitly prepared display steps up to the requested position."""
+    steps = tuple(str(step).strip() for step in (progressive_steps or ()) if str(step).strip())
+    if not steps:
+        return ""
+    visible_count = max(1, min(int(current_step), len(steps)))
+    return "\n\n".join(steps[:visible_count])
+
+
+def _progressive_steps_from_headings(details_md: str) -> tuple[str, ...]:
+    """Use authored bold headings as progressive boundaries for a calc box."""
+    content = str(details_md or "").strip()
+    if not content:
+        return ()
+    blocks = tuple(
+        block.strip()
+        for block in re.split(r"(?m)(?=^\*\*[^*]+\*\*\s*$)", content)
+        if block.strip()
+    )
+    return blocks or (content,)
+
+
 @st.fragment
 def step_expander_calcbox(
     uid: str,
@@ -1636,13 +1752,41 @@ def step_expander_calcbox(
     expanded=None,
     jump_uid=None,
     accent: str | None = None,
-    render_policy: str = "lazy",
+    render_policy: str = "mounted",
+    display_section: str | None = None,
+    progressive_steps=None,
 ):
     """
     Render a step as an expandable card with summary header.
     Optional accent: load, support, reaction, fe, shear, moment (left border + calc box tint).
     """
     apply_step_summary_expander_css()
+
+    # The authoritative ULS sequence must establish converged d_n before
+    # presenting reinforcement strains, which consume that result. Defer the
+    # complete Check 4 card until the Check 3 equilibrium card has rendered;
+    # this preserves its body,
+    # info panel, equations, and diagram as one card.
+    if (
+        uid == "bending_uls_authoritative_strains"
+        and not st.session_state.get("_rendering_deferred_bending_uls_check_2", False)
+    ):
+        st.session_state["_deferred_bending_uls_check_2"] = {
+            "uid": uid,
+            "summary_line": summary_line,
+            "details_md": details_md,
+            "status": status,
+            "diagram_fn": diagram_fn,
+            "content_before": content_before,
+            "content_after": content_after,
+            "expanded": expanded,
+            "jump_uid": jump_uid,
+            "accent": accent,
+            "render_policy": render_policy,
+            "display_section": display_section,
+            "progressive_steps": progressive_steps,
+        }
+        return
 
     # One zero-height element owns both the scroll anchor and the deterministic
     # expander marker.  The former implementation emitted two separate
@@ -1664,10 +1808,6 @@ def step_expander_calcbox(
     accent_html = (
         f"<span class='step-accent-{accent_key}'></span>" if accent_key else ""
     )
-
-    info_tip = ""
-    if content_before:
-        info_tip = " ℹ️"
 
     summary_line_norm = str(summary_line or "")
     # Normalize legacy numeric step labels (e.g. "1.2 Something ...")
@@ -1691,7 +1831,7 @@ def step_expander_calcbox(
         formatted_summary = f"{_bold_first_summary_line(first)}  \n{rest}"
     else:
         formatted_summary = _bold_first_summary_line(summary_line_norm)
-    label = f"{formatted_summary}{info_tip}".strip()
+    label = formatted_summary.strip()
     has_body_content = bool(
         _has_non_empty_card_text(details_md)
         or diagram_fn
@@ -1708,7 +1848,7 @@ def step_expander_calcbox(
     if open_key not in st.session_state:
         st.session_state[open_key] = bool(is_expanded)
     policy = str(render_policy or "lazy").strip().lower()
-    mount_closed_body = policy in {"mounted", "eager", "client_mounted"} and diagram_fn is None
+    mount_closed_body = policy in {"mounted", "eager", "client_mounted"}
     expander = st.expander(
         label,
         expanded=bool(is_expanded),
@@ -1732,13 +1872,33 @@ def step_expander_calcbox(
         if not expander.open and not mount_closed_body:
             return
 
+        progressive_steps = tuple(
+            str(step).strip() for step in (progressive_steps or ()) if str(step).strip()
+        )
+        display_mode = (
+            str(st.session_state.get(_calc_display_mode_key(display_section), _CALC_DISPLAY_STANDARD))
+            if display_section
+            else _CALC_DISPLAY_STANDARD
+        )
+        if display_section and not progressive_steps:
+            progressive_steps = _progressive_steps_from_headings(details_md)
+        progress_key = _calc_step_progress_key(uid)
+        if progressive_steps and progress_key not in st.session_state:
+            st.session_state[progress_key] = 1
+        is_progressive = bool(progressive_steps) and display_mode == _CALC_DISPLAY_STEP_BY_STEP
+        rendered_details_md = (
+            _visible_progressive_steps(progressive_steps, st.session_state[progress_key])
+            if is_progressive
+            else details_md
+        )
+
         if diagram_fn:
             col_calc, col_fig = st.columns([2.0, 1.0], gap="large")
             with col_calc:
                 if content_before:
                     content_before()
                 calcbox(
-                    details_md,
+                    rendered_details_md,
                     status=status,
                     uid=f"{uid}__details",
                     accent=accent_key,
@@ -1751,7 +1911,7 @@ def step_expander_calcbox(
             if content_before:
                 content_before()
             calcbox(
-                details_md,
+                rendered_details_md,
                 status=status,
                 uid=f"{uid}__details",
                 accent=accent_key,
@@ -1759,6 +1919,45 @@ def step_expander_calcbox(
         
         if content_after:
             content_after()
+
+        if is_progressive:
+            total_steps = len(progressive_steps)
+            current_step = max(1, min(int(st.session_state[progress_key]), total_steps))
+            def set_progress(value: int) -> None:
+                st.session_state[progress_key] = max(1, min(int(value), total_steps))
+
+            st.caption(f"Step {current_step} of {total_steps}")
+            back, next_step, show_all, restart, _spacer = st.columns([1, 1, 1.2, 1, 3])
+            with back:
+                st.button(
+                    "Back", key=f"{uid}__progress_back", disabled=current_step == 1,
+                    on_click=set_progress, args=(current_step - 1,),
+                )
+            with next_step:
+                st.button(
+                    "Next", key=f"{uid}__progress_next", disabled=current_step == total_steps,
+                    on_click=set_progress, args=(current_step + 1,),
+                )
+            with show_all:
+                st.button(
+                    "Show all", key=f"{uid}__progress_all", disabled=current_step == total_steps,
+                    on_click=set_progress, args=(total_steps,),
+                )
+            with restart:
+                st.button(
+                    "Restart", key=f"{uid}__progress_restart", disabled=current_step == 1,
+                    on_click=set_progress, args=(1,),
+                )
+
+    deferred_check_2 = None
+    if uid == "bending_uls_authoritative_equilibrium":
+        deferred_check_2 = st.session_state.pop("_deferred_bending_uls_check_2", None)
+    if deferred_check_2:
+        st.session_state["_rendering_deferred_bending_uls_check_2"] = True
+        try:
+            step_expander_calcbox(**deferred_check_2)
+        finally:
+            st.session_state.pop("_rendering_deferred_bending_uls_check_2", None)
 
 
 def apply_step_summary_card_css():
@@ -2230,16 +2429,17 @@ def _render_reo_row_controls(
     bars_shared_key: str,
     spacing_shared_key: str,
     dia_shared_key: str,
+    allow_zero_bars: bool = False,
 ) -> None:
     """Bars or Spacing, then bar diameter; label-left / widget-right rows; keys unchanged."""
     if mode == "Count":
         valid_count_options = [
             int(option)
             for option in list(count_options or [])
-            # The row exists because it is within the authoritative active-row
-            # count.  An active row therefore cannot publish either zero bars
-            # (inactive) or one bar (invalid longitudinal detailing).
-            if int(option) >= 2
+            # Bottom tension rows require at least two bars. A top row may be
+            # explicitly set to zero so users can model no top steel without
+            # hiding the row configuration; one bar remains invalid.
+            if (allow_zero_bars and int(option) == 0) or int(option) >= 2
         ]
         select_row(
             "Bars",
@@ -2433,6 +2633,7 @@ def render_longitudinal_reo_rows(
             bars_shared_key=bars_shared_key,
             spacing_shared_key=spacing_shared_key,
             dia_shared_key=dia_shared_key,
+            allow_zero_bars=section_norm == "top",
         )
 
 

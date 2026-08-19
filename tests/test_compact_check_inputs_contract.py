@@ -28,9 +28,21 @@ class _FakeStreamlit:
         self.query_params = {"page": "creep", "cid": "beam-1"}
         self.expander_calls = []
         self.container_calls = []
+        self.fragment_calls = []
+        self.rerun_calls = []
 
     def markdown(self, *_args, **_kwargs):
         return None
+
+    def fragment(self, func):
+        self.fragment_calls.append(func.__name__)
+        return func
+
+    def button(self, *_args, **_kwargs):
+        return False
+
+    def rerun(self, **kwargs):
+        self.rerun_calls.append(kwargs)
 
     def columns(self, _spec, **_kwargs):
         return (nullcontext(), nullcontext())
@@ -54,7 +66,7 @@ class _FakeStreamlit:
         return _FakeExpander(len(self.expander_calls) == 1)
 
 
-def test_renderer_adds_no_component_session_state_and_mounts_all_card_bodies():
+def test_mounted_renderer_uses_only_visual_shell_state_and_mounts_all_card_bodies():
     rendered = []
     fake = _FakeStreamlit()
     config = CheckInputPanelConfig(
@@ -68,15 +80,21 @@ def test_renderer_adds_no_component_session_state_and_mounts_all_card_bodies():
 
     render_compact_check_inputs(fake, config)
 
-    assert fake.session_state.writes == 0
+    assert fake.session_state.writes == 2
+    assert set(fake.session_state) == {
+        "compact_check_inputs_creep_geometry__open",
+        "compact_check_inputs_creep_time__open",
+    }
     assert rendered == ["geometry", "time"]
-    assert [call[1]["key"] for call in fake.expander_calls] == [
-        "compact_check_inputs_creep_geometry",
-        "compact_check_inputs_creep_time",
-    ]
-    assert all(call[1]["on_change"] == "ignore" for call in fake.expander_calls)
+    assert fake.expander_calls == []
+    assert fake.fragment_calls == ["_header_fragment", "_header_fragment"]
+    assert fake.rerun_calls == []
     assert fake.container_calls == [
-        {"border": False, "key": "compact_check_inputs_creep"}
+        {"border": False, "key": "compact_check_inputs_creep"},
+        {"key": "compact_check_inputs_creep_geometry__shell", "border": False},
+        {"key": "compact_check_inputs_creep_geometry__body", "border": False},
+        {"key": "compact_check_inputs_creep_time__shell", "border": False},
+        {"key": "compact_check_inputs_creep_time__body", "border": False},
     ]
 
 

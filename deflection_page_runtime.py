@@ -273,7 +273,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     # boundary has already refreshed this publication, so delaying it until
     # after diagrams and local calculations only makes the page feel slower.
     render_timing_mark("deflection_page.runtime.summary_checks.start")
-    render_page_explainer_expander(_render_deflection_explainer)
     defl_pack = build_deflection_check_rows_from_state(st.session_state)
     rows = build_deflection_summary_rows(defl_pack.get("rows", []))
     update_results("deflection", {"rows": rows, "summary": defl_pack})
@@ -283,6 +282,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         columns=DEFLECTION_CHECK_SUMMARY_COLUMNS,
     )
     bind_summary_clicks()
+    render_page_explainer_expander(_render_deflection_explainer)
     page_divider()
     render_timing_mark("deflection_page.runtime.summary_checks.end")
 
@@ -440,6 +440,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         st,
         CheckInputPanelConfig(
             page_slug="deflection",
+            mount_closed_bodies=True,
             categories=(
                 CheckInputCategory(
                     "section_geometry",
@@ -789,13 +790,15 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         "deflection_report" in _deflection_results_state
         or "deflection_report_error" in _deflection_results_state
     )
-    if (
-        st.session_state.get("_deflection_core_cache_key") != _deflection_cache_key
-        or not _deflection_params_present
-        or not _deflection_report_present
-    ):
+    # The application result-page boundary refreshes Deflection authoritatively
+    # before this renderer is entered.  If that publication is present, reuse
+    # it rather than rebuilding the same report because this page-local cache
+    # has not yet been seeded in a fresh browser session.  The fallback remains
+    # for isolated/defensive renderer use where no authoritative publication
+    # exists.
+    if not _deflection_params_present or not _deflection_report_present:
         compute_deflection_results(publish=True)
-        st.session_state["_deflection_core_cache_key"] = _deflection_cache_key
+    st.session_state["_deflection_core_cache_key"] = _deflection_cache_key
     render_timing_mark("deflection_page.runtime.compute.publication.end")
 
     # --------------------------------------------------------

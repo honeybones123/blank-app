@@ -39,6 +39,131 @@ def test_inactive_second_row_is_not_counted_by_authoritative_calculation() -> No
     ) == ((6, 16),)
 
 
+def test_zero_top_row_overrides_a_stale_legacy_top_bar_alias() -> None:
+    """A deliberate no-top-steel selection must reach the V2 solver as zero."""
+    snapshot = EngineeringInputSnapshot(
+        geometry={"b": 250.0, "D": 300.0, "L": 2000.0, "sec_shape": "RECT"},
+        materials={"fc": 40.0, "fsy": 500.0},
+        reinforcement={
+            "bot_row_1_bars": 3,
+            "bot_row_1_dia": 10,
+            "cover_bot": 40.0,
+            # Legacy field can remain from an earlier edit.  The row-model
+            # field is the current user choice and must take precedence.
+            "top_bars": 2,
+            "top_row_1_bars": 0,
+            "db_top": 10,
+            "cover_top": 40.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+        },
+        design_actions={"Mu": 0.0, "Vu": 0.0, "Tu": 0.0, "Nu": 0.0},
+    )
+
+    current, _rows, _loads = _beam_inputs_from_snapshot(
+        snapshot, _v2_api(), revision=1
+    )
+    result = _v2_api()["EngineeringCalculator"]().calculate(current).families["bending"]
+
+    assert current.top.bars == 0
+    assert result["steel_layer_faces"] == ("bottom",)
+
+
+def test_top_reinforcement_edit_invalidates_uls_and_sls_publication() -> None:
+    """Canonical top-row edits must refresh every authoritative family."""
+    base = {
+        "b": 300.0,
+        "D": 500.0,
+        "L": 4000.0,
+        "sec_shape": "RECT",
+        "fc": 40.0,
+        "fsy": 500.0,
+        "cover_bot": 40.0,
+        "cover_top": 40.0,
+        "bot_row_1_bars": 4,
+        "bot_row_1_dia": 20,
+        "top_row_1_dia": 16,
+        "top_row_1_spacing": 150.0,
+        # These stale aliases reproduce the formerly visible failure mode.
+        "top_bars": 2,
+        "db_top": 10,
+        "lig_d": 10,
+        "lig_legs": 2,
+        "s_lig": 150.0,
+        "uls_Mstar": 150.0,
+        "sls_Mstar": 100.0,
+    }
+    no_top_state = {**base, "top_row_count": 0, "top_row_1_bars": 0}
+    top_state = {**base, "top_row_count": 1, "top_row_1_bars": 2}
+    no_top_snapshot = build_engineering_input_snapshot_from_resolved_state(no_top_state)
+    top_snapshot = build_engineering_input_snapshot_from_resolved_state(top_state)
+
+    assert no_top_snapshot.engineering_hash != top_snapshot.engineering_hash
+    assert no_top_snapshot.reinforcement["top_row_1_bars"] == 0
+    assert top_snapshot.reinforcement["top_row_1_bars"] == 2
+
+    api = _v2_api()
+    no_top_inputs, _rows, _loads = _beam_inputs_from_snapshot(
+        no_top_snapshot, api, revision=1
+    )
+    top_inputs, _rows, _loads = _beam_inputs_from_snapshot(top_snapshot, api, revision=2)
+    assert no_top_inputs.top.bars == 0
+    assert top_inputs.top.bars == 2
+    assert no_top_inputs.top.diameter_mm == 16
+    assert top_inputs.top.diameter_mm == 16
+
+    no_top_result = calculate_v2_authoritative_result(
+        engineering_snapshot=no_top_snapshot, resolved_inputs=no_top_state, input_revision=1
+    )
+    top_result = calculate_v2_authoritative_result(
+        engineering_snapshot=top_snapshot, resolved_inputs=top_state, input_revision=2
+    )
+    assert no_top_result.engineering_hash == no_top_snapshot.engineering_hash
+    assert top_result.engineering_hash == top_snapshot.engineering_hash
+    assert no_top_result.current_calculations["families"]["bending"]["steel_layer_faces"] == ("bottom",)
+    assert top_result.current_calculations["families"]["bending"]["steel_layer_faces"] == ("bottom", "top")
+    # SLS families are published under the same identity and therefore cannot
+    # reuse the no-top result after a top-steel edit.
+    assert no_top_result.current_calculations["families"]["serviceability"]["action_source"] == "ACTUAL_SLS_ACTIONS"
+    assert top_result.current_calculations["families"]["crack_control"]["action_source"] == "ACTUAL_SLS_ACTIONS"
+
+
+def test_teaching_force_lever_arm_sum_matches_published_nominal_moment() -> None:
+    """Keep the user-facing Check 7 decomposition numerically honest."""
+    snapshot = EngineeringInputSnapshot(
+        geometry={"b": 250.0, "D": 300.0, "L": 2000.0, "sec_shape": "RECT"},
+        materials={"fc": 40.0, "fsy": 500.0},
+        reinforcement={
+            "bot_row_1_bars": 3, "bot_row_1_dia": 10,
+            "top_row_1_bars": 2, "top_row_1_dia": 10,
+            "cover_bot": 40.0, "cover_top": 40.0,
+            "lig_d": 0, "lig_legs": 0, "s_lig": 200.0,
+        },
+        design_actions={"Mu": 200.0, "SLS_M": 100.0},
+    )
+    family = calculate_v2_authoritative_result(
+        engineering_snapshot=snapshot, resolved_inputs={}, input_revision=1
+    ).current_calculations["families"]["bending"]
+    centroid = float(family["concrete_centroid_mm"])
+    teaching_moment_knm = sum(
+        (
+            abs(float(force)) * (float(depth) - centroid)
+            if float(stress) < 0.0
+            else float(force) * (centroid - float(depth))
+        )
+        for depth, stress, force in zip(
+            family["steel_layer_depths_mm"],
+            family["steel_layer_stresses_mpa"],
+            family["steel_layer_forces_n"],
+        )
+    ) / 1e6
+
+    assert teaching_moment_knm == pytest.approx(
+        float(family["Mu_nom_kNm"]), abs=1e-9
+    )
+
+
 def test_engineering_snapshot_payload_is_recursively_immutable() -> None:
     snapshot = EngineeringInputSnapshot(
         geometry={"b": 275.0, "nested": {"values": [1, 2]}},

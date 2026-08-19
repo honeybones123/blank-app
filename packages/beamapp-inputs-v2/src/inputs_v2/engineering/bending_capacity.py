@@ -118,6 +118,8 @@ def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) ->
     top_depth = float(inputs.get("do", 0.0) or 0.0)
     bottom_layers = tuple(inputs.get("bottom_layers", ()) or ())
     top_layers = tuple(inputs.get("top_layers", ()) or ())
+    bottom_layer_labels = tuple(str(value) for value in inputs.get("bottom_layer_labels", ()) or ())
+    top_layer_labels = tuple(str(value) for value in inputs.get("top_layer_labels", ()) or ())
     alpha2, gamma = stress_block_factors(fc)
 
     shape_valid = (
@@ -133,6 +135,13 @@ def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) ->
     ) if D > 0.0 else ()
     transformed_layers = tuple(
         (area, D - y if is_hogging else y, face) for area, y, face in layers_top
+    )
+    supplied_labels = bottom_layer_labels + top_layer_labels
+    layer_labels = tuple(
+        supplied_labels[index]
+        if index < len(supplied_labels)
+        else ("Bottom reinforcement" if layer[2] == "bottom" else "Top reinforcement")
+        for index, layer in enumerate(transformed_layers)
     )
     tension_layers = tuple(
         (area, x) for area, x, face in transformed_layers if face == tension_face
@@ -186,14 +195,27 @@ def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) ->
         high_force = equilibrium(high)[0]
     if low_force > 0.0 or high_force < 0.0:
         dn = float("nan")
+        iteration_trace: tuple[dict[str, float | int], ...] = ()
     else:
-        for _ in range(100):
+        trace_entries: list[dict[str, float | int]] = []
+        for iteration in range(1, 101):
             mid = (low + high) / 2.0
-            if equilibrium(mid)[0] > 0.0:
+            mid_residual, mid_concrete, _mid_centroid, mid_steel = equilibrium(mid)
+            if iteration in {1, 2, 3, 100}:
+                trace_entries.append({
+                    "iteration": iteration,
+                    "dn_mm": mid,
+                    "concrete_force_n": mid_concrete,
+                    "tension_force_n": -sum(min(force, 0.0) for force, _x, _stress in mid_steel),
+                    "compression_steel_force_n": sum(max(force, 0.0) for force, _x, _stress in mid_steel),
+                    "equilibrium_residual_n": mid_residual,
+                })
+            if mid_residual > 0.0:
                 high = mid
             else:
                 low = mid
         dn = (low + high) / 2.0
+        iteration_trace = tuple(trace_entries)
 
     if not math.isfinite(dn):
         demand = max(0.0, float(M_star_kNm or 0.0))
@@ -235,11 +257,13 @@ def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) ->
     return {
         "moment_sign": sign, "M_star_kNm": demand, "phi_Mu_kNm": phi_Mu,
         "Mu_nom_kNm": Mu_nom, "util": util, "status": status,
+        "section_shape": shape,
         "dn_mm": dn, "ku": ku, "phi": phi, "tension_face": tension_face,
         "compression_face": compression_face, "tension_steel_label": tension_steel_label,
         "alpha2": alpha2, "gamma": gamma, "d_mm": d_mm,
         "Ast_tension_mm2": Ast, "shape_equilibrium_valid": True,
         "equilibrium_residual_n": residual,
+        "neutral_axis_iteration_trace": iteration_trace,
         "block_depth_mm": block_depth,
         "concrete_force_n": concrete_force,
         "concrete_centroid_mm": concrete_centroid,
@@ -248,6 +272,12 @@ def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) ->
         "resultant_lever_arm_mm": resultant_lever_arm,
         "compression_steel_area_mm2": compression_steel_area,
         "compression_concrete_area_mm2": compression_concrete_area,
+        "concrete_centroid_mm": concrete_centroid,
+        # Published explanatory evidence: retain the solved layer metadata so
+        # presentation can show F_s,i = A_s,i sigma_s,i without re-solving.
+        "steel_layer_areas_mm2": tuple(layer[0] for layer in transformed_layers),
+        "steel_layer_labels": layer_labels,
+        "steel_layer_faces": tuple(layer[2] for layer in transformed_layers),
         "steel_layer_forces_n": tuple(value[0] for value in steel_values),
         "steel_layer_depths_mm": tuple(value[1] for value in steel_values),
         "steel_layer_stresses_mpa": tuple(value[2] for value in steel_values),
@@ -271,6 +301,8 @@ class BendingCapacityInput:
     web_width_mm: float | None = None
     bottom_layers: tuple[tuple[float, float], ...] = ()
     top_layers: tuple[tuple[float, float], ...] = ()
+    bottom_layer_labels: tuple[str, ...] = ()
+    top_layer_labels: tuple[str, ...] = ()
 
 
 def calculate_bending_capacity(
@@ -286,6 +318,8 @@ def calculate_bending_capacity(
         "flange_thickness_mm": values.flange_thickness_mm or 0.0,
         "web_width_mm": values.web_width_mm or values.width_mm,
         "bottom_layers": values.bottom_layers, "top_layers": values.top_layers,
+        "bottom_layer_labels": values.bottom_layer_labels,
+        "top_layer_labels": values.top_layer_labels,
     })
 
 
