@@ -15,6 +15,19 @@ def test_shared_stable_tabs_are_native_view_only_tabs() -> None:
     assert "doc.addEventListener('pointerdown', snapshot, true)" in source
     assert "window.parent.setTimeout" in source
     assert "session_state" not in source
+    assert 'data-sb-tab-scope=' in source
+
+
+def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:
+    source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "def synchronize_stable_tab_scopes(" in source
+    assert "sessionStorage.setItem" in source
+    assert "targetButtons[safe].click()" in source
+    assert "st_module.radio(" not in source
+    assert "st_module.session_state" not in source
 
 
 def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:

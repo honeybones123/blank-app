@@ -9,6 +9,7 @@ import html
 from typing import Any
 
 from state_runtime_gateway import TAB_KEYS, resolve_widget_key, NONZERO_REQUIRED_SHARED_KEYS, zero_allowed, _audit, mark_user_edit, set_shared
+from ui.design_tokens import shared_layout_token_css
 
 # Global rendered widget keys set (module-level)
 _RENDERED_WIDGET_KEYS: set[str] = set()
@@ -846,13 +847,14 @@ def _register_rendered_key(key: str) -> None:
 def apply_global_widget_css():
     """Global styling for every page (remove +/- etc.)."""
     st.markdown(
-        """
-        <style>
+        "<style>\n"
+        + shared_layout_token_css()
+        + """
         /* Match Inputs page: main content breathing room on all pages */
         .stApp [data-testid="stMainBlockContainer"],
         .stApp .block-container,
         .stApp [data-testid="stAppViewContainer"] .main .block-container {
-            width: calc(100% - 2rem) !important;
+            width: var(--sb-page-content-width) !important;
             max-width: none !important;
             margin-left: auto !important;
             margin-right: auto !important;
@@ -1046,16 +1048,6 @@ def apply_result_page_css():
         """
 <style>
 /* Page chrome: vertical padding comes from apply_global_widget_css (.main .block-container) */
-:root {
-    --sb-heading-size: 1.45rem;
-    --sb-body-size: 0.92rem;
-    /* One vertical rhythm for input summaries and calculation cards. */
-    --sb-card-gap: 1.25rem;
-    --sb-card-radius: 8px;
-    --sb-card-padding-y: 0.72rem;
-    --sb-card-padding-x: 1rem;
-}
-
 .result-page-title {
     /* Match the shared Slab/application-shell H1. */
     font-size: 2.75rem;

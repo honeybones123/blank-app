@@ -10,6 +10,7 @@ panel with a different height is selected.
 from __future__ import annotations
 
 from collections.abc import Sequence
+import html
 from typing import Any
 
 
@@ -95,7 +96,119 @@ def render_stable_tabs(
         """,
         height=0,
     )
+    st_module.markdown(
+        '<style>'
+        'div[data-testid="stElementContainer"]:has([data-sb-tab-scope]){'
+        'display:none!important;height:0!important;min-height:0!important;'
+        'margin:0!important;padding:0!important;}'
+        '</style>'
+        f'<span data-sb-tab-scope="{html.escape(scope_id, quote=True)}" '
+        'aria-hidden="true" style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
     return tuple(st_module.tabs(tab_labels))
 
 
-__all__ = ["render_stable_tabs"]
+def synchronize_stable_tab_scopes(
+    st_module: Any,
+    *,
+    source_scope_id: str,
+    target_scope_id: str,
+    hide_target_tablist: bool = True,
+    storage_key: str | None = None,
+) -> None:
+    """Synchronize two already-mounted native tab groups in the browser.
+
+    The source tab group remains the user-facing selector. The target group is
+    presentation-only and follows it without writing Streamlit widget state or
+    requesting a Python rerun. This keeps one selector positioned independently
+    from the panel it controls while preserving native tab accessibility.
+    """
+
+    source = str(source_scope_id).strip()
+    target = str(target_scope_id).strip()
+    if not source or not target:
+        raise ValueError("source_scope_id and target_scope_id must be non-empty")
+    persisted_key = storage_key or f"sb-tab-sync::{source}::{target}"
+
+    import streamlit.components.v1 as components
+
+    components.html(
+        f"""
+        <script>
+        (function () {{
+          const doc = window.parent.document;
+          const sourceScope = {source!r};
+          const targetScope = {target!r};
+          const storageKey = {persisted_key!r};
+
+          function tabsetFor(scope) {{
+            const marker = doc.querySelector('[data-sb-tab-scope="' + scope + '"]');
+            if (!marker) return null;
+            let node = marker.closest('[data-testid="stElementContainer"]');
+            while (node && (node = node.nextElementSibling)) {{
+              const tabset = node.matches?.('[data-testid="stTabs"]')
+                ? node
+                : node.querySelector?.('[data-testid="stTabs"]');
+              if (tabset) {{
+                tabset.dataset.sbTabScope = scope;
+                return tabset;
+              }}
+            }}
+            return null;
+          }}
+
+          function install() {{
+            const sourceTabs = tabsetFor(sourceScope);
+            const targetTabs = tabsetFor(targetScope);
+            if (!sourceTabs || !targetTabs) return false;
+            const sourceButtons = [...sourceTabs.querySelectorAll('[role="tab"]')];
+            const targetButtons = [...targetTabs.querySelectorAll('[role="tab"]')];
+            if (!sourceButtons.length || sourceButtons.length !== targetButtons.length) return false;
+
+            if ({str(bool(hide_target_tablist)).lower()}) {{
+              const targetList = targetTabs.querySelector('[role="tablist"]');
+              if (targetList) targetList.style.display = 'none';
+            }}
+
+            function select(index, persist) {{
+              const safe = Math.max(0, Math.min(index, targetButtons.length - 1));
+              if (targetButtons[safe].getAttribute('aria-selected') !== 'true') {{
+                targetButtons[safe].click();
+              }}
+              if (persist) window.parent.sessionStorage.setItem(storageKey, String(safe));
+            }}
+
+            sourceButtons.forEach((button, index) => {{
+              if (button.dataset.sbSyncInstalled === targetScope) return;
+              button.dataset.sbSyncInstalled = targetScope;
+              button.addEventListener('click', () => select(index, true));
+              button.addEventListener('keydown', (event) => {{
+                if (event.key === 'Enter' || event.key === ' ') select(index, true);
+              }});
+            }});
+
+            const stored = Number(window.parent.sessionStorage.getItem(storageKey));
+            const initial = Number.isInteger(stored) ? stored : 0;
+            if (sourceButtons[initial] && sourceButtons[initial].getAttribute('aria-selected') !== 'true') {{
+              sourceButtons[initial].click();
+            }}
+            select(initial, false);
+            return true;
+          }}
+
+          if (!install()) {{
+            let attempts = 0;
+            const timer = window.parent.setInterval(() => {{
+              attempts += 1;
+              if (install() || attempts > 40) window.parent.clearInterval(timer);
+            }}, 50);
+          }}
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
+__all__ = ["render_stable_tabs", "synchronize_stable_tab_scopes"]

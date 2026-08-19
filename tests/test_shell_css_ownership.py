@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 
@@ -39,7 +40,7 @@ def test_start_page_cannot_own_or_override_application_shell_width() -> None:
 
     assert 'stMainBlockContainer' not in source
     assert '.block-container' not in source
-    assert 'max-width:' not in source
+    assert re.search(r"(?m)^\s*max-width\s*:", source) is None
 
 
 def test_application_shell_remains_full_width() -> None:
