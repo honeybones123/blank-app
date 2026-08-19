@@ -150,18 +150,17 @@ def _render_authoritative_uls_steps(
     Es_uls = float(get_param("Es") or 200000.0)
     eps_sy = fsy / Es_uls if Es_uls > 0.0 else float("nan")
     steel_layer_lines = []
-    layer_compatibility_sections = []
     stress_summary_parts = []
     final_layer_table_lines = [
         "| Layer | $A_{s,i}$ (mm²) | $y_i$ (mm) | Relative to NA | $\\varepsilon_{s,i}$ | $f_{s,i}$ (MPa) | State | $F_{s,i}$ (kN) |",
         "|---|---:|---:|---|---:|---:|---|---:|",
     ]
     final_layer_table_lines[0] = (
-        "| Layer | $A_{s,i}$ (mm^2) | $y_i$ (mm) | $\\varepsilon_{s,i}$ | "
+        "| Layer | $y_i$ (mm) | $\\varepsilon_{s,i}$ | "
         "Elastic trial stress (MPa) | "
-        "Final steel stress (MPa) | State | $F_{s,i}$ (kN) |"
+        "Final steel stress (MPa) | State |"
     )
-    final_layer_table_lines[1] = "|---|---:|---:|---:|---:|---:|---|---:|"
+    final_layer_table_lines[1] = "|---|---:|---:|---:|---:|---|"
     for index, (area, depth, stress, force) in enumerate(
         zip(layer_areas, steel_depths, stresses, layer_forces), start=1
     ):
@@ -173,33 +172,17 @@ def _render_authoritative_uls_steps(
         elastic_trial_stress, yielded, state_label = _teaching_steel_response_state(
             strain=strain, final_stress_mpa=stress, Es_mpa=Es_uls, fsy_mpa=fsy
         )
-        comparison_symbol = ">" if yielded else r"\leq"
-        force_label = "Tension force" if role == "tension" else "Compression force"
         stress_summary_parts.append(f"{label}: {stress:.1f} MPa")
         steel_layer_lines.append(
             f"- {label} ({role}): $A_{{s,{index}}}={area:.1f}\\,\\text{{mm}}^2$, "
             f"$\\sigma_{{s,{index}}}={stress:.1f}\\,\\text{{MPa}}$, "
             f"$F_{{s,{index}}}={displayed_force:.3f}\\,\\text{{kN}}$"
         )
-        layer_compatibility_sections.append(rf"""
-**{label}** ($A_{{s,{index}}}={area:.2f}\,\text{{mm}}^2$, $y_{{{index}}}={depth:.1f}\,\text{{mm}}$)
-
-$$\varepsilon_{{s,{index}}}=-0.003\frac{{{depth:.1f}-{dn:.3f}}}{{{dn:.3f}}}={strain:.6f}$$
-
-$$f_{{s,\mathrm{{elastic}},{index}}}=E_s\varepsilon_{{s,{index}}}=({Es_uls:.0f})({strain:.6f})={elastic_trial_stress:.1f}\,\text{{MPa}}$$
-
-$$|f_{{s,\mathrm{{elastic}},{index}}}|={abs(elastic_trial_stress):.1f}\,\text{{MPa}} {comparison_symbol} f_{{sy}}={fsy:.1f}\,\text{{MPa}}$$
-
-$$f_{{s,{index}}}={stress:.1f}\,\text{{MPa}}\quad\text{{({state_label})}}$$
-
-$$F_{{s,{index}}}={displayed_force:.3f}\,\text{{kN}}\quad\text{{({force_label.lower()})}}$$
-""")
         final_layer_table_lines.append(
-            f"| {label} | {area:.2f} | {depth:.1f} | {strain:.6f} | "
-            f"{elastic_trial_stress:.1f} | {stress:.1f} | {state_label} | {force / 1000.0:.3f} |"
+            f"| {label} | {depth:.1f} | {strain:.6f} | {elastic_trial_stress:.1f} | "
+            f"{stress:.1f} | {state_label} |"
         )
     steel_layer_text = "\n".join(steel_layer_lines) or "- Layer areas and forces were not published."
-    layer_compatibility_text = "\n".join(layer_compatibility_sections)
     identified_stress_text = "; ".join(stress_summary_parts) or stress_text
     final_layer_table_md = "\n".join(final_layer_table_lines)
     section_shape = str(top_results.get("section_shape", "RECT") or "RECT").upper()
@@ -286,99 +269,73 @@ $y_{{C_c}}={concrete_centroid:.1f}\,\text{{mm}}$ from the extreme compression fa
         neutral_axis_method_md = rf"""
 **Purpose**
 
-Determine the method required to find the neutral-axis depth $d_n$ that satisfies:
+Determine how the neutral-axis depth $d_n$ is found from internal force equilibrium.
 
 $$\boxed{{\sum C=\sum T}}$$
 
-**Inputs and symbol meanings**
-
-- $b={b:.1f}\,\text{{mm}}$: beam width; $f'_c={fc:.1f}\,\text{{MPa}}$: concrete strength.
-- $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$: rectangular stress-block factors.
-- $E_s={Es_uls:.0f}\,\text{{MPa}}$; $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$.
-- $\varepsilon_{{cu}}=0.003$; $\varepsilon_{{sy}}=f_{{sy}}/E_s={eps_sy:.6f}$.
-- $A_{{s,1}}={layer_areas[0]:.2f}\,\text{{mm}}^2$ and $y_1={steel_depths[0]:.1f}\,\text{{mm}}$.
-- $d_n$: neutral-axis depth; $a=\gamma d_n$: equivalent stress-block depth.
-
-**Concrete compression relationship**
-
 $$C_c=\alpha_2f'_cba=\alpha_2f'_cb\gamma d_n$$
-
-The concrete compression force increases directly with neutral-axis depth.
 
 **Direct single-layer solution**
 
-One longitudinal reinforcement layer is present. For a yielded tension layer:
-
 $$T=A_{{st}}f_{{sy}}$$
+
+$$C_c=T$$
 
 $$\boxed{{d_n=\frac{{A_{{st}}f_{{sy}}}}{{\alpha_2f'_cb\gamma}}}}$$
 
-The neutral-axis depth can therefore be obtained directly from force equilibrium.
-The strain state and ductility are verified in the following checks.
+With one active yielded tension layer, $d_n$ can be obtained directly from force
+equilibrium.
 """
     else:
         neutral_axis_method_md = rf"""
 **Purpose**
 
-Determine the method required to find the neutral-axis depth $d_n$ that satisfies:
+Determine how the neutral-axis depth $d_n$ is found from internal force equilibrium.
 
 $$\boxed{{\sum C=\sum T}}$$
 
-**Inputs and symbol meanings**
+The app starts with a trial $d_n$, calculates the concrete and reinforcement
+forces, checks equilibrium, and adjusts $d_n$ until the section balances.
 
-- $b={b:.1f}\,\text{{mm}}$: beam width; $f'_c={fc:.1f}\,\text{{MPa}}$: concrete strength.
-- $\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$: rectangular stress-block factors.
-- $E_s={Es_uls:.0f}\,\text{{MPa}}$; $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$.
-- $\varepsilon_{{cu}}=0.003$; $\varepsilon_{{sy}}=f_{{sy}}/E_s={eps_sy:.6f}$.
-- $d_n$: neutral-axis depth; $a=\gamma d_n$: equivalent stress-block depth.
+**Step 1 — Concrete compression**
 
-**Concrete compression relationship**
+Calculate the concrete compression force for the trial neutral-axis depth.
 
-$$C_c=\alpha_2f'_cba=\alpha_2f'_cb\gamma d_n$$
+$$C_c=\alpha_2 f'_c b\gamma d_n$$
 
-The concrete compression force increases directly with neutral-axis depth.
+**Step 2 — Reinforcement strain**
 
-**General multi-layer solution**
+Calculate the strain in each reinforcement layer from its position relative to
+the neutral axis.
 
-With multiple reinforcement layers, the force in every layer depends on its
-strain relative to the unknown neutral axis. The steel forces therefore cannot
-all be known before $d_n$ is known.
+$$\varepsilon_{{s,i}}=-\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
 
-{geometry_table_md}
+**Step 3 — Reinforcement stress**
 
-For every layer:
+Convert the steel strain into stress and limit it to the steel yield strength.
 
-$$\varepsilon_{{s,i}}=\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
+$$f_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})\min\left(E_s|\varepsilon_{{s,i}}|,f_{{sy}}\right)$$
 
-$$f_{{s,i}}\text{{ is obtained from }}E_s\varepsilon_{{s,i}}\text{{ and limited to }}\pm f_{{sy}}$$
+**Step 4 — Reinforcement force**
+
+Convert the steel stress into the force carried by each reinforcement layer.
 
 $$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
 
-**“Top” and “bottom” describe physical location only. They do not determine
-whether a layer is in tension or compression.** With compression at the top face:
+**Step 5 — Equilibrium residual**
 
-$$\boxed{{y_i>d_n\Rightarrow\text{{tension side}}}}$$
-
-$$\boxed{{y_i<d_n\Rightarrow\text{{compression side}}}}$$
-
-Because $d_n$ is not yet known, the final state of an additional layer is not
-known in advance.
-
-**Hand-calculation process**
-
-1. Assume a trial $d_n$.
-2. Calculate $C_c=\alpha_2f'_cb\gamma d_n$.
-3. Calculate strain, steel stress and force in every reinforcement layer.
-4. Compare total compression with total tension.
-5. Adjust $d_n$ and repeat until $\boxed{{\sum C\approx\sum T}}$.
-
-$$d_n\rightarrow\text{{steel strains}}\rightarrow\text{{steel stresses}}\rightarrow\text{{steel forces}}\rightarrow R(d_n)\rightarrow\text{{updated }}d_n$$
+Calculate the difference between total compression and total tension.
 
 $$R(d_n)=\sum C-\sum T$$
 
-**The app performs this repeated neutral-axis search automatically, so the user
-does not need to keep guessing $d_n$ manually.** The section now proceeds to the
-equilibrium check and converged depth.
+**Step 6 — Accept the neutral axis**
+
+Accept the neutral-axis depth when equilibrium is reached.
+
+$$R(d_n)\approx0$$
+
+If $R(d_n)\ne0$, adjust $d_n$ and repeat Steps 1–5 until $R(d_n)\approx0$.
+Check 3 shows the converged neutral-axis depth and resulting reinforcement response.
 """
     neutral_axis_equilibrium_md = rf"""
 **Purpose**
@@ -695,15 +652,43 @@ $$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
                 st.markdown(f"### {heading}\n\n{body}")
         return render_info
 
-    def stress_block_diagram(key: str, title: str, *, show_dn: bool, show_lever_arm: bool):
+    def stress_block_diagram(
+        key: str,
+        title: str,
+        *,
+        show_dn: bool,
+        show_lever_arm: bool,
+        trial_neutral_axis: bool = False,
+    ):
         def render_diagram():
+            # Check 2 teaches the trial-and-balance method. Its diagram must
+            # not disclose the converged neutral-axis result shown in Check 3.
+            diagram_dn = max(1.0, min(0.35 * D, D - 1.0)) if trial_neutral_axis else dn
+            diagram_a = gamma * diagram_dn if trial_neutral_axis else block_depth
             fig = _make_uls_stress_block_figure(
-                b_mm=b, D_mm=D, d_mm=d, dn_mm=dn, a_mm=block_depth,
+                b_mm=b, D_mm=D, d_mm=d, dn_mm=diagram_dn, a_mm=diagram_a,
                 alpha2=alpha2, gamma=gamma, fc=fc, fsy=fsy,
-                show_lever_arm=show_lever_arm, show_dn=show_dn,
+                show_lever_arm=show_lever_arm,
+                show_dn=show_dn or trial_neutral_axis,
                 show_alpha_label=True, show_C=False, C_N=None,
-                variant="13" if show_dn else "11", moment_sign=moment_sign,
+                variant="13" if (show_dn or trial_neutral_axis) else "11",
+                moment_sign=moment_sign,
             )
+            if trial_neutral_axis:
+                for annotation in fig.layout.annotations or ():
+                    label = str(annotation.text or "")
+                    colour = str(getattr(annotation.font, "color", "") or "").lower()
+                    if colour == "red" and label.lstrip().startswith("a ="):
+                        annotation.text = "a = γ d<sub>n</sub>"
+                    elif colour == "blue" and "mm" in label:
+                        annotation.text = "Trial neutral axis d<sub>n</sub>"
+                        annotation.xref = "paper"
+                        annotation.x = 0.98
+                        annotation.xanchor = "right"
+                        annotation.yshift = 14
+                    elif colour == "blue" and label.lstrip().startswith("T ("):
+                        annotation.text = "f<sub>s</sub> = E<sub>s</sub> ε<sub>s</sub>"
+                fig.update_layout(height=320, margin=dict(l=0, r=10, t=45, b=10))
             render_plotly_diagram(fig, key=key, title=title, config={"displayModeBar": False})
         return render_diagram
 
@@ -718,12 +703,31 @@ $$a=\gamma d_n={gamma:.3f}\times {dn:.6f}={block_depth:.3f}\,\text{{mm}}$$
             render_plotly_diagram(fig, key=key, title=title, config={"displayModeBar": False})
         return render_diagram
 
-    def strain_diagram():
+    def strain_diagram(key: str, *, title: str = "ULS strain compatibility", trial: bool = False):
         state = _stress_strain_state("ULS", moment_sign=moment_sign)
         fig = _plot_strain_profile(state, state_label="ULS", layout=None, moment_sign=moment_sign)
+        if trial:
+            for annotation in fig.layout.annotations or ():
+                colour = str(getattr(annotation.font, "color", "") or "").lower()
+                if colour == "red":
+                    annotation.text = "ε<sub>cu</sub>"
+                elif colour == "blue":
+                    annotation.text = "Trial ε<sub>s</sub>"
+            fig.update_layout(height=320, margin=dict(l=0, r=10, t=45, b=10))
         render_plotly_diagram(
-            fig, key=f"bending_uls_authoritative_strain_{moment_sign}",
-            title="ULS strain compatibility", config={"displayModeBar": False},
+            fig, key=key,
+            title=title, config={"displayModeBar": False},
+        )
+
+    def trial_method_diagrams():
+        stress_block_diagram(
+            "bending_uls_authoritative_method_diagram", "Trial stress block",
+            show_dn=False, show_lever_arm=False, trial_neutral_axis=True,
+        )()
+        strain_diagram(
+            f"bending_uls_authoritative_check2_strain_{moment_sign}",
+            title="Trial strain compatibility",
+            trial=True,
         )
 
     step_expander_calcbox(
@@ -802,9 +806,8 @@ resultant, its line of action and therefore the section's bending resistance.
         details_md=rf"""
 **Purpose**
 
-Using the converged neutral-axis depth from Check 3, calculate the final strain,
-stress and force in every reinforcement layer. This explains what each layer is
-actually doing at ULS.
+Using the neutral-axis depth from Check 3, calculate the final strain and stress
+in each active reinforcement layer.
 
 **Inputs**
 
@@ -812,44 +815,20 @@ actually doing at ULS.
 - Steel elastic modulus: $E_s={Es_uls:.0f}\,\text{{MPa}}$
 - Steel yield strength: $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$
 
-**Strain compatibility**
-
-**Step 1 — calculate steel strain**
-
 Negative stress denotes tension and positive stress denotes compression in this
-bending sign convention. For every active layer:
+bending sign convention.
 
 $$\varepsilon_{{s,i}}=-\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}$$
 
-$$\varepsilon_{{sy}}=\frac{{f_{{sy}}}}{{E_s}}=\frac{{{fsy:.1f}}}{{{Es_uls:.0f}}}={eps_sy:.6f}$$
-
-**Step 2 — calculate elastic trial stress and compare with yield**
-
 $$f_{{s,\mathrm{{elastic}},i}}=E_s\varepsilon_{{s,i}}$$
 
-This is the stress the reinforcement would have if it remained elastic.
+$$f_{{s,i}}=E_s\varepsilon_{{s,i}}\quad\text{{if }}|E_s\varepsilon_{{s,i}}|\leq f_{{sy}}$$
 
-If the elastic trial stress is within yield:
+$$f_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})f_{{sy}}\quad\text{{if }}|E_s\varepsilon_{{s,i}}|>f_{{sy}}$$
 
-$$|E_s\varepsilon_{{s,i}}|\leq f_{{sy}}\quad\Rightarrow\quad f_{{s,i}}=E_s\varepsilon_{{s,i}}$$
+**Final reinforcement strain and stress state**
 
-If the elastic trial stress exceeds yield:
-
-$$|E_s\varepsilon_{{s,i}}|>f_{{sy}}\quad\Rightarrow\quad f_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})f_{{sy}}$$
-
-The elastic trial stress is calculated first. If its magnitude exceeds the
-yield strength, the final steel stress is capped at $\pm f_{{sy}}$.
-Steel has yielded, so the final stress is limited to the yield strength.
-Steel remains elastic. This occurs when the elastic trial stress is within yield.
-
-**Step 3 — calculate the force in each layer**
-
-$$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
-
-Layers are classified from their calculated position and stress, not from the
-words “top” or “bottom” in their names.
-
-{layer_compatibility_text}
+{final_layer_table_md}
 
 **Result:** {identified_stress_text}
 """,
@@ -858,8 +837,7 @@ words “top” or “bottom” in their names.
             "Reinforcement strains and stresses", "Check 4 — Reinforcement strains and stresses",
             r"""
 Using the neutral-axis depth already solved in Check 3, this check calculates
-the final strain, elastic trial stress, final steel stress and force for each
-active reinforcement layer.
+the final strain and final steel stress for each active reinforcement layer.
 
 #### Why this check matters
 
@@ -874,9 +852,12 @@ stress-block provisions [2].
 [2] AS 3600:2018, Clause 8.1.3 — equivalent rectangular stress block.
 """,
         ),
-        diagram_fn=strain_diagram,
+        diagram_fn=lambda: strain_diagram(
+            f"bending_uls_authoritative_check4_strain_{moment_sign}"
+        ),
     )
     render_timing_mark("bending_page.uls_check.1.end")
+
     step_expander_calcbox(
         uid="bending_uls_authoritative_method",
         summary_line=(
@@ -885,10 +866,7 @@ stress-block provisions [2].
         ),
         details_md=neutral_axis_method_md,
         status=None,
-        diagram_fn=stress_block_diagram(
-            "bending_uls_authoritative_method_diagram", "Concrete stress block",
-            show_dn=False, show_lever_arm=False,
-        ),
+        diagram_fn=trial_method_diagrams,
         content_before=info_control(
             "Neutral-axis solution method",
             "Check 2 — Neutral-axis solution method",
@@ -897,16 +875,61 @@ The neutral axis is the position through the section where longitudinal
 bending strain is zero. Concrete on the compression side and reinforcement
 on both sides of this position contribute compatible internal forces.
 
-#### How it is found
+The neutral-axis depth $d_n$ is the distance from the extreme compression face
+to the point in the section where longitudinal strain is zero. It is the key
+unknown because changing $d_n$ changes both concrete compression and
+reinforcement strain and force.
 
-The authoritative solver moves the neutral axis until total compression and
-tension balance [1]. The resulting depth controls the compression zone,
-reinforcement strains, ductility and internal lever arm.
+#### Strain, stress and reinforcement force
 
-The stress-block depth $a$ differs from $d_n$ because it represents the
-equivalent rectangular compression block [2]:
+At ULS, plane sections are assumed to remain plane, so strain varies linearly
+through the section. Once a trial $d_n$ is chosen, the strain at reinforcement
+layer $i$, at depth $y_i$, is:
+
+$$\varepsilon_{s,i}=-\varepsilon_{cu}\frac{y_i-d_n}{d_n}$$
+
+where $\varepsilon_{s,i}$ is the layer strain and $\varepsilon_{cu}$ is the
+ultimate concrete compressive strain. While the reinforcement remains elastic:
+
+$$f_{s,i}=E_s\varepsilon_{s,i}$$
+
+Its final stress is limited by the yield strength:
+
+$$|f_{s,i}|\leq f_{sy}$$
+
+The force carried by that layer is:
+
+$$F_{s,i}=A_{s,i}f_{s,i}$$
+
+Here $E_s$ is the steel elastic modulus, $f_{sy}$ is the steel yield strength,
+and $A_{s,i}$ is the layer area [1].
+“Top” and “bottom” are physical locations only: the tension/compression state
+depends on the layer's position relative to the solved neutral axis.
+
+#### Concrete compression and equilibrium
+
+The same trial $d_n$ defines the AS 3600 equivalent concrete compression-block
+depth [2]:
 
 $$a=\gamma d_n$$
+
+and the concrete compression resultant:
+
+$$C_c=\alpha_2f'_cb\gamma d_n$$
+
+Thus $d_n$ affects both concrete compression and reinforcement response:
+
+$$d_n\rightarrow C_c,\qquad d_n\rightarrow\varepsilon_{s,i}\rightarrow f_{s,i}\rightarrow F_{s,i}$$
+
+The correct value is the one at which internal compression and tension balance:
+
+$$\boxed{\sum C=\sum T}$$
+
+$$\boxed{R(d_n)=\sum C-\sum T=0}$$
+
+With several reinforcement layers, their stresses cannot generally be known
+before $d_n$ is known because each layer has a different position and strain.
+The app therefore repeats trial values of $d_n$ until equilibrium is reached.
 
 #### Why this check matters
 
@@ -956,7 +979,8 @@ evidence and the final neutral-axis depth.
         details_md=rf"""
 **Purpose**
 
-Calculate the internal ULS force resultants using the AS 3600 equivalent rectangular concrete stress block and the calculated reinforcement stresses.
+Using the final steel stresses from Check 4, calculate the internal ULS force
+resultants.
 
 **Inputs**
 
@@ -979,7 +1003,7 @@ measured from the extreme compression face.
 
 **Reinforcement force resultants**
 
-$$F_{{s,i}}=A_{{s,i}}\sigma_{{s,i}}$$
+$$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
 
 Using the authoritative calculation sign convention:
 
