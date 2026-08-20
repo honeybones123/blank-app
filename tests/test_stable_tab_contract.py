@@ -20,6 +20,27 @@ def test_shared_stable_tabs_are_native_view_only_tabs() -> None:
     assert 'data-sb-tab-scope=' in source
 
 
+def test_preloaded_plotly_state_switch_is_browser_only() -> None:
+    source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "switchPreloadedPlotlyVisibility(group, requestedIndex, recordTiming)" in source
+    assert "scheduleCurrentPlotlyVisibility(group)" in source
+    assert "data-sb-last-plotly-visibility-switch-ms" in source
+    assert "requestAnimationFrame" in source
+    assert "node.dataset.sbPlotlyState" in source
+    assert "data-sb-preloaded-plotly-state" in source
+    assert "plot.setAttribute('data-sb-preloaded-plotly-state'" in source
+    assert "node.style.opacity" not in source
+    assert "data-sb-trace-state-order" in source
+    assert "node.getAttribute('data-index')" in source
+    assert "Plotly.react" not in source
+    assert "Plotly.update" not in source
+    assert "Plotly.restyle" not in source
+    assert "st_module.session_state" not in source
+
+
 def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:
     source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"

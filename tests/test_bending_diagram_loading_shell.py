@@ -17,17 +17,29 @@ def test_bending_publishes_fixed_diagram_shell_before_calculation_cards() -> Non
     assert "if not diagram_rendered_early:" in source
 
 
-def test_bending_shell_is_published_in_a_stable_container_immediately() -> None:
+def test_bending_shells_publish_back_to_back_after_stable_positions_exist() -> None:
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
 
     shell_container = source.index("diagram_shell_container = st.container()")
+    slot = source.index("diagram_section_placeholder = st.empty()", shell_container)
+    inputs = source.index("inputs_placeholder = st.empty()", slot)
+    calculation_container = source.index("calc_blocks_container = st.container()", inputs)
     first_shell = source.index(
         "render_bending_diagram_loading_shell(\n            diagram_shell_container",
-        shell_container,
+        calculation_container,
     )
-    slot = source.index("diagram_section_placeholder = st.empty()", first_shell)
-    inputs = source.index("inputs_placeholder = st.empty()", slot)
-    assert shell_container < first_shell < slot < inputs
+    calculation_shell = source.index(
+        "render_bending_calculation_loading_shell(\n            calc_blocks_container",
+        first_shell,
+    )
+    assert (
+        shell_container
+        < slot
+        < inputs
+        < calculation_container
+        < first_shell
+        < calculation_shell
+    )
 
 
 def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None:

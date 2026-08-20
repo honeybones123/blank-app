@@ -1162,9 +1162,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         )
         render_timing_mark("bending_page.runtime.summary_table.rendered")
 
-        render_timing_mark("bending_page.runtime.explainer.start")
-        render_page_explainer_expander(_render_bending_explainer)
-        render_timing_mark("bending_page.runtime.explainer.end")
+        # Reserve the explainer's exact page position, but defer its collapsed
+        # widget payload until after the two visible loading regions stream.
+        explainer_placeholder = st.empty()
 
         # Handle clicked summary row: set mode, expand step, set pending scroll
         if clicked_uid:
@@ -1203,7 +1203,36 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
             st.session_state["bending_pending_scroll_uid"] = target_uid
 
-        # Bind JavaScript for opening expanders and scrolling
+        diagram_shell_generation = int(
+            st.session_state.get("_bending_diagram_shell_generation", 0) or 0
+        ) + 1
+        st.session_state["_bending_diagram_shell_generation"] = diagram_shell_generation
+        diagram_shell_container = st.container()
+        diagram_section_placeholder = st.empty()
+        inputs_placeholder = st.empty()
+        # The detailed tab body is interactive.  Keep a stable multi-element
+        # container for it instead of replacing an ``st.empty`` slot on every
+        # tab click; replacement remounts the whole calculation subtree and
+        # makes the browser lose its scroll position.
+        calc_blocks_container = st.container()
+        # Both target containers already have their final page positions.
+        # Publish their contents back-to-back only after those positions are
+        # allocated so the intervening placeholders cannot split the visible
+        # shell across two browser paint windows.
+        _bending_diagrams_section.render_bending_diagram_loading_shell(
+            diagram_shell_container,
+            generation=diagram_shell_generation,
+        )
+        _bending_diagrams_section.render_bending_calculation_loading_shell(
+            calc_blocks_container
+        )
+        with explainer_placeholder:
+            render_timing_mark("bending_page.runtime.explainer.start")
+            render_page_explainer_expander(_render_bending_explainer)
+            render_timing_mark("bending_page.runtime.explainer.end")
+        # Browser-only summary navigation does not participate in the first
+        # visible Bending shell. Install it after both reserved regions have
+        # streamed so its component iframe cannot delay those milestones.
         bind_summary_clicks()
 
         # Keep the Bending page on one spacing rhythm across major headings,
@@ -1215,34 +1244,26 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                Streamlit element-wrapper contribution to vertical spacing. */
             div[data-testid="stElementContainer"]:has(iframe[height="0"]),
             div[data-testid="stElementContainer"]:has(iframe[style*="height: 0px"]) {
+                display: none !important;
                 height: 0 !important;
                 min-height: 0 !important;
                 margin: 0 !important;
                 padding: 0 !important;
             }
+            /* The deferred Bending summary binder must execute, so keep its
+               iframe mounted while cancelling only the flex-row gap that its
+               zero-height wrapper would otherwise add at the page tail. */
+            div[data-testid="stElementContainer"]:has(
+                iframe[srcdoc*="Try to find Streamlit tabs"]
+            ) {
+                height: 0 !important;
+                min-height: 0 !important;
+                margin: 0 0 -10.328125px !important;
+                padding: 0 !important;
+            }
             </style>
             """,
             unsafe_allow_html=True,
-        )
-
-        diagram_shell_generation = int(
-            st.session_state.get("_bending_diagram_shell_generation", 0) or 0
-        ) + 1
-        st.session_state["_bending_diagram_shell_generation"] = diagram_shell_generation
-        diagram_shell_container = st.container()
-        _bending_diagrams_section.render_bending_diagram_loading_shell(
-            diagram_shell_container,
-            generation=diagram_shell_generation,
-        )
-        diagram_section_placeholder = st.empty()
-        inputs_placeholder = st.empty()
-        # The detailed tab body is interactive.  Keep a stable multi-element
-        # container for it instead of replacing an ``st.empty`` slot on every
-        # tab click; replacement remounts the whole calculation subtree and
-        # makes the browser lose its scroll position.
-        calc_blocks_container = st.container()
-        _bending_diagrams_section.render_bending_calculation_loading_shell(
-            calc_blocks_container
         )
         render_timing_mark("bending_page.runtime.presentation.summary.end")
 

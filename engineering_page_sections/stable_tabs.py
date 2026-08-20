@@ -55,6 +55,16 @@ def render_stable_tabs(
             '[data-testid="stTabs"][data-sb-stable-panel-height]',
             ' [role="tabpanel"] {{',
             ' min-height: var(--sb-stable-panel-height) !important;',
+            '}}',
+            '[data-sb-preloaded-plotly-state] .scatterlayer .trace[data-sb-plotly-state],',
+            '[data-sb-preloaded-plotly-state] g.shapelayer .shape-group[data-sb-plotly-state],',
+            '[data-sb-preloaded-plotly-state] .annotation[data-sb-plotly-state] {{',
+            ' opacity: 0 !important;',
+            '}}',
+            '[data-sb-preloaded-plotly-state="0"] [data-sb-plotly-state="0"],',
+            '[data-sb-preloaded-plotly-state="1"] [data-sb-plotly-state="1"],',
+            '[data-sb-preloaded-plotly-state="2"] [data-sb-plotly-state="2"] {{',
+            ' opacity: 1 !important;',
             '}}'
           ].join('');
           doc.head.appendChild(style);
@@ -90,6 +100,9 @@ def render_stable_tabs(
           function tagWidgetMarkers() {{
             doc.querySelectorAll('[data-sb-widget-scroll-marker]').forEach(function (marker) {{
               const scope = marker.getAttribute('data-sb-widget-scroll-marker');
+              const plotlyVisibilityScope = marker.getAttribute(
+                'data-sb-widget-target-plotly-visibility'
+              );
               let node = marker.closest('[data-testid="stElementContainer"]');
               while (node && (node = node.previousElementSibling)) {{
                 const group = node.matches?.('[role="radiogroup"]')
@@ -97,6 +110,10 @@ def render_stable_tabs(
                   : node.querySelector?.('[role="radiogroup"]');
                 if (group) {{
                   group.dataset.sbStableWidgetScroll = scope;
+                  if (plotlyVisibilityScope) {{
+                    group.dataset.sbTargetPlotlyVisibility = plotlyVisibilityScope;
+                    scheduleCurrentPlotlyVisibility(group);
+                  }}
                   break;
                 }}
               }}
@@ -104,6 +121,90 @@ def render_stable_tabs(
           }}
 
           const pendingAttribute = 'data-sb-pending-widget-scroll';
+          function switchPreloadedPlotlyVisibility(group, requestedIndex, recordTiming) {{
+            const scope = group.dataset.sbTargetPlotlyVisibility;
+            if (!scope) return;
+            const marker = doc.querySelector(
+              '[data-sb-plotly-visibility-scope="' + CSS.escape(scope) + '"]'
+            );
+            if (!marker) return;
+            let node = marker.closest('[data-testid="stElementContainer"]');
+            let plot = null;
+            while (node && !plot && (node = node.nextElementSibling)) {{
+              plot = node.querySelector?.('.js-plotly-plot') || null;
+            }}
+            if (!plot) return;
+            const counts = function (name) {{
+              return (marker.getAttribute(name) || '').split(',').map(Number);
+            }};
+            const stateForLayoutIndex = function (layoutIndex, groupCounts) {{
+              let offset = 0;
+              for (let groupIndex = 0; groupIndex < groupCounts.length; groupIndex += 1) {{
+                offset += groupCounts[groupIndex];
+                if (layoutIndex < offset) return groupIndex;
+              }}
+              return -1;
+            }};
+            const tagIndexedGroup = function (nodes, groupCounts) {{
+              nodes.forEach(function (node, fallbackIndex) {{
+                const parsedIndex = Number(node.getAttribute('data-index'));
+                const layoutIndex = Number.isFinite(parsedIndex) ? parsedIndex : fallbackIndex;
+                const groupIndex = stateForLayoutIndex(layoutIndex, groupCounts);
+                node.dataset.sbPlotlyState = String(groupIndex);
+              }});
+            }};
+            const tagTraceGroup = function (nodes) {{
+              const stateOrder = (marker.getAttribute(
+                'data-sb-trace-state-order'
+              ) || '').split(',').map(Number);
+              nodes.forEach(function (node, domIndex) {{
+                node.dataset.sbPlotlyState = String(stateOrder[domIndex]);
+              }});
+            }};
+            const started = window.parent.performance.now();
+            const traceNodes = [...plot.querySelectorAll('.scatterlayer .trace')];
+            const shapeNodes = [...plot.querySelectorAll('g.shapelayer .shape-group')];
+            const annotationNodes = [...plot.querySelectorAll('.annotation')];
+            const visibilityNodes = traceNodes.concat(shapeNodes, annotationNodes);
+            if (
+              plot.dataset.sbPlotlyVisibilityTagged !== '1'
+              || visibilityNodes.some(node => !node.hasAttribute('data-sb-plotly-state'))
+            ) {{
+              tagTraceGroup(traceNodes);
+              tagIndexedGroup(
+                shapeNodes,
+                counts('data-sb-shape-groups')
+              );
+              tagIndexedGroup(
+                annotationNodes,
+                counts('data-sb-annotation-groups')
+              );
+              plot.dataset.sbPlotlyVisibilityTagged = '1';
+            }}
+            plot.setAttribute('data-sb-preloaded-plotly-state', String(requestedIndex));
+            if (recordTiming) {{
+              window.parent.requestAnimationFrame(function () {{
+                doc.documentElement.setAttribute(
+                  'data-sb-last-plotly-visibility-switch-ms',
+                  String(window.parent.performance.now() - started)
+                );
+              }});
+            }}
+          }}
+          function scheduleCurrentPlotlyVisibility(group) {{
+            if (group.dataset.sbPlotlyVisibilityPending === '1') return;
+            group.dataset.sbPlotlyVisibilityPending = '1';
+            window.parent.requestAnimationFrame(function () {{
+              delete group.dataset.sbPlotlyVisibilityPending;
+              const radios = [...group.querySelectorAll('input[type="radio"]')];
+              const requestedIndex = radios.findIndex(function (radio) {{
+                return radio.checked;
+              }});
+              if (requestedIndex >= 0) {{
+                switchPreloadedPlotlyVisibility(group, requestedIndex, false);
+              }}
+            }});
+          }}
           function holdPosition(pending) {{
             if (Date.now() >= pending.expires) {{
               doc.documentElement.removeAttribute(pendingAttribute);
@@ -119,6 +220,14 @@ def render_stable_tabs(
           function snapshotWidget(event) {{
             const group = event.target?.closest?.('[data-sb-stable-widget-scroll]');
             if (!group) return;
+            const radios = [...group.querySelectorAll('input[type="radio"]')];
+            const radio = event.target?.closest?.('label')?.querySelector?.(
+              'input[type="radio"]'
+            ) || event.target?.closest?.('input[type="radio"]');
+            const requestedIndex = radios.indexOf(radio);
+            if (requestedIndex >= 0) {{
+              switchPreloadedPlotlyVisibility(group, requestedIndex, true);
+            }}
             const scroller = doc.querySelector('section.stMain');
             if (!scroller) return;
             const pending = {{
@@ -194,6 +303,7 @@ def preserve_scroll_for_preceding_widget(
     st_module: Any,
     *,
     scope_id: str,
+    target_plotly_visibility_scope_id: str | None = None,
 ) -> None:
     """Keep the main scroller fixed while a widget reruns its fragment."""
 
@@ -202,6 +312,18 @@ def preserve_scroll_for_preceding_widget(
         raise ValueError("scope_id must be non-empty")
 
     escaped_scope = html.escape(scope, quote=True)
+    plotly_visibility_attribute = ""
+    if target_plotly_visibility_scope_id is not None:
+        visibility_scope = str(target_plotly_visibility_scope_id).strip()
+        if not visibility_scope:
+            raise ValueError(
+                "target_plotly_visibility_scope_id must be non-empty when provided"
+            )
+        plotly_visibility_attribute = (
+            ' data-sb-widget-target-plotly-visibility="'
+            + html.escape(visibility_scope, quote=True)
+            + '"'
+        )
     st_module.markdown(
         '<style>'
         'div[data-testid="stElementContainer"]:has([data-sb-widget-scroll-marker]){'
@@ -212,7 +334,8 @@ def preserve_scroll_for_preceding_widget(
         'display:none!important;height:0!important;min-height:0!important;'
         'margin:0!important;padding:0!important;}'
         '</style>'
-        f'<span data-sb-widget-scroll-marker="{escaped_scope}" '
+        f'<span data-sb-widget-scroll-marker="{escaped_scope}"'
+        f'{plotly_visibility_attribute} '
         'aria-hidden="true" style="display:none"></span>',
         unsafe_allow_html=True,
     )

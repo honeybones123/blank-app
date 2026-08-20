@@ -76,7 +76,7 @@ def test_bending_state_selector_preserves_main_scroll_during_rerun() -> None:
     assert "event.preventDefault()" not in helper
 
 
-def test_bending_mounts_only_the_selected_state_figure() -> None:
+def test_bending_mounts_one_preloaded_state_figure() -> None:
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
@@ -84,9 +84,40 @@ def test_bending_mounts_only_the_selected_state_figure() -> None:
     assert 'state_options = ("ULS", "SLS (cracked)", "Uncracked")' in diagrams
     assert 'scope_id="bending-preloaded-states"' not in diagrams
     assert diagrams.count('key="bending_section_stress_strain"') == 1
-    assert 'render_timing_mark("bending_page.runtime.diagram.preload.start")' in diagrams
+    assert 'data-sb-plotly-visibility-scope="bending-state-diagram"' in diagrams
+    assert 'data-sb-trace-groups="{trace_group_counts}"' in diagrams
+    assert 'data-sb-trace-state-order="{trace_state_order}"' in diagrams
+    assert 'data-sb-shape-groups="{shape_group_counts}"' in diagrams
+    assert 'data-sb-annotation-groups="{annotation_group_counts}"' in diagrams
+    assert 'target_plotly_visibility_scope_id="bending-state-diagram"' in diagrams
+    assert 'render_timing_mark("bending_page.runtime.diagram.preload.start")' not in diagrams
     assert "if option == main_state:" in diagrams
     assert "_plot_stress_strain_profiles(" in diagrams
+
+
+def test_bending_preloaded_states_keep_independent_stress_axes() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"ULS": "x3"' in diagrams
+    assert '"SLS (cracked)": "x4"' in diagrams
+    assert '"Uncracked": "x5"' in diagrams
+    assert "trace_dom_order.append(" in diagrams
+    assert 'trace_json["xaxis"] = target_axis_ref' in diagrams
+    assert 'shape_json["xref"] = target_axis_ref + xref[2:]' in diagrams
+    assert 'annotation_json["xref"] = target_axis_ref + xref[2:]' in diagrams
+    assert 'annotation_json["axref"] = target_axis_ref + axref[2:]' in diagrams
+
+
+def test_bending_preload_marker_cannot_change_page_geometry() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert '[data-sb-plotly-visibility-scope="bending-state-diagram"]){' in diagrams
+    assert 'display:none!important;height:0!important;min-height:0!important;' in diagrams
+    assert 'margin:0!important;padding:0!important;' in diagrams
 
 
 def test_bending_state_switch_owns_only_state_dependent_diagrams() -> None:

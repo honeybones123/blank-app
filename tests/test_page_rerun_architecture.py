@@ -549,3 +549,21 @@ def test_authoritative_summaries_publish_before_heavy_page_content() -> None:
         page_source = source[source.index(entrypoints[filename]) :]
         assert page_source.index(summary_marker) < page_source.index(heavy_marker)
         assert "top_summary_placeholder = st.empty()" not in page_source
+
+
+def test_bending_summary_binding_is_deferred_without_changing_layout() -> None:
+    """The browser component must not delay or shift the visible shell."""
+
+    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
+    diagram_shell = source.index("render_bending_diagram_loading_shell(")
+    calculation_shell = source.index(
+        "render_bending_calculation_loading_shell(", diagram_shell
+    )
+    binding = source.index("bind_summary_clicks()", calculation_shell)
+    diagram_source = (ROOT / "engineering_page_sections/bending_diagrams.py").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert diagram_shell < calculation_shell < binding
+    assert "data-bending-diagrams-layout-slot" in diagram_source
+    assert "margin-top: 16.640625px" in diagram_source
