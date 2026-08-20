@@ -37,7 +37,8 @@ def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:
         ("creep.py", "creep-calculation-checks"),
     ):
         source = (ROOT / filename).read_text(encoding="utf-8-sig")
-        assert "from engineering_page_sections.stable_tabs import render_stable_tabs" in source
+        assert "from engineering_page_sections.stable_tabs import" in source
+        assert "render_stable_tabs" in source
         assert f'scope_id="{scope}"' in source
         assert "render_lazy_check_tab_selector" not in source
 

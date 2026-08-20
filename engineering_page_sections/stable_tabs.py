@@ -109,6 +109,150 @@ def render_stable_tabs(
     return tuple(st_module.tabs(tab_labels))
 
 
+def preserve_scroll_for_preceding_widget(
+    st_module: Any,
+    *,
+    scope_id: str,
+) -> None:
+    """Keep the main scroller fixed while a widget reruns its fragment."""
+
+    scope = str(scope_id).strip()
+    if not scope:
+        raise ValueError("scope_id must be non-empty")
+
+    import streamlit.components.v1 as components
+
+    escaped_scope = html.escape(scope, quote=True)
+    st_module.markdown(
+        '<style>'
+        'div[data-testid="stElementContainer"]:has([data-sb-widget-scroll-marker]){'
+        'display:none!important;height:0!important;min-height:0!important;'
+        'margin:0!important;padding:0!important;}'
+        'div[data-testid="stElementContainer"]:has([data-sb-widget-scroll-marker])'
+        '+div[data-testid="stElementContainer"]:has(iframe){'
+        'display:none!important;height:0!important;min-height:0!important;'
+        'margin:0!important;padding:0!important;}'
+        '</style>'
+        f'<span data-sb-widget-scroll-marker="{escaped_scope}" '
+        'aria-hidden="true" style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
+    components.html(
+        f"""
+        <script>
+        (function () {{
+          const doc = window.parent.document;
+          const scope = {scope!r};
+          const markerSelector = '[data-sb-widget-scroll-marker="' + scope + '"]';
+
+          function tagWidget() {{
+            const marker = doc.querySelector(markerSelector);
+            if (!marker) return false;
+            let node = marker.closest('[data-testid="stElementContainer"]');
+            while (node && (node = node.previousElementSibling)) {{
+              const group = node.matches?.('[role="radiogroup"]')
+                ? node
+                : node.querySelector?.('[role="radiogroup"]');
+              if (group) {{
+                group.dataset.sbStableWidgetScroll = scope;
+                return true;
+              }}
+            }}
+            return false;
+          }}
+
+          if (!tagWidget()) {{
+            let attempts = 0;
+            const tagTimer = window.parent.setInterval(function () {{
+              attempts += 1;
+              if (tagWidget() || attempts > 40) window.parent.clearInterval(tagTimer);
+            }}, 50);
+          }}
+
+          function installParentRuntime() {{
+            const pendingAttribute = 'data-sb-pending-widget-scroll';
+
+            function holdPosition(pending) {{
+              if (Date.now() >= pending.expires) {{
+                document.documentElement.removeAttribute(pendingAttribute);
+                return;
+              }}
+              const scroller = document.querySelector('section.stMain');
+              if (scroller && Math.abs(scroller.scrollTop - pending.top) > 1) {{
+                scroller.scrollTop = pending.top;
+              }}
+              window.requestAnimationFrame(function () {{
+                holdPosition(pending);
+              }});
+            }}
+
+            function snapshot(event) {{
+              const group = event.target?.closest?.(
+                '[data-sb-stable-widget-scroll]'
+              );
+              if (!group) return;
+              // Avoid focusing a radio that Streamlit is about to remount.
+              // The click event still changes the selected state.
+              if (event.type === 'pointerdown') event.preventDefault();
+              const scroller = document.querySelector('section.stMain');
+              if (!scroller) return;
+              const pending = {{
+                scope: group.dataset.sbStableWidgetScroll,
+                top: scroller.scrollTop,
+                expires: Date.now() + 3500,
+              }};
+              document.documentElement.setAttribute(
+                pendingAttribute,
+                JSON.stringify(pending)
+              );
+              function lockScroll() {{
+                if (
+                  Date.now() < pending.expires &&
+                  Math.abs(
+                    (document.querySelector('section.stMain') || scroller).scrollTop -
+                      pending.top
+                  ) > 1
+                ) {{
+                  (document.querySelector('section.stMain') || scroller).scrollTop =
+                    pending.top;
+                }}
+                const activeGroup = document.activeElement?.closest?.(
+                  '[data-sb-stable-widget-scroll]'
+                );
+                if (activeGroup) document.activeElement.blur();
+              }}
+              scroller.addEventListener('scroll', lockScroll, {{ passive: true }});
+              const mutationGuard = new MutationObserver(lockScroll);
+              mutationGuard.observe(document.body, {{ childList: true, subtree: true }});
+              window.setTimeout(function () {{
+                scroller.removeEventListener('scroll', lockScroll);
+                mutationGuard.disconnect();
+              }}, 3600);
+              holdPosition(pending);
+            }}
+
+            document.addEventListener('pointerdown', snapshot, true);
+            document.addEventListener('keydown', function (event) {{
+              if (event.key === 'Enter' || event.key === ' ') snapshot(event);
+            }}, true);
+          }}
+
+          // Install the listener in the parent document's JavaScript realm so
+          // it survives removal of this component iframe during a fragment rerun.
+          const runtimeId = 'sb-stable-widget-scroll-runtime';
+          if (!doc.getElementById(runtimeId)) {{
+            const runtime = doc.createElement('script');
+            runtime.id = runtimeId;
+            runtime.textContent = '(' + installParentRuntime.toString() + ')();';
+            doc.head.appendChild(runtime);
+          }}
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
 def synchronize_stable_tab_scopes(
     st_module: Any,
     *,
@@ -211,4 +355,8 @@ def synchronize_stable_tab_scopes(
     )
 
 
-__all__ = ["render_stable_tabs", "synchronize_stable_tab_scopes"]
+__all__ = [
+    "preserve_scroll_for_preceding_widget",
+    "render_stable_tabs",
+    "synchronize_stable_tab_scopes",
+]

@@ -43,5 +43,22 @@ def test_bending_calculation_tabs_are_client_side_and_preserve_scroll() -> None:
     assert "with minimum_checks_tab:" in source
     assert 'scope_id="bending-calculation-checks"' in source
     assert 'scope_id="bending-section-diagrams"' in source
-    assert "from engineering_page_sections.stable_tabs import render_stable_tabs" in source
+    assert "preserve_scroll_for_preceding_widget" in source
+    assert "render_stable_tabs" in source
     assert "render_lazy_check_tab_selector" not in source
+
+
+def test_bending_state_selector_preserves_main_scroll_during_rerun() -> None:
+    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+    helper = (
+        ROOT / "engineering_page_sections" / "stable_tabs.py"
+    ).read_text(encoding="utf-8")
+
+    assert "preserve_scroll_for_preceding_widget(" in runtime
+    assert 'scope_id="bending-state-selector"' in runtime
+    assert "data-sb-stable-widget-scroll" in helper
+    assert "installParentRuntime" in helper
+    assert "sb-stable-widget-scroll-runtime" in helper
+    assert "holdPosition(pending)" in helper
+    assert "MutationObserver(lockScroll)" in helper
+    assert "scroller.scrollTop = pending.top" in helper

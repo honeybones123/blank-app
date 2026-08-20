@@ -88,7 +88,10 @@ from engineering_page_sections.compact_check_inputs import (
     format_number,
     join_summary,
 )
-from engineering_page_sections.stable_tabs import render_stable_tabs
+from engineering_page_sections.stable_tabs import (
+    preserve_scroll_for_preceding_widget,
+    render_stable_tabs,
+)
 from inputs_application.action_source_control import uses_load_analysis_actions
 from ui.diagrams.moment_shear_diagram import figure_bmd_from_state
 
@@ -2073,6 +2076,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     horizontal=True,
                     index=state_options.index(main_state),
                     label_visibility="collapsed",
+                )
+                preserve_scroll_for_preceding_widget(
+                    st,
+                    scope_id="bending-state-selector",
                 )
                 st.session_state["bending_state"] = st.session_state.get(
                     "bending_state_main", main_state
