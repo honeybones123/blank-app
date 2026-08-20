@@ -8444,46 +8444,65 @@ def set_shared(key: str, value, *, source: str = "") -> None:
     ts_now = time.time()
     st.session_state["_last_user_edit_ts"] = ts_now
     st.session_state["_last_user_shared_ts"] = ts_now
-    try:
-        _write_sync_trace_line(
-            f"SET_SHARED key={key} old={old} new={value} source={source}"
-        )
-    except Exception:
-        pass
-    try:
-        debug_log("SET_SHARED", {"shared_key": key, "value": value, "from": st.session_state.get("page_slug")})
-    except Exception:
-        pass
-    try:
-        widget_key = None
-        if isinstance(source, str) and source.startswith("callback:"):
-            widget_key = source.split("callback:", 1)[1]
-        log_path = os.path.join(os.path.dirname(__file__), ".blank_app_runtime", "blank_app_debug.log")
-        with open(log_path, "a") as f:
-            f.write(json.dumps({
-                "event": "SET_SHARED",
-                "ts": ts_now,
-                "shared_key": key,
-                "widget_key": widget_key,
-                "old": old,
-                "new": value,
-                "source": source,
-                "page": st.session_state.get("page_slug"),
-            }) + "\n")
-    except Exception:
-        pass
-    
-    # Audit trail (keep last 50)
-    tail = st.session_state.get("_shared_write_audit", [])
-    caller = inspect.stack()[1]
-    tail.append({
-        "t": round(time.time(), 3),
-        "key": key,
-        "val": value,
-        "source": source,
-        "where": f"{caller.filename.split('/')[-1]}:{caller.lineno} {caller.function}",
-    })
-    st.session_state["_shared_write_audit"] = tail[-50:]
+    diagnostics_enabled = bool(
+        st.session_state.get("_debug_state_tripwire", False)
+        or st.session_state.get("_dev_mode", False)
+        or _set_shared_is_user_intent_source(source)
+    )
+    if diagnostics_enabled:
+        try:
+            _write_sync_trace_line(
+                f"SET_SHARED key={key} old={old} new={value} source={source}"
+            )
+        except Exception:
+            pass
+        try:
+            debug_log(
+                "SET_SHARED",
+                {
+                    "shared_key": key,
+                    "value": value,
+                    "from": st.session_state.get("page_slug"),
+                },
+            )
+        except Exception:
+            pass
+        try:
+            widget_key = None
+            if isinstance(source, str) and source.startswith("callback:"):
+                widget_key = source.split("callback:", 1)[1]
+            log_path = os.path.join(
+                os.path.dirname(__file__),
+                ".blank_app_runtime",
+                "blank_app_debug.log",
+            )
+            with open(log_path, "a") as f:
+                f.write(json.dumps({
+                    "event": "SET_SHARED",
+                    "ts": ts_now,
+                    "shared_key": key,
+                    "widget_key": widget_key,
+                    "old": old,
+                    "new": value,
+                    "source": source,
+                    "page": st.session_state.get("page_slug"),
+                }) + "\n")
+        except Exception:
+            pass
+
+        # Stack inspection is intentionally diagnostic-only. Running it for
+        # every default seeded into a fresh Streamlit session delayed the
+        # first visible engineering page by roughly half a second.
+        tail = st.session_state.get("_shared_write_audit", [])
+        caller = inspect.stack()[1]
+        tail.append({
+            "t": round(time.time(), 3),
+            "key": key,
+            "val": value,
+            "source": source,
+            "where": f"{caller.filename.split('/')[-1]}:{caller.lineno} {caller.function}",
+        })
+        st.session_state["_shared_write_audit"] = tail[-50:]
 
 
 def set_ui(key: str, value, *, source: str = "") -> None:

@@ -76,6 +76,19 @@ def test_bending_state_selector_preserves_main_scroll_during_rerun() -> None:
     assert "event.preventDefault()" not in helper
 
 
+def test_bending_mounts_only_the_selected_state_figure() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'state_options = ("ULS", "SLS (cracked)", "Uncracked")' in diagrams
+    assert 'scope_id="bending-preloaded-states"' not in diagrams
+    assert diagrams.count('key="bending_section_stress_strain"') == 1
+    assert 'render_timing_mark("bending_page.runtime.diagram.preload.start")' in diagrams
+    assert "if option == main_state:" in diagrams
+    assert "_plot_stress_strain_profiles(" in diagrams
+
+
 def test_bending_state_switch_owns_only_state_dependent_diagrams() -> None:
     runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
     diagrams = (

@@ -55,13 +55,202 @@ def bind_runtime(namespace: dict) -> None:
     _install_material_teaching_override(namespace)
 
 
-def render_bending_state_panel(*, cached_layout: dict, mu_uls_active: float) -> None:
+def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
+    """Reserve the measured diagram region while its figures are prepared.
+
+    The completed Bending diagram block is 647.16 px high at both locked
+    desktop and narrow viewports.  Publishing that footprint before the
+    calculation cards are rendered lets the useful page stream immediately
+    without moving later content when the real diagrams replace the shell.
+    """
+
+    with container:
+        st.markdown(
+            """
+        <style>
+        .bending-diagram-loading-region {
+          box-sizing: border-box;
+          height: 647.15625px;
+          width: 100%;
+          overflow: hidden;
+          color: #10234a;
+        }
+        .bending-diagram-loading-heading {
+          font-size: 17.6px;
+          font-weight: 600;
+          line-height: 1.35;
+          margin: 0 0 1rem;
+        }
+        .bending-diagram-loading-shell {
+          display: flex;
+          align-items: center;
+          gap: .7rem;
+          min-height: 58px;
+          padding: .85rem 1rem;
+          border: 1px solid #cbd5e1;
+          border-left: 5px solid #98a2b3;
+          border-radius: 10px;
+          background: #fff;
+          color: #475569;
+        }
+        .bending-diagram-loading-icon {
+          font-size: 1rem;
+          line-height: 1;
+        }
+        .bending-diagram-loading-copy {
+          font-size: .92rem;
+          font-weight: 600;
+          line-height: 1.4;
+        }
+        section.stMain:has([data-bending-diagram-ready="GENERATION"])
+        div[data-testid="stElementContainer"]:has(
+          [data-bending-diagram-shell="GENERATION"]
+        ) {
+          display: none !important;
+          height: 0 !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        </style>
+        <div class="bending-diagram-loading-region"
+             data-testid="bending-diagram-loading-region"
+             data-bending-diagram-shell="GENERATION"
+             role="status" aria-live="polite">
+          <div class="bending-diagram-loading-heading">Bending Diagrams</div>
+          <div class="bending-diagram-loading-shell">
+            <span class="bending-diagram-loading-icon" aria-hidden="true">&#9711;</span>
+            <span class="bending-diagram-loading-copy">Preparing bending diagrams</span>
+          </div>
+        </div>
+            """.replace("GENERATION", str(int(generation))),
+            unsafe_allow_html=True,
+        )
+
+
+def render_bending_calculation_loading_shell(container) -> None:
+    """Reserve the measured collapsed ULS calculation region while mounting."""
+
+    with container:
+        st.markdown(
+            """
+            <style>
+            .bending-calculation-loading-region {
+              box-sizing: border-box;
+              height: 869.21875px;
+              width: 100%;
+              overflow: hidden;
+              color: #10234a;
+              padding-top: 28px;
+            }
+            .bending-calculation-loading-heading {
+              font-size: 17.6px;
+              font-weight: 600;
+              line-height: 1.35;
+              margin: 0 0 1.25rem;
+            }
+            .bending-calculation-loading-tabs {
+              display: flex;
+              gap: 1.25rem;
+              height: 38px;
+              align-items: center;
+              border-bottom: 1px solid #d8dee8;
+              margin-bottom: 1.35rem;
+              font-size: .86rem;
+            }
+            .bending-calculation-loading-tabs span:first-child {
+              color: #ff4b4b;
+              align-self: stretch;
+              display: flex;
+              align-items: center;
+              border-bottom: 2px solid #ff4b4b;
+            }
+            .bending-calculation-loading-card {
+              box-sizing: border-box;
+              height: 60px;
+              margin-bottom: 1rem;
+              border-radius: 10px;
+              border-left: 4px solid #2b83ba;
+              background: #eaf3fa;
+              position: relative;
+              overflow: hidden;
+            }
+            .bending-calculation-loading-card::after {
+              content: "";
+              position: absolute;
+              inset: 0;
+              background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(255,255,255,.42) 50%,
+                transparent 100%
+              );
+              transform: translateX(-100%);
+              animation: bending-calc-shell-pulse 1.4s ease-in-out infinite;
+            }
+            @keyframes bending-calc-shell-pulse {
+              to { transform: translateX(100%); }
+            }
+            section.stMain:has([data-testid="bending-calculation-ready"])
+            div[data-testid="stElementContainer"]:has(
+              [data-testid="bending-calculation-loading-region"]
+            ) {
+              display: none !important;
+              height: 0 !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            </style>
+            <div class="bending-calculation-loading-region"
+                 data-testid="bending-calculation-loading-region"
+                 role="status" aria-live="polite">
+              <div class="bending-calculation-loading-heading">Bending design checks</div>
+              <div class="bending-calculation-loading-tabs">
+                <span>ULS Checks</span>
+                <span>SLS Checks</span>
+                <span>Minimum strength checks</span>
+              </div>
+              <div class="bending-calculation-loading-card"></div>
+              <div class="bending-calculation-loading-card"></div>
+              <div class="bending-calculation-loading-card"></div>
+              <div class="bending-calculation-loading-card"></div>
+              <div class="bending-calculation-loading-card"></div>
+              <div class="bending-calculation-loading-card"></div>
+              <div class="bending-calculation-loading-card"></div>
+              <div class="bending-calculation-loading-card"></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def render_bending_state_panel(
+    *,
+    cached_layout: dict,
+    mu_uls_active: float,
+    diagram_shell_generation: int,
+) -> None:
     """Render the state-owned diagrams and teaching panel as one fragment body.
 
     The ULS/SLS/Uncracked selector changes presentation state only. Keeping its
     dependent diagrams inside this boundary prevents a state change from
     rebuilding the summary, input cards, and every calculation card.
     """
+
+    # Direct Bending navigation intentionally lets the heading, summary,
+    # calculation cards and fixed diagram shell stream before the plotting
+    # dependency warm-up is complete.  Synchronise only at the diagram
+    # boundary so figure construction remains deterministic.
+    from application.visualization_runtime_warmup import (
+        start_visualization_runtime_warmup,
+        wait_for_visualization_runtime_warmup,
+    )
+    from application.v2_runtime_warmup import start_v2_runtime_warmup
+
+    start_v2_runtime_warmup()
+    start_visualization_runtime_warmup()
+    wait_for_visualization_runtime_warmup()
 
     state_options = ("ULS", "SLS (cracked)", "Uncracked")
     selected_state = st.session_state.get(
@@ -74,43 +263,56 @@ def render_bending_state_panel(*, cached_layout: dict, mu_uls_active: float) -> 
     st.session_state["bending_state"] = main_state
 
     stress_model = st.session_state.get("concrete_stress_model", "rectangular")
-    if main_state == "ULS":
-        diagram_state_label = (
-            "uls – parabolic" if stress_model == "parabolic" else "uls – rectangular"
+    moment_sign = st.session_state.get("bending_detail_view", "positive")
+
+    def state_projection(option: str):
+        if option == "ULS":
+            state_label = (
+                "uls – parabolic"
+                if stress_model == "parabolic"
+                else "uls – rectangular"
+            )
+            state_for_math = "ULS"
+        elif option.startswith("SLS"):
+            state_label = (
+                "sls – parabolic"
+                if stress_model == "parabolic"
+                else "sls – linear"
+            )
+            state_for_math = "SLS"
+        else:
+            state_label = (
+                "uncracked – parabolic"
+                if stress_model == "parabolic"
+                else "uncracked – linear"
+            )
+            state_for_math = "Uncracked"
+
+        projected_state = _stress_strain_state(
+            state_for_math,
+            moment_sign=moment_sign,
         )
-        state_for_math = "ULS"
-    elif main_state.startswith("SLS"):
-        diagram_state_label = (
-            "sls – parabolic" if stress_model == "parabolic" else "sls – linear"
-        )
-        state_for_math = "SLS"
-    else:
-        diagram_state_label = (
-            "uncracked – parabolic"
-            if stress_model == "parabolic"
-            else "uncracked – linear"
-        )
-        state_for_math = "Uncracked"
-    st.session_state["bending_strain_state_local"] = diagram_state_label
+        if state_for_math == "SLS":
+            dn_cracked = st.session_state.get("bending_sls_dn")
+            if dn_cracked is not None:
+                projected_state["sls"] = {
+                    "dn_cracked": float(dn_cracked),
+                    "dn": float(dn_cracked),
+                    "eps_c_top": st.session_state.get("bending_sls_eps_top"),
+                    "eps_s_layers": [],
+                    "sig_s_layers": [],
+                    "y_layers": [],
+                }
+        return state_label, projected_state
 
     render_timing_mark("bending_page.runtime.diagram.start")
-    moment_sign = st.session_state.get("bending_detail_view", "positive")
-    ss_state = _stress_strain_state(state_for_math, moment_sign=moment_sign)
-    if state_for_math == "SLS":
-        dn_cracked = st.session_state.get("bending_sls_dn")
-        if dn_cracked is not None:
-            ss_state["sls"] = {
-                "dn_cracked": float(dn_cracked),
-                "dn": float(dn_cracked),
-                "eps_c_top": st.session_state.get("bending_sls_eps_top"),
-                "eps_s_layers": [],
-                "sig_s_layers": [],
-                "y_layers": [],
-            }
+    diagram_state_label, _ = state_projection(main_state)
+    st.session_state["bending_strain_state_local"] = diagram_state_label
 
     render_timing_mark("bending_page.runtime.diagram.figure.start")
+    _, projected_state = state_projection(main_state)
     fig_ss = _plot_stress_strain_profiles(
-        ss_state,
+        projected_state,
         state_label=diagram_state_label,
         layout=cached_layout,
         moment_sign=moment_sign,
@@ -209,6 +411,26 @@ def render_bending_state_panel(*, cached_layout: dict, mu_uls_active: float) -> 
         lambda: None,
         key="bending_material_model_expander",
     )
+    st.markdown(
+        '<span data-testid="bending-diagram-ready" '
+        f'data-bending-diagram-ready="{int(diagram_shell_generation)}" '
+        'aria-hidden="true" style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
+    # Prepare inactive projections in the bounded session-local cache without
+    # mounting or transmitting additional charts.
+    render_timing_mark("bending_page.runtime.diagram.preload.start")
+    for option in state_options:
+        if option == main_state:
+            continue
+        option_label, option_state = state_projection(option)
+        _plot_stress_strain_profiles(
+            option_state,
+            state_label=option_label,
+            layout=cached_layout,
+            moment_sign=moment_sign,
+        )
+    render_timing_mark("bending_page.runtime.diagram.preload.end")
     render_timing_mark("bending_page.runtime.material_model.end")
 
 

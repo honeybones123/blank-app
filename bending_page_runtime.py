@@ -46,14 +46,6 @@ from bending_core import (
     hogging_tension_effective_depth_mm,
     solve_bending_capacity,
 )
-from bending_diagrams import (
-    _plot_stress_strain_profiles,
-    _plot_material_stress_strain_curves,
-)
-from ui.diagrams.bending_3d_diagram import (
-    build_beam_3d_figure_pure as _shared_build_beam_3d_figure_pure,
-)
-from bending_tabs import render_uls_tab, render_min_strength_tab, render_sls_tab
 from bending_checks_helpers import build_bending_check_rows_from_state
 from inputs_application.authoritative_check_packs import current_authoritative_family
 from calculations.bending import (
@@ -93,7 +85,30 @@ from engineering_page_sections.stable_tabs import (
     render_stable_tabs,
 )
 from inputs_application.action_source_control import uses_load_analysis_actions
-from ui.diagrams.moment_shear_diagram import figure_bmd_from_state
+
+
+def _plot_stress_strain_profiles(*args, **kwargs):
+    from bending_diagrams import _plot_stress_strain_profiles as renderer
+
+    return renderer(*args, **kwargs)
+
+
+def _plot_material_stress_strain_curves(*args, **kwargs):
+    from bending_diagrams import _plot_material_stress_strain_curves as renderer
+
+    return renderer(*args, **kwargs)
+
+
+def _shared_build_beam_3d_figure_pure(*args, **kwargs):
+    from ui.diagrams.bending_3d_diagram import build_beam_3d_figure_pure as builder
+
+    return builder(*args, **kwargs)
+
+
+def figure_bmd_from_state(*args, **kwargs):
+    from ui.diagrams.moment_shear_diagram import figure_bmd_from_state as builder
+
+    return builder(*args, **kwargs)
 
 # Safe option lists for reinforcement inputs
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -1210,6 +1225,15 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             unsafe_allow_html=True,
         )
 
+        diagram_shell_generation = int(
+            st.session_state.get("_bending_diagram_shell_generation", 0) or 0
+        ) + 1
+        st.session_state["_bending_diagram_shell_generation"] = diagram_shell_generation
+        diagram_shell_container = st.container()
+        _bending_diagrams_section.render_bending_diagram_loading_shell(
+            diagram_shell_container,
+            generation=diagram_shell_generation,
+        )
         diagram_section_placeholder = st.empty()
         inputs_placeholder = st.empty()
         # The detailed tab body is interactive.  Keep a stable multi-element
@@ -1217,6 +1241,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         # tab click; replacement remounts the whole calculation subtree and
         # makes the browser lose its scroll position.
         calc_blocks_container = st.container()
+        _bending_diagrams_section.render_bending_calculation_loading_shell(
+            calc_blocks_container
+        )
         render_timing_mark("bending_page.runtime.presentation.summary.end")
 
     # Persist canonical bending state for the rest of the page (and next rerun)
@@ -1767,19 +1794,97 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     showing the non-linear relationship between strain and stress.
                     """)
 
-            # Reserve the visible diagram position while the calculation cards
-            # publish the SLS values consumed by the state-owned fragment.
+            # The stable shell above already reserves this exact position.
             diagram_placeholder = st.empty()
+
+            # Resolve the active bending case before either presentation block
+            # renders.  Both the diagrams and the cards consume this same
+            # revision-matched publication; neither presentation owns it.
+            detail_view = st.session_state.get("bending_detail_view", "positive")
+            if detail_view not in _valid_bending_views and _valid_bending_views:
+                detail_view = _valid_bending_views[0]
+            showing_negative = detail_view == "negative" and has_hogging_case
+            top_results_active = dict(top_results)
+            Ast_active = Ast_bot
+            d_active = d_eff
+            Mu_uls_active = Mu_pos_star if has_sagging_case else 0.0
+            Mu_sls_active = Ms_pos_star if has_sagging_case else 0.0
+            if showing_negative:
+                dn = float(top_results_neg.get("dn_mm", 0.0) or 0.0)
+                gamma_active = float(
+                    top_results_neg.get("gamma", top_results.get("gamma", 0.0))
+                    or 0.0
+                )
+                d_calc = float(top_results_neg.get("d_mm", d_neg_val) or d_neg_val)
+                active_lever_arm = compression_block_lever_arm_values(
+                    dn_mm=dn,
+                    gamma=gamma_active,
+                    d_mm=d_calc,
+                )
+                a_active = active_lever_arm["a"]
+                z_active = active_lever_arm["z"]
+                top_results_active.update({
+                    "phi_Mu_cap": float(top_results_neg.get("phi_Mu_kNm", 0.0) or 0.0),
+                    "Mu_util": float(top_results_neg.get("util", 0.0) or 0.0),
+                    "ku": float(top_results_neg.get("ku", 0.0) or 0.0),
+                    "c": dn,
+                    "a": a_active,
+                    "z": z_active,
+                    "d": d_calc,
+                })
+                Ast_active = float(get_param("Ast_top", 0.0) or 0.0)
+                d_active = d_calc
+                Mu_uls_active = Mu_neg_star
+                Mu_sls_active = Ms_neg_star
+            else:
+                top_results_active.update(top_results_pos)
+                top_results_active.update({
+                    "phi_Mu_cap": float(top_results_pos.get("phi_Mu_kNm", top_results.get("phi_Mu_cap", 0.0)) or 0.0),
+                    "Mu_util": float(top_results_pos.get("util", top_results.get("Mu_util", 0.0)) or 0.0),
+                    "ku": float(top_results_pos.get("ku", top_results.get("ku", 0.0)) or 0.0),
+                    "c": float(top_results_pos.get("dn_mm", top_results.get("c", 0.0)) or 0.0),
+                    "d": float(top_results_pos.get("d_mm", d_eff) or d_eff),
+                })
+
+            selected_diagram_state = str(
+                st.session_state.get("bending_state_main", "ULS") or "ULS"
+            )
+            cached_sls_matches_case = (
+                st.session_state.get("bending_sls_dn") is not None
+                and st.session_state.get("bending_sls_eps_top") is not None
+                and bool(st.session_state.get("bending_sls_hogging", False))
+                == bool(showing_negative)
+            )
+            diagram_rendered_early = (
+                not selected_diagram_state.startswith("SLS")
+                or cached_sls_matches_case
+            )
+            render_timing_mark(
+                "bending_page.runtime.diagram.early_decision",
+                selected_state=selected_diagram_state,
+                cached_sls_matches_case=bool(cached_sls_matches_case),
+                diagram_rendered_early=bool(diagram_rendered_early),
+                showing_negative=bool(showing_negative),
+            )
+            if diagram_rendered_early:
+                with diagram_placeholder.container():
+                    _render_bending_state_panel(
+                        cached_layout=cached_layout,
+                        mu_uls_active=Mu_uls_active,
+                        diagram_shell_generation=diagram_shell_generation,
+                    )
 
             with calc_blocks_container:
                 render_timing_mark("bending_page.runtime.checks.start")
+                from bending_tabs import (
+                    render_min_strength_tab,
+                    render_sls_tab,
+                    render_uls_tab,
+                )
+
                 # ---------------- Step-by-step tabs ----------------
                 apply_step_summary_expander_css()
                 page_divider()
-                detail_view = st.session_state.get("bending_detail_view", "positive")
-                if detail_view not in _valid_bending_views and _valid_bending_views:
-                    detail_view = _valid_bending_views[0]
-                showing_negative = detail_view == "negative" and has_hogging_case
                 # Put all extra rhythm above the heading; keep no subheading
                 # or additional gap between the title and calculation tabs.
                 st.markdown(
@@ -1792,49 +1897,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     """,
                     unsafe_allow_html=True,
                 )
-
-                top_results_active = dict(top_results)
-                Ast_active = Ast_bot
-                d_active = d_eff
-                Mu_uls_active = Mu_pos_star if has_sagging_case else 0.0
-                Mu_sls_active = Ms_pos_star if has_sagging_case else 0.0
-                if showing_negative:
-                    dn = float(top_results_neg.get("dn_mm", 0.0) or 0.0)
-                    gamma_active = float(top_results_neg.get("gamma", top_results.get("gamma", 0.0)) or 0.0)
-                    d_calc = float(top_results_neg.get("d_mm", d_neg_val) or d_neg_val)
-                    active_lever_arm = compression_block_lever_arm_values(
-                        dn_mm=dn,
-                        gamma=gamma_active,
-                        d_mm=d_calc,
-                    )
-                    a_active = active_lever_arm["a"]
-                    z_active = active_lever_arm["z"]
-                    top_results_active.update({
-                        "phi_Mu_cap": float(top_results_neg.get("phi_Mu_kNm", 0.0) or 0.0),
-                        "Mu_util": float(top_results_neg.get("util", 0.0) or 0.0),
-                        "ku": float(top_results_neg.get("ku", 0.0) or 0.0),
-                        "c": dn,
-                        "a": a_active,
-                        "z": z_active,
-                        "d": d_calc,
-                    })
-                    Ast_active = float(get_param("Ast_top", 0.0) or 0.0)
-                    d_active = d_calc
-                    Mu_uls_active = Mu_neg_star
-                    Mu_sls_active = Ms_neg_star
-                else:
-                    # Preserve the complete revision-matched V2 evidence for
-                    # the detailed ULS renderer.  Copying only capacity/ku
-                    # here previously dropped the authority marker and made
-                    # the page run its retired local bending formula again.
-                    top_results_active.update(top_results_pos)
-                    top_results_active.update({
-                        "phi_Mu_cap": float(top_results_pos.get("phi_Mu_kNm", top_results.get("phi_Mu_cap", 0.0)) or 0.0),
-                        "Mu_util": float(top_results_pos.get("util", top_results.get("Mu_util", 0.0)) or 0.0),
-                        "ku": float(top_results_pos.get("ku", top_results.get("ku", 0.0)) or 0.0),
-                        "c": float(top_results_pos.get("dn_mm", top_results.get("c", 0.0)) or 0.0),
-                        "d": float(top_results_pos.get("d_mm", d_eff) or d_eff),
-                    })
 
                 # Bending calculation tabs are client-side Streamlit tabs.
                 # Unlike a radio selector, changing one does not rerun this
@@ -1919,17 +1981,24 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
                     # Clear pending scroll
                     del st.session_state["bending_pending_scroll_uid"]
+                st.markdown(
+                    '<span data-testid="bending-calculation-ready" '
+                    'aria-hidden="true" style="display:none"></span>',
+                    unsafe_allow_html=True,
+                )
                 render_timing_mark("bending_page.runtime.checks.end")
 
             # --------------------------------------------------
             # Now build the 3-panel diagram, using the SLS results
             # that render_sls_tab has just written into session_state.
             # --------------------------------------------------
-            with diagram_placeholder.container():
-                _render_bending_state_panel(
-                    cached_layout=cached_layout,
-                    mu_uls_active=Mu_uls_active,
-                )
+            if not diagram_rendered_early:
+                with diagram_placeholder.container():
+                    _render_bending_state_panel(
+                        cached_layout=cached_layout,
+                        mu_uls_active=Mu_uls_active,
+                        diagram_shell_generation=diagram_shell_generation,
+                    )
 
             # --------------------------------------------------
             # Material stress–strain curves (concrete + steel), rendered below

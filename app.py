@@ -89,12 +89,14 @@ st.set_page_config(
 # page is being composed.  This removes their cold import penalty from the
 # user's first engineering edit without performing any engineering work or
 # touching Streamlit session state.
-start_v2_runtime_warmup()
-start_visualization_runtime_warmup()
+_opening_page_slug = str(st.query_params.get("page", "start") or "start").strip().lower()
 # The opening shell is not declared ready until the neutral plotting runtime
 # is stable.  This prevents the first calculation page from racing the import
 # worker and paying a nondeterministic 0.3-1.7 s penalty.
-wait_for_visualization_runtime_warmup()
+if _opening_page_slug != "bending":
+    start_v2_runtime_warmup()
+    start_visualization_runtime_warmup()
+    wait_for_visualization_runtime_warmup()
 
 
 def _apply_sharp_embed_css() -> None:
