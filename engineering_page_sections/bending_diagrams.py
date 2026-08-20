@@ -122,6 +122,7 @@ def render_bending_state_panel(*, cached_layout: dict, mu_uls_active: float) -> 
         st,
         labels=("Section & stress-strain models", "Side view", "Bending moment"),
         scope_id="bending-section-diagrams",
+        install_runtime=False,
     )
     with section_tab:
         render_timing_mark("bending_page.runtime.diagram.streamlit.start")

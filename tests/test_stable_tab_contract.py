@@ -12,7 +12,9 @@ def test_shared_stable_tabs_are_native_view_only_tabs() -> None:
     assert "return tuple(st_module.tabs(tab_labels))" in source
     assert "st_module.radio(" not in source
     assert "section.stMain" in source
-    assert "doc.addEventListener('pointerdown', snapshot, true)" in source
+    assert 'const listenerKey = "__sbStableInteractionRuntime"' in source
+    assert "snapshotTab(event)" in source
+    assert "snapshotWidget(event)" in source
     assert "window.parent.setTimeout" in source
     assert "session_state" not in source
     assert 'data-sb-tab-scope=' in source
@@ -58,6 +60,17 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
     assert 'scope_id="creep-side-view-diagrams"' in creep
     assert 'scope_id="crack-method-diagrams"' in crack
     assert 'scope_id="crack-as5100-method-diagrams"' in crack
+
+
+def test_bending_owns_one_stable_interaction_runtime() -> None:
+    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'scope_id="bending-calculation-checks"' in runtime
+    assert 'scope_id="bending-section-diagrams"' in diagrams
+    assert "install_runtime=False" in diagrams
 
 
 def test_cross_page_calculation_jumps_target_native_tabs() -> None:

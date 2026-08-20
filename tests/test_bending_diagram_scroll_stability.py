@@ -67,8 +67,9 @@ def test_bending_state_selector_preserves_main_scroll_during_rerun() -> None:
     assert "preserve_scroll_for_preceding_widget(" in diagrams
     assert 'scope_id="bending-state-selector"' in diagrams
     assert "data-sb-stable-widget-scroll" in helper
-    assert "installParentRuntime" in helper
-    assert "sb-stable-widget-scroll-runtime" in helper
+    assert "__sbStableInteractionRuntime" in helper
+    assert "tagWidgetMarkers" in helper
+    assert "widgetMarkerObserver" in helper
     assert "holdPosition(pending)" in helper
     assert "MutationObserver(lockScroll)" in helper
     assert "scroller.scrollTop = pending.top" in helper

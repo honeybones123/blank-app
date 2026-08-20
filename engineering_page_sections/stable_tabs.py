@@ -19,6 +19,7 @@ def render_stable_tabs(
     *,
     labels: Sequence[str],
     scope_id: str,
+    install_runtime: bool = True,
 ) -> tuple[Any, ...]:
     """Render local native tabs that keep the main frame at its current position.
 
@@ -37,14 +38,15 @@ def render_stable_tabs(
     # pointer-down (rather than click) matters: browser focus may otherwise
     # scroll the selected tab into view before the click handler can preserve
     # the original main-frame position.
-    import streamlit.components.v1 as components
+    if install_runtime:
+        import streamlit.components.v1 as components
 
-    components.html(
+        components.html(
         f"""
         <script>
         (function () {{
           const doc = window.parent.document;
-          const listenerKey = "__sbStableTabScrollListener";
+          const listenerKey = "__sbStableInteractionRuntime";
           if (doc[listenerKey]) return;
           doc[listenerKey] = true;
 
@@ -64,7 +66,7 @@ def render_stable_tabs(
             return Boolean(tab);
           }}
 
-          function snapshot(event) {{
+          function snapshotTab(event) {{
             if (!isNativeTab(event.target)) return;
             const scroller = doc.querySelector('section.stMain');
             if (!scroller) return;
@@ -85,17 +87,96 @@ def render_stable_tabs(
             }});
           }}
 
-          doc.addEventListener('pointerdown', snapshot, true);
+          function tagWidgetMarkers() {{
+            doc.querySelectorAll('[data-sb-widget-scroll-marker]').forEach(function (marker) {{
+              const scope = marker.getAttribute('data-sb-widget-scroll-marker');
+              let node = marker.closest('[data-testid="stElementContainer"]');
+              while (node && (node = node.previousElementSibling)) {{
+                const group = node.matches?.('[role="radiogroup"]')
+                  ? node
+                  : node.querySelector?.('[role="radiogroup"]');
+                if (group) {{
+                  group.dataset.sbStableWidgetScroll = scope;
+                  break;
+                }}
+              }}
+            }});
+          }}
+
+          const pendingAttribute = 'data-sb-pending-widget-scroll';
+          function holdPosition(pending) {{
+            if (Date.now() >= pending.expires) {{
+              doc.documentElement.removeAttribute(pendingAttribute);
+              return;
+            }}
+            const scroller = doc.querySelector('section.stMain');
+            if (scroller && Math.abs(scroller.scrollTop - pending.top) > 1) {{
+              scroller.scrollTop = pending.top;
+            }}
+            window.parent.requestAnimationFrame(function () {{ holdPosition(pending); }});
+          }}
+
+          function snapshotWidget(event) {{
+            const group = event.target?.closest?.('[data-sb-stable-widget-scroll]');
+            if (!group) return;
+            const scroller = doc.querySelector('section.stMain');
+            if (!scroller) return;
+            const pending = {{
+              scope: group.dataset.sbStableWidgetScroll,
+              top: scroller.scrollTop,
+              expires: Date.now() + 3500,
+            }};
+            doc.documentElement.setAttribute(pendingAttribute, JSON.stringify(pending));
+            function lockScroll() {{
+              if (Date.now() < pending.expires) {{
+                const activeScroller = doc.querySelector('section.stMain') || scroller;
+                if (Math.abs(activeScroller.scrollTop - pending.top) > 1) {{
+                  activeScroller.scrollTop = pending.top;
+                }}
+              }}
+              const activeGroup = doc.activeElement?.closest?.(
+                '[data-sb-stable-widget-scroll]'
+              );
+              if (activeGroup) doc.activeElement.blur();
+            }}
+            scroller.addEventListener('scroll', lockScroll, {{ passive: true }});
+            const mutationGuard = new MutationObserver(lockScroll);
+            mutationGuard.observe(doc.body, {{ childList: true, subtree: true }});
+            window.parent.setTimeout(function () {{
+              scroller.removeEventListener('scroll', lockScroll);
+              mutationGuard.disconnect();
+            }}, 3600);
+            holdPosition(pending);
+          }}
+
+          tagWidgetMarkers();
+          const widgetMarkerObserver = new MutationObserver(tagWidgetMarkers);
+          widgetMarkerObserver.observe(doc.body, {{ childList: true, subtree: true }});
+
+          doc.addEventListener('pointerdown', function (event) {{
+            snapshotTab(event);
+            snapshotWidget(event);
+          }}, true);
           doc.addEventListener('keydown', function (event) {{
             if (event.key === 'Enter' || event.key === ' ') {{
-              snapshot(event);
+              snapshotTab(event);
+              snapshotWidget(event);
             }}
           }}, true);
         }})();
         </script>
         """,
         height=0,
-    )
+        )
+    else:
+        # The legacy zero-height component still occupied one Streamlit stack
+        # slot. Preserve that exact blank allocation while reusing the shared
+        # browser runtime so page geometry remains pixel-compatible.
+        st_module.markdown(
+            '<div data-sb-runtime-layout-slot aria-hidden="true" '
+            'style="height:0;line-height:0">&#8203;</div>',
+            unsafe_allow_html=True,
+        )
     st_module.markdown(
         '<style>'
         'div[data-testid="stElementContainer"]:has([data-sb-tab-scope]){'
@@ -120,8 +201,6 @@ def preserve_scroll_for_preceding_widget(
     if not scope:
         raise ValueError("scope_id must be non-empty")
 
-    import streamlit.components.v1 as components
-
     escaped_scope = html.escape(scope, quote=True)
     st_module.markdown(
         '<style>'
@@ -136,121 +215,6 @@ def preserve_scroll_for_preceding_widget(
         f'<span data-sb-widget-scroll-marker="{escaped_scope}" '
         'aria-hidden="true" style="display:none"></span>',
         unsafe_allow_html=True,
-    )
-    components.html(
-        f"""
-        <script>
-        (function () {{
-          const doc = window.parent.document;
-          const scope = {scope!r};
-          const markerSelector = '[data-sb-widget-scroll-marker="' + scope + '"]';
-
-          function tagWidget() {{
-            const marker = doc.querySelector(markerSelector);
-            if (!marker) return false;
-            let node = marker.closest('[data-testid="stElementContainer"]');
-            while (node && (node = node.previousElementSibling)) {{
-              const group = node.matches?.('[role="radiogroup"]')
-                ? node
-                : node.querySelector?.('[role="radiogroup"]');
-              if (group) {{
-                group.dataset.sbStableWidgetScroll = scope;
-                return true;
-              }}
-            }}
-            return false;
-          }}
-
-          if (!tagWidget()) {{
-            let attempts = 0;
-            const tagTimer = window.parent.setInterval(function () {{
-              attempts += 1;
-              if (tagWidget() || attempts > 40) window.parent.clearInterval(tagTimer);
-            }}, 50);
-          }}
-
-          function installParentRuntime() {{
-            const pendingAttribute = 'data-sb-pending-widget-scroll';
-
-            function holdPosition(pending) {{
-              if (Date.now() >= pending.expires) {{
-                document.documentElement.removeAttribute(pendingAttribute);
-                return;
-              }}
-              const scroller = document.querySelector('section.stMain');
-              if (scroller && Math.abs(scroller.scrollTop - pending.top) > 1) {{
-                scroller.scrollTop = pending.top;
-              }}
-              window.requestAnimationFrame(function () {{
-                holdPosition(pending);
-              }});
-            }}
-
-            function snapshot(event) {{
-              const group = event.target?.closest?.(
-                '[data-sb-stable-widget-scroll]'
-              );
-              if (!group) return;
-              // Do not cancel pointer-down. Streamlit's radio relies on the
-              // native label/input activation sequence to publish the new
-              // value and start the rerun. Cancelling it can make the control
-              // look selected in React while leaving Python on stale state.
-              const scroller = document.querySelector('section.stMain');
-              if (!scroller) return;
-              const pending = {{
-                scope: group.dataset.sbStableWidgetScroll,
-                top: scroller.scrollTop,
-                expires: Date.now() + 3500,
-              }};
-              document.documentElement.setAttribute(
-                pendingAttribute,
-                JSON.stringify(pending)
-              );
-              function lockScroll() {{
-                if (
-                  Date.now() < pending.expires &&
-                  Math.abs(
-                    (document.querySelector('section.stMain') || scroller).scrollTop -
-                      pending.top
-                  ) > 1
-                ) {{
-                  (document.querySelector('section.stMain') || scroller).scrollTop =
-                    pending.top;
-                }}
-                const activeGroup = document.activeElement?.closest?.(
-                  '[data-sb-stable-widget-scroll]'
-                );
-                if (activeGroup) document.activeElement.blur();
-              }}
-              scroller.addEventListener('scroll', lockScroll, {{ passive: true }});
-              const mutationGuard = new MutationObserver(lockScroll);
-              mutationGuard.observe(document.body, {{ childList: true, subtree: true }});
-              window.setTimeout(function () {{
-                scroller.removeEventListener('scroll', lockScroll);
-                mutationGuard.disconnect();
-              }}, 3600);
-              holdPosition(pending);
-            }}
-
-            document.addEventListener('pointerdown', snapshot, true);
-            document.addEventListener('keydown', function (event) {{
-              if (event.key === 'Enter' || event.key === ' ') snapshot(event);
-            }}, true);
-          }}
-
-          // Install the listener in the parent document's JavaScript realm so
-          // it survives removal of this component iframe during a fragment rerun.
-          const runtimeId = 'sb-stable-widget-scroll-runtime';
-          if (!doc.getElementById(runtimeId)) {{
-            const runtime = doc.createElement('script');
-            runtime.id = runtimeId;
-            runtime.textContent = '(' + installParentRuntime.toString() + ')();';
-            doc.head.appendChild(runtime);
-          }}
-        }})();
-        </script>
-        """,
-        height=0,
     )
 
 
