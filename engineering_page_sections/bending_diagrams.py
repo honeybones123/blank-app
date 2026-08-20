@@ -55,6 +55,162 @@ def bind_runtime(namespace: dict) -> None:
     _install_material_teaching_override(namespace)
 
 
+def render_bending_state_panel(*, cached_layout: dict, mu_uls_active: float) -> None:
+    """Render the state-owned diagrams and teaching panel as one fragment body.
+
+    The ULS/SLS/Uncracked selector changes presentation state only. Keeping its
+    dependent diagrams inside this boundary prevents a state change from
+    rebuilding the summary, input cards, and every calculation card.
+    """
+
+    state_options = ("ULS", "SLS (cracked)", "Uncracked")
+    selected_state = st.session_state.get(
+        "bending_state_main",
+        st.session_state.get("bending_state", "ULS"),
+    )
+    if selected_state not in state_options:
+        selected_state = "ULS"
+    main_state = str(selected_state)
+    st.session_state["bending_state"] = main_state
+
+    stress_model = st.session_state.get("concrete_stress_model", "rectangular")
+    if main_state == "ULS":
+        diagram_state_label = (
+            "uls – parabolic" if stress_model == "parabolic" else "uls – rectangular"
+        )
+        state_for_math = "ULS"
+    elif main_state.startswith("SLS"):
+        diagram_state_label = (
+            "sls – parabolic" if stress_model == "parabolic" else "sls – linear"
+        )
+        state_for_math = "SLS"
+    else:
+        diagram_state_label = (
+            "uncracked – parabolic"
+            if stress_model == "parabolic"
+            else "uncracked – linear"
+        )
+        state_for_math = "Uncracked"
+    st.session_state["bending_strain_state_local"] = diagram_state_label
+
+    render_timing_mark("bending_page.runtime.diagram.start")
+    moment_sign = st.session_state.get("bending_detail_view", "positive")
+    ss_state = _stress_strain_state(state_for_math, moment_sign=moment_sign)
+    if state_for_math == "SLS":
+        dn_cracked = st.session_state.get("bending_sls_dn")
+        if dn_cracked is not None:
+            ss_state["sls"] = {
+                "dn_cracked": float(dn_cracked),
+                "dn": float(dn_cracked),
+                "eps_c_top": st.session_state.get("bending_sls_eps_top"),
+                "eps_s_layers": [],
+                "sig_s_layers": [],
+                "y_layers": [],
+            }
+
+    render_timing_mark("bending_page.runtime.diagram.figure.start")
+    fig_ss = _plot_stress_strain_profiles(
+        ss_state,
+        state_label=diagram_state_label,
+        layout=cached_layout,
+        moment_sign=moment_sign,
+    )
+    render_timing_mark("bending_page.runtime.diagram.figure.end")
+
+    render_section_title("Bending Diagrams")
+    section_tab, side_view_tab, moment_tab = render_stable_tabs(
+        st,
+        labels=("Section & stress-strain models", "Side view", "Bending moment"),
+        scope_id="bending-section-diagrams",
+    )
+    with section_tab:
+        render_timing_mark("bending_page.runtime.diagram.streamlit.start")
+        render_plotly_diagram(
+            fig_ss,
+            key="bending_section_stress_strain",
+            title="Section stress and strain",
+            config={"displayModeBar": False},
+        )
+        render_timing_mark("bending_page.runtime.diagram.streamlit.end")
+    with side_view_tab:
+        from bending_side_view_diagram import render_bending_side_view_diagram
+
+        render_bending_side_view_diagram(
+            st.session_state,
+            stress_strain_fig=fig_ss,
+        )
+    with moment_tab:
+        import numpy as np
+
+        mode = str(st.session_state.get("actions_mode", "manual") or "manual").strip().lower()
+        length_m = max(float(get_param("L", 3000.0) or 3000.0) / 1000.0, 0.1)
+        moment_x = list(st.session_state.get("moment_x") or [])
+        moment_values = list(st.session_state.get("moment_values") or [])
+        if not (
+            mode == "design"
+            and moment_x
+            and moment_values
+            and len(moment_x) == len(moment_values)
+        ):
+            moment_x = np.linspace(0.0, length_m, 100).tolist()
+            x_norm = np.asarray(moment_x, dtype=float) / length_m
+            support_type = str(
+                get_param("support_type", "simply_supported") or "simply_supported"
+            ).strip().lower()
+            if "cantilever" in support_type:
+                moment_values = (float(mu_uls_active or 0.0) * (1.0 - x_norm)).tolist()
+            else:
+                moment_values = (
+                    4.0 * float(mu_uls_active or 0.0) * x_norm * (1.0 - x_norm)
+                ).tolist()
+        bmd_state = {
+            "x_plot": moment_x,
+            "M_plot": moment_values,
+            "support_positions_plot": list(
+                st.session_state.get("bmd_support_positions_m") or []
+            ),
+            "support_types_plot": list(st.session_state.get("bmd_support_types") or []),
+            "L": float(moment_x[-1]),
+            "preview_x_m": None,
+            "design_x_m": None,
+            "preview_M": None,
+            "x_pad": max(float(moment_x[-1]) * 0.08, 0.12),
+            "support_type": str(
+                st.session_state.get("support_type") or "simply_supported"
+            ).strip().lower(),
+        }
+        render_plotly_diagram(
+            figure_bmd_from_state(bmd_state, show_m_peak=True),
+            key="bending_moment_diagram",
+            title="Bending moment diagram",
+            config={"displayModeBar": False},
+        )
+    render_timing_mark("bending_page.runtime.diagram.end")
+
+    st.markdown("**State:**")
+    st.radio(
+        "State:",
+        state_options,
+        key="bending_state_main",
+        horizontal=True,
+        index=state_options.index(main_state),
+        label_visibility="collapsed",
+    )
+    preserve_scroll_for_preceding_widget(
+        st,
+        scope_id="bending-state-selector",
+    )
+    st.session_state["bending_state"] = st.session_state.get(
+        "bending_state_main", main_state
+    )
+    render_lazy_expander(
+        "ℹ️ From strain to stress to internal force",
+        lambda: None,
+        key="bending_material_model_expander",
+    )
+    render_timing_mark("bending_page.runtime.material_model.end")
+
+
 def _coalesce_num(v, default: float) -> float:
     """Return default only if v is None (preserves 0)."""
     return default if v is None else float(v)

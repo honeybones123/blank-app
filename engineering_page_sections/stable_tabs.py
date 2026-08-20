@@ -191,9 +191,10 @@ def preserve_scroll_for_preceding_widget(
                 '[data-sb-stable-widget-scroll]'
               );
               if (!group) return;
-              // Avoid focusing a radio that Streamlit is about to remount.
-              // The click event still changes the selected state.
-              if (event.type === 'pointerdown') event.preventDefault();
+              // Do not cancel pointer-down. Streamlit's radio relies on the
+              // native label/input activation sequence to publish the new
+              // value and start the rerun. Cancelling it can make the control
+              // look selected in React while leaving Python on stale state.
               const scroller = document.querySelector('section.stMain');
               if (!scroller) return;
               const pending = {{
