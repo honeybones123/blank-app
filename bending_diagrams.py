@@ -244,6 +244,7 @@ def _sigma_c_parabolic(eps, sigma_peak, eps0=0.002, eps_cu=0.003):
 #  MAIN 3-PANEL SECTION / STRAIN / STRESS DIAGRAM
 # ============================================================
 _BENDING_MAIN_FIGURE_CACHE_KEY = "_bending_main_stress_strain_figure_cache"
+_BENDING_MAIN_FIGURE_CACHE_LIMIT = 6
 _BENDING_MAIN_FIGURE_SESSION_KEYS = (
     "shape_name",
     "sec_shape",
@@ -299,12 +300,14 @@ def _bending_main_figure_fingerprint(
 def _plot_stress_strain_profiles(
     state_dict, state_label=None, layout=None, moment_sign: str = "positive"
 ):
-    """Return the shared 3-panel figure, reusing only identical presentation state.
+    """Return the shared 3-panel figure, reusing identical presentation states.
 
-    The cache is deliberately session-local and single-entry. It owns no
-    engineering result: all calculation state is resolved before this wrapper,
-    and any dependency read by the shared figure builder invalidates the key.
-    Dev mode bypasses caching so diagram consistency diagnostics still execute.
+    The cache is deliberately session-local and bounded. It owns no engineering result:
+    all calculation state is resolved before this wrapper, and every
+    dependency read by the shared figure builder is part of the fingerprint.
+    Keeping a few exact states avoids rebuilding ULS when a user returns from
+    SLS or Uncracked. Dev mode bypasses caching so diagram consistency
+    diagnostics still execute.
     """
     if layout is None or state_label is None or st.session_state.get("_dev_mode", False):
         return _stress_diagram_plot_stress_strain_profiles(
@@ -321,12 +324,19 @@ def _plot_stress_strain_profiles(
         moment_sign=moment_sign,
     )
     cached = st.session_state.get(_BENDING_MAIN_FIGURE_CACHE_KEY)
-    if (
-        isinstance(cached, dict)
-        and cached.get("fingerprint") == fingerprint
-        and cached.get("figure") is not None
-    ):
-        return cached["figure"]
+    entries = dict(cached.get("entries") or {}) if isinstance(cached, dict) else {}
+    order = [
+        str(value)
+        for value in (cached.get("order") or ())
+        if str(value) in entries
+    ] if isinstance(cached, dict) else []
+    if entries.get(fingerprint) is not None:
+        order = [value for value in order if value != fingerprint] + [fingerprint]
+        st.session_state[_BENDING_MAIN_FIGURE_CACHE_KEY] = {
+            "entries": entries,
+            "order": order,
+        }
+        return entries[fingerprint]
 
     figure = _stress_diagram_plot_stress_strain_profiles(
         state_dict,
@@ -334,9 +344,13 @@ def _plot_stress_strain_profiles(
         layout=layout,
         moment_sign=moment_sign,
     )
+    entries[fingerprint] = figure
+    order = [value for value in order if value != fingerprint] + [fingerprint]
+    while len(order) > _BENDING_MAIN_FIGURE_CACHE_LIMIT:
+        entries.pop(order.pop(0), None)
     st.session_state[_BENDING_MAIN_FIGURE_CACHE_KEY] = {
-        "fingerprint": fingerprint,
-        "figure": figure,
+        "entries": entries,
+        "order": order,
     }
     return figure
 
