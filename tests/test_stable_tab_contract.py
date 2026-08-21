@@ -31,7 +31,11 @@ def test_preloaded_plotly_state_switch_is_browser_only() -> None:
     assert "requestAnimationFrame" in source
     assert "node.dataset.sbPlotlyState" in source
     assert "data-sb-preloaded-plotly-state" in source
+    assert "data-sb-plotly-visibility-ready" in source
+    assert "taggingComplete" in source
     assert "plot.setAttribute('data-sb-preloaded-plotly-state'" in source
+    assert "plot.setAttribute('data-sb-plotly-visibility-ready', '1')" in source
+    assert "plot.removeAttribute('data-sb-plotly-visibility-ready')" in source
     assert "node.style.opacity" not in source
     assert "data-sb-trace-state-order" in source
     assert "node.getAttribute('data-index')" in source
@@ -39,6 +43,20 @@ def test_preloaded_plotly_state_switch_is_browser_only() -> None:
     assert "Plotly.update" not in source
     assert "Plotly.restyle" not in source
     assert "st_module.session_state" not in source
+
+
+def test_preloaded_plotly_css_is_progressive_enhancement_with_specific_active_rules() -> None:
+    source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '[data-sb-plotly-visibility-ready="1"] .scatterlayer .trace' in source
+    assert (
+        '[data-sb-plotly-visibility-ready="1"]'
+        '[data-sb-preloaded-plotly-state="0"] .scatterlayer .trace'
+        in source
+    )
+    assert "plotly.Plots.resize(plot)" in source
 
 
 def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:

@@ -56,14 +56,20 @@ def render_stable_tabs(
             ' [role="tabpanel"] {{',
             ' min-height: var(--sb-stable-panel-height) !important;',
             '}}',
-            '[data-sb-preloaded-plotly-state] .scatterlayer .trace[data-sb-plotly-state],',
-            '[data-sb-preloaded-plotly-state] g.shapelayer .shape-group[data-sb-plotly-state],',
-            '[data-sb-preloaded-plotly-state] .annotation[data-sb-plotly-state] {{',
+            '[data-sb-plotly-visibility-ready="1"] .scatterlayer .trace[data-sb-plotly-state],',
+            '[data-sb-plotly-visibility-ready="1"] g.shapelayer .shape-group[data-sb-plotly-state],',
+            '[data-sb-plotly-visibility-ready="1"] .annotation[data-sb-plotly-state] {{',
             ' opacity: 0 !important;',
             '}}',
-            '[data-sb-preloaded-plotly-state="0"] [data-sb-plotly-state="0"],',
-            '[data-sb-preloaded-plotly-state="1"] [data-sb-plotly-state="1"],',
-            '[data-sb-preloaded-plotly-state="2"] [data-sb-plotly-state="2"] {{',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="0"] .scatterlayer .trace[data-sb-plotly-state="0"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="0"] g.shapelayer .shape-group[data-sb-plotly-state="0"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="0"] .annotation[data-sb-plotly-state="0"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="1"] .scatterlayer .trace[data-sb-plotly-state="1"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="1"] g.shapelayer .shape-group[data-sb-plotly-state="1"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="1"] .annotation[data-sb-plotly-state="1"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="2"] .scatterlayer .trace[data-sb-plotly-state="2"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="2"] g.shapelayer .shape-group[data-sb-plotly-state="2"],',
+            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="2"] .annotation[data-sb-plotly-state="2"] {{',
             ' opacity: 1 !important;',
             '}}'
           ].join('');
@@ -95,6 +101,24 @@ def render_stable_tabs(
                 }}
               }}, delay);
             }});
+            if (tabset) {{
+              window.parent.setTimeout(function () {{
+                delete tabset.dataset.sbStablePanelHeight;
+                tabset.style.removeProperty('--sb-stable-panel-height');
+                const activePlot = tabset.querySelector(
+                  '[role="tabpanel"] .js-plotly-plot'
+                );
+                const plotly = window.parent.Plotly || window.Plotly;
+                if (
+                  activePlot
+                  && plotly
+                  && plotly.Plots
+                  && typeof plotly.Plots.resize === 'function'
+                ) {{
+                  plotly.Plots.resize(activePlot);
+                }}
+              }}, 800);
+            }}
           }}
 
           function tagWidgetMarkers() {{
@@ -181,7 +205,24 @@ def render_stable_tabs(
               );
               plot.dataset.sbPlotlyVisibilityTagged = '1';
             }}
+            const taggingComplete = visibilityNodes.length > 0 && visibilityNodes.every(
+              function (node) {{
+                const state = Number(node.getAttribute('data-sb-plotly-state'));
+                return Number.isInteger(state) && state >= 0 && state <= 2;
+              }}
+            );
+            if (!taggingComplete) {{
+              plot.removeAttribute('data-sb-plotly-visibility-ready');
+              return;
+            }}
             plot.setAttribute('data-sb-preloaded-plotly-state', String(requestedIndex));
+            plot.setAttribute('data-sb-plotly-visibility-ready', '1');
+            const plotly = window.parent.Plotly || window.Plotly;
+            if (plotly && plotly.Plots && typeof plotly.Plots.resize === 'function') {{
+              window.parent.requestAnimationFrame(function () {{
+                plotly.Plots.resize(plot);
+              }});
+            }}
             if (recordTiming) {{
               window.parent.requestAnimationFrame(function () {{
                 doc.documentElement.setAttribute(

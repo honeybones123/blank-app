@@ -2,67 +2,12 @@
 
 from __future__ import annotations
 
-
-def _install_material_teaching_override(namespace: dict) -> None:
-    """Replace only the bending material expander body with the styled lesson.
-
-    ``bending_page_runtime`` already delegates diagram helpers through
-    ``bind_runtime``.  Use that existing seam so the large page coordinator does
-    not need a second copy of the teaching markup.  Engineering state and plot
-    builders remain owned by the runtime; this wrapper changes presentation only.
-    """
-
-    original = namespace.get("render_lazy_expander")
-    if original is None or getattr(original, "_sb_material_teaching_override", False):
-        return
-
-    def render_lazy_expander_with_material_lesson(label, render_body, *args, **kwargs):
-        if kwargs.get("key") != "bending_material_model_expander":
-            return original(label, render_body, *args, **kwargs)
-
-        def render_styled_material_lesson() -> None:
-            from engineering_page_sections.bending_material_teaching import (
-                render_bending_material_teaching_panel,
-            )
-
-            st_module = namespace["st"]
-            selected_state = str(
-                st_module.session_state.get(
-                    "bending_state_main",
-                    st_module.session_state.get("bending_state", "ULS"),
-                )
-                or "ULS"
-            )
-            render_bending_material_teaching_panel(
-                selected_state=selected_state,
-                plot_material_curves=namespace["_plot_material_stress_strain_curves"],
-                render_plotly_diagram=namespace["render_plotly_diagram"],
-            )
-
-        return original(
-            "ℹ️ From strain to stress to internal force",
-            render_styled_material_lesson,
-            *args,
-            **kwargs,
-        )
-
-    render_lazy_expander_with_material_lesson._sb_material_teaching_override = True
-    namespace["render_lazy_expander"] = render_lazy_expander_with_material_lesson
-
-
 def bind_runtime(namespace: dict) -> None:
     globals().update({key: value for key, value in namespace.items() if not key.startswith("__")})
-    _install_material_teaching_override(namespace)
 
 
 def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
-    """Reserve the measured diagram region while its figures are prepared.
-
-    The completed Bending diagram block is 647.16 px high at both locked
-    desktop and narrow viewports.  Publishing that footprint before the
-    calculation cards are rendered lets the useful page stream immediately
-    without moving later content when the real diagrams replace the shell.
-    """
+    """Reserve the shared Bending diagram frame while figures are prepared."""
 
     with container:
         st.markdown(
@@ -70,7 +15,7 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
         <style>
         .bending-diagram-loading-region {
           box-sizing: border-box;
-          height: 647.15625px;
+          height: var(--sb-bending-diagram-region-height, 672px);
           width: 100%;
           overflow: hidden;
           color: #10234a;
@@ -441,7 +386,8 @@ def render_bending_state_panel(
     # Streamlit stack slot before this section. Recreate that exact final-page
     # geometry here, after the visible loading shells have already streamed.
     st.markdown(
-        '<div data-bending-diagrams-layout-slot aria-hidden="true" '
+        '<div data-bending-diagrams-layout-slot data-bending-diagram-region-start '
+        'aria-hidden="true" '
         'style="height:0;line-height:0">&#8203;</div>',
         unsafe_allow_html=True,
     )
@@ -548,9 +494,28 @@ def render_bending_state_panel(
     st.session_state["bending_state"] = st.session_state.get(
         "bending_state_main", main_state
     )
+
+    def render_material_teaching_lesson() -> None:
+        from engineering_page_sections.bending_material_teaching import (
+            render_bending_material_teaching_panel,
+        )
+
+        selected_material_state = str(
+            st.session_state.get(
+                "bending_state_main",
+                st.session_state.get("bending_state", "ULS"),
+            )
+            or "ULS"
+        )
+        render_bending_material_teaching_panel(
+            selected_state=selected_material_state,
+            plot_material_curves=_plot_material_stress_strain_curves,
+            render_plotly_diagram=render_plotly_diagram,
+        )
+
     render_lazy_expander(
         "ℹ️ From strain to stress to internal force",
-        lambda: None,
+        render_material_teaching_lesson,
         key="bending_material_model_expander",
     )
     st.markdown(

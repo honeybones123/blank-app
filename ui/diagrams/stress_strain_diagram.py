@@ -17,6 +17,7 @@ from plotly_section import make_sectionA_figure
 from section_props.plot import apply_section_axes
 from state_and_helpers import get_param
 import strain_display
+from ui.design_tokens import BENDING_DIAGRAM_PLOT_HEIGHT_PX
 
 from .diagram_styles import (
     COMPRESSION,
@@ -1688,7 +1689,7 @@ def plot_stress_strain_profiles(
     fig.update_layout(
         showlegend=False,
         margin=dict(l=10, r=10, t=40, b=10),
-        height=320,
+        height=BENDING_DIAGRAM_PLOT_HEIGHT_PX,
         width=900,
     )
 

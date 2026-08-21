@@ -33,9 +33,7 @@ def test_bending_shells_publish_back_to_back_after_stable_positions_exist() -> N
         first_shell,
     )
     assert (
-        shell_container
-        < slot
-        < inputs
+        shell_container < slot < inputs
         < calculation_container
         < first_shell
         < calculation_shell
@@ -48,10 +46,36 @@ def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None
     ).read_text(encoding="utf-8")
 
     assert 'data-testid="bending-diagram-loading-region"' in source
-    assert "height: 647.15625px" in source
+    assert "height: var(--sb-bending-diagram-region-height, 672px)" in source
+    assert "647.15625px" not in source
     assert "Preparing bending diagrams" in source
     assert 'data-bending-diagram-shell="GENERATION"' in source
     assert 'data-bending-diagram-ready="{int(diagram_shell_generation)}"' in source
+
+
+def test_bending_diagram_geometry_uses_shared_tokens() -> None:
+    tokens = (ROOT / "ui" / "design_tokens.py").read_text(encoding="utf-8")
+    figure = (
+        ROOT / "ui" / "diagrams" / "stress_strain_diagram.py"
+    ).read_text(encoding="utf-8")
+
+    assert "BENDING_DIAGRAM_PLOT_HEIGHT_PX = 320" in tokens
+    assert "BENDING_DIAGRAM_REGION_HEIGHT_PX = 672" in tokens
+    assert "height=BENDING_DIAGRAM_PLOT_HEIGHT_PX" in figure
+
+
+def test_bending_browser_regression_measures_live_geometry_and_blank_hosts() -> None:
+    verifier = (
+        ROOT / "tools" / "verification" / "helpers" / "bending_diagram_regression.py"
+    ).read_text(encoding="utf-8")
+
+    assert "layout_delta_px" in verifier
+    assert "abs(delta) > 2" in verifier
+    assert "Bending Plotly host is mounted but blank" in verifier
+    assert '("ULS", "0")' in verifier
+    assert '("SLS (cracked)", "1")' in verifier
+    assert '("Uncracked", "2")' in verifier
+    assert "Material lesson live Plotly chart did not mount" in verifier
 
 
 def test_bending_calculation_shell_reserves_the_measured_collapsed_region() -> None:
