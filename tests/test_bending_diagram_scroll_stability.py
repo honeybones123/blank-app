@@ -9,26 +9,25 @@ def test_bending_views_use_client_side_tabs_without_a_rerun_selector() -> None:
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
 
-    assert 'section_tab, side_view_tab, moment_tab = render_stable_tabs(' in source
+    assert "section_tab, side_view_tab, moment_tab = render_stable_tabs(" in source
     assert 'key="bending_diagram_view"' not in source
     assert 'if diagram_view == "Section":' not in source
 
 
-def test_bending_diagrams_use_stable_streamlit_component_keys() -> None:
+def test_bending_diagrams_use_stable_component_keys() -> None:
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
     side_view = (ROOT / "bending_side_view_diagram.py").read_text(encoding="utf-8")
 
-    assert 'key="bending_section_stress_strain"' in diagrams
+    assert 'key=f"bending_section_stress_strain_{option_key}"' in diagrams
+    assert 'key=f"bending_state_plot_{option_key}"' in diagrams
     assert 'key="bending_side_view"' in side_view
     assert 'key=f"bending_side_view_' not in side_view
     assert "@st.fragment\ndef render_bending_side_view_diagram(" in side_view
 
 
 def test_bending_check_tabs_keep_a_stable_container() -> None:
-    """A tab click must not replace the detailed-calculation DOM slot."""
-
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
 
     assert "calc_blocks_container = st.container()" in source
@@ -37,87 +36,69 @@ def test_bending_check_tabs_keep_a_stable_container() -> None:
 
 
 def test_bending_calculation_tabs_are_client_side_and_preserve_scroll() -> None:
-    """ULS/SLS selection is view-only and must not remount the page."""
-
-    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
-
-    assert "uls_checks_tab, sls_checks_tab, minimum_checks_tab = render_stable_tabs(" in source
-    assert "with uls_checks_tab:" in source
-    assert "with sls_checks_tab:" in source
-    assert "with minimum_checks_tab:" in source
-    assert 'scope_id="bending-calculation-checks"' in source
+    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
+
+    assert "uls_checks_tab, sls_checks_tab, minimum_checks_tab = render_stable_tabs(" in runtime
+    assert "with uls_checks_tab:" in runtime
+    assert "with sls_checks_tab:" in runtime
+    assert "with minimum_checks_tab:" in runtime
+    assert 'scope_id="bending-calculation-checks"' in runtime
     assert 'scope_id="bending-section-diagrams"' in diagrams
-    assert "preserve_scroll_for_preceding_widget" in source
-    assert "render_stable_tabs" in source
-    assert "render_lazy_check_tab_selector" not in source
+    assert "render_lazy_check_tab_selector" not in runtime
 
 
-def test_bending_state_selector_preserves_main_scroll_during_rerun() -> None:
-    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+def test_bending_state_selector_uses_cancellable_one_shot_scroll_correction() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
     helper = (
         ROOT / "engineering_page_sections" / "stable_tabs.py"
     ).read_text(encoding="utf-8")
 
-    diagrams = (
-        ROOT / "engineering_page_sections" / "bending_diagrams.py"
-    ).read_text(encoding="utf-8")
     assert "preserve_scroll_for_preceding_widget(" in diagrams
     assert 'scope_id="bending-state-selector"' in diagrams
     assert "data-sb-stable-widget-scroll" in helper
-    assert "__sbStableInteractionRuntime" in helper
-    assert "tagWidgetMarkers" in helper
-    assert "widgetMarkerObserver" in helper
-    assert "holdPosition(pending)" in helper
-    assert "MutationObserver(lockScroll)" in helper
+    assert "sawReadyRemoval" in helper
     assert "scroller.scrollTop = pending.top" in helper
+    assert "clearWidgetRestore();" in helper
+    assert "cancelPendingScrollPreservation" in helper
+    assert "holdPosition" not in helper
+    assert "MutationObserver(lockScroll)" not in helper
+    assert "3500" not in helper
     assert "event.preventDefault()" not in helper
 
 
-def test_bending_mounts_one_preloaded_state_figure() -> None:
+def test_bending_mounts_complete_independent_state_figures() -> None:
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
 
     assert 'state_options = ("ULS", "SLS (cracked)", "Uncracked")' in diagrams
-    assert 'scope_id="bending-preloaded-states"' not in diagrams
-    assert diagrams.count('key="bending_section_stress_strain"') == 1
-    assert 'data-sb-plotly-visibility-scope="bending-state-diagram"' in diagrams
-    assert 'data-sb-trace-groups="{trace_group_counts}"' in diagrams
-    assert 'data-sb-trace-state-order="{trace_state_order}"' in diagrams
-    assert 'data-sb-shape-groups="{shape_group_counts}"' in diagrams
-    assert 'data-sb-annotation-groups="{annotation_group_counts}"' in diagrams
-    assert 'target_plotly_visibility_scope_id="bending-state-diagram"' in diagrams
-    assert 'render_timing_mark("bending_page.runtime.diagram.preload.start")' not in diagrams
-    assert "if option == main_state:" in diagrams
-    assert "_plot_stress_strain_profiles(" in diagrams
+    assert "state_figures = {main_state: selected_fig_ss}" in diagrams
+    assert "state_figures[option] = _plot_stress_strain_profiles(" in diagrams
+    assert 'state_label=option_label' in diagrams
+    assert "bending_state_plot_" in diagrams
+    assert "display:none!important" in diagrams
+    assert "display:block!important" in diagrams
+    assert "combined_fig" not in diagrams
+    assert "trace_groups" not in diagrams
+    assert "shape_groups" not in diagrams
+    assert "annotation_groups" not in diagrams
+    assert "data-sb-preloaded-plotly-state" not in diagrams
 
 
-def test_bending_preloaded_states_keep_independent_stress_axes() -> None:
+def test_explicit_state_label_remains_plot_authority() -> None:
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
 
-    assert '"ULS": "x3"' in diagrams
-    assert '"SLS (cracked)": "x4"' in diagrams
-    assert '"Uncracked": "x5"' in diagrams
-    assert "trace_dom_order.append(" in diagrams
-    assert 'trace_json["xaxis"] = target_axis_ref' in diagrams
-    assert 'shape_json["xref"] = target_axis_ref + xref[2:]' in diagrams
-    assert 'annotation_json["xref"] = target_axis_ref + xref[2:]' in diagrams
-    assert 'annotation_json["axref"] = target_axis_ref + axref[2:]' in diagrams
-
-
-def test_bending_preload_marker_cannot_change_page_geometry() -> None:
-    diagrams = (
-        ROOT / "engineering_page_sections" / "bending_diagrams.py"
-    ).read_text(encoding="utf-8")
-
-    assert '[data-sb-plotly-visibility-scope="bending-state-diagram"]){' in diagrams
-    assert 'display:none!important;height:0!important;min-height:0!important;' in diagrams
-    assert 'margin:0!important;padding:0!important;' in diagrams
+    assert "diagram_state_label, _ = state_projection(main_state)" in diagrams
+    assert "state_label=diagram_state_label" in diagrams
+    assert "option_label, option_state = state_projection(option)" in diagrams
+    assert "state_label=option_label" in diagrams
 
 
 def test_bending_state_switch_owns_only_state_dependent_diagrams() -> None:
@@ -134,3 +115,15 @@ def test_bending_state_switch_owns_only_state_dependent_diagrams() -> None:
     assert runtime.index('render_timing_mark("bending_page.runtime.checks.end")') < runtime.rindex(
         "_render_bending_state_panel("
     )
+
+
+def test_material_lesson_has_an_explicit_real_body() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def render_material_teaching_lesson()" in diagrams
+    assert "render_bending_material_teaching_panel(" in diagrams
+    assert "plot_material_curves=_plot_material_stress_strain_curves" in diagrams
+    assert "render_lazy_expander(" in diagrams
+    assert "lambda: None" not in diagrams

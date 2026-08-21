@@ -15,10 +15,27 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
         <style>
         .bending-diagram-loading-region {
           box-sizing: border-box;
-          height: var(--sb-bending-diagram-region-height, 672px);
+          height: var(--sb-bending-diagram-region-height, 780px);
           width: 100%;
           overflow: hidden;
+          background: #fff;
           color: #10234a;
+          pointer-events: none;
+        }
+        .st-key-bending_diagram_frame {
+          position: relative;
+          min-height: var(--sb-bending-diagram-region-height, 780px);
+        }
+        .st-key-bending_diagram_frame
+        > div[data-testid="stLayoutWrapper"]:has(
+          > .st-key-bending_diagram_shell
+        ) {
+          position: absolute;
+          inset: 0;
+          z-index: 10;
+        }
+        .st-key-bending_diagram_shell {
+          height: 100%;
         }
         .bending-diagram-loading-heading {
           font-size: 17.6px;
@@ -47,9 +64,33 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
           font-weight: 600;
           line-height: 1.4;
         }
-        section.stMain:has([data-bending-diagram-ready="GENERATION"])
-        div[data-testid="stElementContainer"]:has(
-          [data-bending-diagram-shell="GENERATION"]
+        html:not([data-sb-bending-visible-state]):has(
+          .st-key-bending_state_plot_uls .js-plotly-plot .scatterlayer .trace
+        )
+        .st-key-bending_diagram_frame
+        > div[data-testid="stLayoutWrapper"]:has(
+          > .st-key-bending_diagram_shell
+        ),
+        html[data-sb-bending-visible-state="uls"]:has(
+          .st-key-bending_state_plot_uls .js-plotly-plot .scatterlayer .trace
+        )
+        .st-key-bending_diagram_frame
+        > div[data-testid="stLayoutWrapper"]:has(
+          > .st-key-bending_diagram_shell
+        ),
+        html[data-sb-bending-visible-state="sls-cracked"]:has(
+          .st-key-bending_state_plot_sls_cracked .js-plotly-plot .scatterlayer .trace
+        )
+        .st-key-bending_diagram_frame
+        > div[data-testid="stLayoutWrapper"]:has(
+          > .st-key-bending_diagram_shell
+        ),
+        html[data-sb-bending-visible-state="uncracked"]:has(
+          .st-key-bending_state_plot_uncracked .js-plotly-plot .scatterlayer .trace
+        )
+        .st-key-bending_diagram_frame
+        > div[data-testid="stLayoutWrapper"]:has(
+          > .st-key-bending_diagram_shell
         ) {
           display: none !important;
           height: 0 !important;
@@ -57,16 +98,11 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
           margin: 0 !important;
           padding: 0 !important;
         }
-        section.stMain:not(:has([data-bending-diagram-ready="GENERATION"]))
-        div[data-testid="stElementContainer"]:has(
-          [data-bending-diagram-shell="GENERATION"]
-        ) {
-          margin-top: 16.640625px;
-        }
         </style>
         <div class="bending-diagram-loading-region"
              data-testid="bending-diagram-loading-region"
              data-bending-diagram-shell="GENERATION"
+             data-bending-diagram-geometry-token="--sb-bending-diagram-region-height"
              role="status" aria-live="polite">
           <div class="bending-diagram-loading-heading">Bending Diagrams</div>
           <div class="bending-diagram-loading-shell">
@@ -74,6 +110,30 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
             <span class="bending-diagram-loading-copy">Preparing bending diagrams</span>
           </div>
         </div>
+            """.replace("GENERATION", str(int(generation))),
+            unsafe_allow_html=True,
+        )
+
+
+def render_bending_diagram_initial_ready(container, *, generation: int) -> None:
+    """Permanently retire one cold-load shell after its first live diagram."""
+
+    with container:
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stElementContainer"]:has(
+              [data-bending-diagram-initial-ready="GENERATION"]
+            ) {
+              display: none !important;
+              height: 0 !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            </style>
+            <span data-bending-diagram-initial-ready="GENERATION"
+                  aria-hidden="true" style="display:none"></span>
             """.replace("GENERATION", str(int(generation))),
             unsafe_allow_html=True,
         )
@@ -280,106 +340,6 @@ def render_bending_state_panel(
             layout=cached_layout,
             moment_sign=moment_sign,
         )
-
-    import plotly.graph_objects as go
-
-    combined_fig = go.Figure(layout=state_figures["ULS"].layout)
-    axis_ref_by_state = {
-        "ULS": "x3",
-        "SLS (cracked)": "x4",
-        "Uncracked": "x5",
-    }
-    for option in ("SLS (cracked)", "Uncracked"):
-        axis_json = state_figures[option].layout.xaxis3.to_plotly_json()
-        axis_json.update({"anchor": "y3", "overlaying": "x3", "visible": False})
-        combined_fig.update_layout(
-            **{f"xaxis{axis_ref_by_state[option][1:]}": axis_json}
-        )
-    trace_groups = []
-    combined_shapes = []
-    combined_annotations = []
-    shape_groups = []
-    annotation_groups = []
-    trace_dom_order = []
-    for state_index, option in enumerate(state_options):
-        option_figure = state_figures[option]
-        target_axis_ref = axis_ref_by_state[option]
-        trace_start = len(combined_fig.data)
-        for trace in option_figure.data:
-            trace_json = trace.to_plotly_json()
-            if trace_json.get("xaxis") == "x3":
-                trace_json["xaxis"] = target_axis_ref
-            trace_json["opacity"] = 1.0 if option == main_state else 0.0
-            combined_fig.add_trace(trace_json)
-            x_values = trace_json.get("x")
-            y_values = trace_json.get("y")
-            point_count = max(
-                len(x_values) if x_values is not None else 0,
-                len(y_values) if y_values is not None else 0,
-            )
-            if point_count:
-                x_ref = str(trace_json.get("xaxis") or "x")
-                y_ref = str(trace_json.get("yaxis") or "y")
-
-                def _axis_number(reference: str, prefix: str) -> int:
-                    suffix = reference.removeprefix(prefix)
-                    return int(suffix) if suffix.isdigit() else 1
-
-                trace_dom_order.append(
-                    (
-                        _axis_number(x_ref, "x"),
-                        _axis_number(y_ref, "y"),
-                        len(combined_fig.data) - 1,
-                        state_index,
-                    )
-                )
-        trace_groups.append(range(trace_start, len(combined_fig.data)))
-
-        shape_start = len(combined_shapes)
-        for shape in option_figure.layout.shapes:
-            shape_json = shape.to_plotly_json()
-            xref = str(shape_json.get("xref", ""))
-            if xref == "x3" or xref.startswith("x3 "):
-                shape_json["xref"] = target_axis_ref + xref[2:]
-            shape_json["opacity"] = (
-                float(shape_json.get("opacity", 1.0) or 1.0)
-                if option == main_state
-                else 0.0
-            )
-            combined_shapes.append(shape_json)
-        shape_groups.append(range(shape_start, len(combined_shapes)))
-
-        annotation_start = len(combined_annotations)
-        for annotation in option_figure.layout.annotations:
-            annotation_json = annotation.to_plotly_json()
-            xref = str(annotation_json.get("xref", ""))
-            if xref == "x3" or xref.startswith("x3 "):
-                annotation_json["xref"] = target_axis_ref + xref[2:]
-            axref = str(annotation_json.get("axref", ""))
-            if axref == "x3" or axref.startswith("x3 "):
-                annotation_json["axref"] = target_axis_ref + axref[2:]
-            annotation_json["opacity"] = (
-                float(annotation_json.get("opacity", 1.0) or 1.0)
-                if option == main_state
-                else 0.0
-            )
-            combined_annotations.append(annotation_json)
-        annotation_groups.append(range(annotation_start, len(combined_annotations)))
-
-    combined_fig.update_layout(
-        shapes=combined_shapes,
-        annotations=combined_annotations,
-    )
-    fig_ss = combined_fig
-    trace_group_counts = ",".join(str(len(group)) for group in trace_groups)
-    trace_state_order = ",".join(
-        str(state_index)
-        for _x_axis, _y_axis, _data_index, state_index in sorted(trace_dom_order)
-    )
-    shape_group_counts = ",".join(str(len(group)) for group in shape_groups)
-    annotation_group_counts = ",".join(
-        str(len(group)) for group in annotation_groups
-    )
     render_timing_mark("bending_page.runtime.diagram.figure.end")
 
     # The deferred summary browser binding used to contribute one zero-height
@@ -387,6 +347,7 @@ def render_bending_state_panel(
     # geometry here, after the visible loading shells have already streamed.
     st.markdown(
         '<div data-bending-diagrams-layout-slot data-bending-diagram-region-start '
+        'data-bending-diagram-geometry-token="--sb-bending-diagram-region-height" '
         'aria-hidden="true" '
         'style="height:0;line-height:0">&#8203;</div>',
         unsafe_allow_html=True,
@@ -400,26 +361,46 @@ def render_bending_state_panel(
     )
     with section_tab:
         render_timing_mark("bending_page.runtime.diagram.streamlit.start")
+        state_keys = {
+            "ULS": "uls",
+            "SLS (cracked)": "sls-cracked",
+            "Uncracked": "uncracked",
+        }
+        selected_state_key = state_keys[main_state]
+        state_container_classes = {
+            option: f"st-key-bending_state_plot_{state_keys[option].replace('-', '_')}"
+            for option in state_options
+        }
+        state_rules = "".join(
+            f'html[data-sb-bending-visible-state="{state_keys[option]}"] '
+            f'.{state_container_classes[option]}'
+            '{display:block!important;}'
+            for option in state_options
+        )
         st.markdown(
             '<style>'
-            'div[data-testid="stElementContainer"]:has('
-            '[data-sb-plotly-visibility-scope="bending-state-diagram"]){'
-            'display:none!important;height:0!important;min-height:0!important;'
-            'margin:0!important;padding:0!important;}'
-            '</style>'
-            '<span data-sb-plotly-visibility-scope="bending-state-diagram" '
-            f'data-sb-trace-groups="{trace_group_counts}" '
-            f'data-sb-trace-state-order="{trace_state_order}" '
-            f'data-sb-shape-groups="{shape_group_counts}" '
-            f'data-sb-annotation-groups="{annotation_group_counts}" '
-            'aria-hidden="true" style="display:none"></span>',
+            + ",".join(f'.{css_class}' for css_class in state_container_classes.values())
+            + '{display:none!important;}'
+            + f'html:not([data-sb-bending-visible-state]) '
+              f'.{state_container_classes[main_state]}'
+              '{display:block!important;}'
+            + state_rules
+            + '</style>',
             unsafe_allow_html=True,
         )
-        render_plotly_diagram(
-            fig_ss,
-            key="bending_section_stress_strain",
-            title="Section stress and strain",
-            config={"displayModeBar": False},
+        for option in state_options:
+            option_key = state_keys[option].replace("-", "_")
+            with st.container(key=f"bending_state_plot_{option_key}"):
+                render_plotly_diagram(
+                    state_figures[option],
+                    key=f"bending_section_stress_strain_{option_key}",
+                    title=f"Section stress and strain — {option}",
+                    config={"displayModeBar": False},
+                )
+        st.markdown(
+            '<span data-sb-bending-server-state="'
+            f'{selected_state_key}" aria-hidden="true" style="display:none"></span>',
+            unsafe_allow_html=True,
         )
         render_timing_mark("bending_page.runtime.diagram.streamlit.end")
     with side_view_tab:
@@ -489,7 +470,8 @@ def render_bending_state_panel(
     preserve_scroll_for_preceding_widget(
         st,
         scope_id="bending-state-selector",
-        target_plotly_visibility_scope_id="bending-state-diagram",
+        visible_state_attribute="data-sb-bending-visible-state",
+        visible_state_keys=("uls", "sls-cracked", "uncracked"),
     )
     st.session_state["bending_state"] = st.session_state.get(
         "bending_state_main", main_state

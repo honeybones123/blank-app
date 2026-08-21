@@ -566,4 +566,6 @@ def test_bending_summary_binding_is_deferred_without_changing_layout() -> None:
 
     assert diagram_shell < calculation_shell < binding
     assert "data-bending-diagrams-layout-slot" in diagram_source
-    assert "margin-top: 16.640625px" in diagram_source
+    assert ".st-key-bending_diagram_frame" in diagram_source
+    assert "> .st-key-bending_diagram_shell" in diagram_source
+    assert "margin-top: 16.640625px" not in diagram_source

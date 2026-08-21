@@ -4,59 +4,65 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_shared_stable_tabs_are_native_view_only_tabs() -> None:
+def test_shared_stable_tabs_are_scoped_native_view_only_tabs() -> None:
     source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"
     )
 
     assert "return tuple(st_module.tabs(tab_labels))" in source
     assert "st_module.radio(" not in source
-    assert "section.stMain" in source
     assert 'const listenerKey = "__sbStableInteractionRuntime"' in source
-    assert "snapshotTab(event)" in source
-    assert "snapshotWidget(event)" in source
-    assert "window.parent.setTimeout" in source
-    assert "session_state" not in source
+    assert "stableTabFor(event.target)" in source
+    assert "tabset?.dataset?.sbTabScope" in source
+    assert "tagStableTabsets()" in source
     assert 'data-sb-tab-scope=' in source
+    assert "session_state" not in source
 
 
-def test_preloaded_plotly_state_switch_is_browser_only() -> None:
+def test_bending_state_switch_changes_only_complete_plot_hosts() -> None:
+    helper = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
+        encoding="utf-8"
+    )
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert "data-sb-widget-visible-state-attribute" in helper
+    assert "data-sb-bending-state-generation" in helper
+    assert "data-sb-last-bending-host-switch-ms" in helper
+    assert "data-sb-bending-browser-ready" not in helper
+    assert "publishWhenPainted" not in diagrams
+    assert "data-sb-bending-browser-ready" not in diagrams
+    assert ".js-plotly-plot .scatterlayer .trace" in diagrams
+    assert "bending_state_plot_" in diagrams
+    assert "state_figures[option]" in diagrams
+    assert "display:none!important" in diagrams
+    assert "display:block!important" in diagrams
+    assert "switchPreloadedPlotlyVisibility" not in helper
+    assert "switchPreloadedPlotlyState" not in helper
+    assert "node.style.opacity" not in helper
+    assert "dataset.sbPlotlyState" not in helper
+    assert "data-sb-preloaded-plotly-state" not in helper
+    assert "Plotly.react" not in helper
+    assert "Plotly.update" not in helper
+
+
+def test_scroll_preservation_is_one_shot_and_yields_to_user_intent() -> None:
     source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"
     )
 
-    assert "switchPreloadedPlotlyVisibility(group, requestedIndex, recordTiming)" in source
-    assert "scheduleCurrentPlotlyVisibility(group)" in source
-    assert "data-sb-last-plotly-visibility-switch-ms" in source
-    assert "requestAnimationFrame" in source
-    assert "node.dataset.sbPlotlyState" in source
-    assert "data-sb-preloaded-plotly-state" in source
-    assert "data-sb-plotly-visibility-ready" in source
-    assert "taggingComplete" in source
-    assert "plot.setAttribute('data-sb-preloaded-plotly-state'" in source
-    assert "plot.setAttribute('data-sb-plotly-visibility-ready', '1')" in source
-    assert "plot.removeAttribute('data-sb-plotly-visibility-ready')" in source
-    assert "node.style.opacity" not in source
-    assert "data-sb-trace-state-order" in source
-    assert "node.getAttribute('data-index')" in source
-    assert "Plotly.react" not in source
-    assert "Plotly.update" not in source
-    assert "Plotly.restyle" not in source
-    assert "st_module.session_state" not in source
-
-
-def test_preloaded_plotly_css_is_progressive_enhancement_with_specific_active_rules() -> None:
-    source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert '[data-sb-plotly-visibility-ready="1"] .scatterlayer .trace' in source
-    assert (
-        '[data-sb-plotly-visibility-ready="1"]'
-        '[data-sb-preloaded-plotly-state="0"] .scatterlayer .trace'
-        in source
-    )
-    assert "plotly.Plots.resize(plot)" in source
+    assert "pendingWidgetRestore" in source
+    assert "sawReadyRemoval" in source
+    assert "clearWidgetRestore();" in source
+    assert "cancelPendingScrollPreservation" in source
+    for event_name in ("wheel", "touchmove", "PageDown", "PageUp", "Home", "End"):
+        assert event_name in source
+    assert "holdPosition" not in source
+    assert "MutationObserver(lockScroll)" not in source
+    assert "3500" not in source
+    assert "750" not in source
+    assert "event.preventDefault()" not in source
 
 
 def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:

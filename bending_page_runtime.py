@@ -1207,8 +1207,13 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.session_state.get("_bending_diagram_shell_generation", 0) or 0
         ) + 1
         st.session_state["_bending_diagram_shell_generation"] = diagram_shell_generation
-        diagram_shell_container = st.container()
-        diagram_section_placeholder = st.empty()
+        diagram_shell_should_render = not bool(
+            st.session_state.get("_bending_diagram_initial_published", False)
+        )
+        diagram_frame_container = st.container(key="bending_diagram_frame")
+        with diagram_frame_container:
+            diagram_shell_container = st.container(key="bending_diagram_shell")
+            diagram_section_placeholder = st.empty()
         inputs_placeholder = st.empty()
         # The detailed tab body is interactive.  Keep a stable multi-element
         # container for it instead of replacing an ``st.empty`` slot on every
@@ -1219,10 +1224,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         # Publish their contents back-to-back only after those positions are
         # allocated so the intervening placeholders cannot split the visible
         # shell across two browser paint windows.
-        _bending_diagrams_section.render_bending_diagram_loading_shell(
-            diagram_shell_container,
-            generation=diagram_shell_generation,
-        )
+        if diagram_shell_should_render:
+            _bending_diagrams_section.render_bending_diagram_loading_shell(
+                diagram_shell_container,
+                generation=diagram_shell_generation,
+            )
         _bending_diagrams_section.render_bending_calculation_loading_shell(
             calc_blocks_container
         )
@@ -1894,6 +1900,12 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         mu_uls_active=Mu_uls_active,
                         diagram_shell_generation=diagram_shell_generation,
                     )
+                if diagram_shell_should_render:
+                    _bending_diagrams_section.render_bending_diagram_initial_ready(
+                        diagram_shell_container,
+                        generation=diagram_shell_generation,
+                    )
+                    st.session_state["_bending_diagram_initial_published"] = True
 
             with calc_blocks_container:
                 render_timing_mark("bending_page.runtime.checks.start")
@@ -2020,6 +2032,12 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         mu_uls_active=Mu_uls_active,
                         diagram_shell_generation=diagram_shell_generation,
                     )
+                if diagram_shell_should_render:
+                    _bending_diagrams_section.render_bending_diagram_initial_ready(
+                        diagram_shell_container,
+                        generation=diagram_shell_generation,
+                    )
+                    st.session_state["_bending_diagram_initial_published"] = True
 
             # --------------------------------------------------
             # Material stress–strain curves (concrete + steel), rendered below

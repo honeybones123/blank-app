@@ -33,11 +33,10 @@ def render_stable_tabs(
     if not scope_id.strip():
         raise ValueError("scope_id must be non-empty")
 
-    # This is deliberately a single document-level listener.  It never writes
-    # a widget key or triggers a Streamlit rerun.  Capturing the position on
-    # pointer-down (rather than click) matters: browser focus may otherwise
-    # scroll the selected tab into view before the click handler can preserve
-    # the original main-frame position.
+    # One document-level listener serves every explicitly marked stable tabset
+    # and widget. It never owns engineering state or keeps the page pinned.
+    # Any pending correction is one-shot and yields immediately to user scroll
+    # intent (wheel, touch, keyboard, or scrollbar/pointer interaction).
     if install_runtime:
         import streamlit.components.v1 as components
 
@@ -55,78 +54,107 @@ def render_stable_tabs(
             '[data-testid="stTabs"][data-sb-stable-panel-height]',
             ' [role="tabpanel"] {{',
             ' min-height: var(--sb-stable-panel-height) !important;',
-            '}}',
-            '[data-sb-plotly-visibility-ready="1"] .scatterlayer .trace[data-sb-plotly-state],',
-            '[data-sb-plotly-visibility-ready="1"] g.shapelayer .shape-group[data-sb-plotly-state],',
-            '[data-sb-plotly-visibility-ready="1"] .annotation[data-sb-plotly-state] {{',
-            ' opacity: 0 !important;',
-            '}}',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="0"] .scatterlayer .trace[data-sb-plotly-state="0"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="0"] g.shapelayer .shape-group[data-sb-plotly-state="0"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="0"] .annotation[data-sb-plotly-state="0"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="1"] .scatterlayer .trace[data-sb-plotly-state="1"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="1"] g.shapelayer .shape-group[data-sb-plotly-state="1"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="1"] .annotation[data-sb-plotly-state="1"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="2"] .scatterlayer .trace[data-sb-plotly-state="2"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="2"] g.shapelayer .shape-group[data-sb-plotly-state="2"],',
-            '[data-sb-plotly-visibility-ready="1"][data-sb-preloaded-plotly-state="2"] .annotation[data-sb-plotly-state="2"] {{',
-            ' opacity: 1 !important;',
             '}}'
           ].join('');
           doc.head.appendChild(style);
 
-          function isNativeTab(target) {{
+          function tabsetAfterMarker(marker) {{
+            let node = marker.closest('[data-testid="stElementContainer"]');
+            while (node && (node = node.nextElementSibling)) {{
+              const tabset = node.matches?.('[data-testid="stTabs"]')
+                ? node
+                : node.querySelector?.('[data-testid="stTabs"]');
+              if (tabset) return tabset;
+            }}
+            return null;
+          }}
+
+          function tagStableTabsets() {{
+            doc.querySelectorAll('[data-sb-tab-scope]').forEach(function (marker) {{
+              const scope = marker.getAttribute('data-sb-tab-scope');
+              const tabset = tabsetAfterMarker(marker);
+              if (scope && tabset) tabset.dataset.sbTabScope = scope;
+            }});
+          }}
+
+          function stableTabFor(target) {{
             const tab = target && target.closest
               ? target.closest('[role="tab"]')
               : null;
-            return Boolean(tab);
+            const tabset = tab?.closest?.('[data-testid="stTabs"]');
+            return tabset?.dataset?.sbTabScope ? {{ tab, tabset }} : null;
+          }}
+
+          let pendingTabRestore = null;
+          let pendingWidgetRestore = null;
+          const pendingAttribute = 'data-sb-pending-widget-scroll';
+
+          function clearWidgetRestore() {{
+            pendingWidgetRestore = null;
+            doc.documentElement.removeAttribute(pendingAttribute);
+          }}
+
+          function cancelPendingScrollPreservation() {{
+            if (pendingTabRestore) pendingTabRestore.cancelled = true;
+            pendingTabRestore = null;
+            if (pendingWidgetRestore) pendingWidgetRestore.cancelled = true;
+            clearWidgetRestore();
+          }}
+
+          function resizeActivePlot(tabset) {{
+            const activePlot = tabset?.querySelector(
+              '[role="tabpanel"] .js-plotly-plot'
+            );
+            const plotly = window.parent.Plotly || window.Plotly;
+            if (
+              activePlot
+              && plotly?.Plots
+              && typeof plotly.Plots.resize === 'function'
+            ) plotly.Plots.resize(activePlot);
           }}
 
           function snapshotTab(event) {{
-            if (!isNativeTab(event.target)) return;
+            const stable = stableTabFor(event.target);
+            if (!stable) return;
             const scroller = doc.querySelector('section.stMain');
             if (!scroller) return;
-            const tabset = event.target.closest('[data-testid="stTabs"]');
+            const tabset = stable.tabset;
             const activePanel = tabset && tabset.querySelector('[role="tabpanel"]');
             if (tabset && activePanel) {{
               const panelHeight = Math.ceil(activePanel.getBoundingClientRect().height);
               tabset.dataset.sbStablePanelHeight = String(panelHeight);
               tabset.style.setProperty('--sb-stable-panel-height', panelHeight + 'px');
             }}
-            const before = scroller.scrollTop;
-            [0, 50, 150, 350, 750].forEach(function (delay) {{
-              window.parent.setTimeout(function () {{
-                if (Math.abs(scroller.scrollTop - before) > 1) {{
-                  scroller.scrollTop = before;
-                }}
-              }}, delay);
-            }});
-            if (tabset) {{
+            pendingTabRestore = {{
+              scroller: scroller,
+              top: scroller.scrollTop,
+              cancelled: false,
+            }};
+            window.parent.requestAnimationFrame(function () {{
+              const pending = pendingTabRestore;
+              pendingTabRestore = null;
+              if (
+                pending
+                && !pending.cancelled
+                && Math.abs(pending.scroller.scrollTop - pending.top) > 1
+              ) pending.scroller.scrollTop = pending.top;
               window.parent.setTimeout(function () {{
                 delete tabset.dataset.sbStablePanelHeight;
                 tabset.style.removeProperty('--sb-stable-panel-height');
-                const activePlot = tabset.querySelector(
-                  '[role="tabpanel"] .js-plotly-plot'
-                );
-                const plotly = window.parent.Plotly || window.Plotly;
-                if (
-                  activePlot
-                  && plotly
-                  && plotly.Plots
-                  && typeof plotly.Plots.resize === 'function'
-                ) {{
-                  plotly.Plots.resize(activePlot);
-                }}
-              }}, 800);
-            }}
+                resizeActivePlot(tabset);
+              }}, 120);
+            }});
           }}
 
           function tagWidgetMarkers() {{
             doc.querySelectorAll('[data-sb-widget-scroll-marker]').forEach(function (marker) {{
               const scope = marker.getAttribute('data-sb-widget-scroll-marker');
-              const plotlyVisibilityScope = marker.getAttribute(
-                'data-sb-widget-target-plotly-visibility'
+              const visibleStateAttribute = marker.getAttribute(
+                'data-sb-widget-visible-state-attribute'
               );
+              const visibleStateKeys = (
+                marker.getAttribute('data-sb-widget-visible-state-keys') || ''
+              ).split(',').filter(Boolean);
               let node = marker.closest('[data-testid="stElementContainer"]');
               while (node && (node = node.previousElementSibling)) {{
                 const group = node.matches?.('[role="radiogroup"]')
@@ -134,9 +162,21 @@ def render_stable_tabs(
                   : node.querySelector?.('[role="radiogroup"]');
                 if (group) {{
                   group.dataset.sbStableWidgetScroll = scope;
-                  if (plotlyVisibilityScope) {{
-                    group.dataset.sbTargetPlotlyVisibility = plotlyVisibilityScope;
-                    scheduleCurrentPlotlyVisibility(group);
+                  if (visibleStateAttribute && visibleStateKeys.length) {{
+                    group.dataset.sbVisibleStateAttribute = visibleStateAttribute;
+                    group.dataset.sbVisibleStateKeys = visibleStateKeys.join(',');
+                    if (!doc.documentElement.hasAttribute(visibleStateAttribute)) {{
+                      const radios = [...group.querySelectorAll('input[type="radio"]')];
+                      const checkedIndex = radios.findIndex(function (radio) {{
+                        return radio.checked;
+                      }});
+                      if (checkedIndex >= 0 && visibleStateKeys[checkedIndex]) {{
+                        doc.documentElement.setAttribute(
+                          visibleStateAttribute,
+                          visibleStateKeys[checkedIndex]
+                        );
+                      }}
+                    }}
                   }}
                   break;
                 }}
@@ -144,118 +184,37 @@ def render_stable_tabs(
             }});
           }}
 
-          const pendingAttribute = 'data-sb-pending-widget-scroll';
-          function switchPreloadedPlotlyVisibility(group, requestedIndex, recordTiming) {{
-            const scope = group.dataset.sbTargetPlotlyVisibility;
-            if (!scope) return;
-            const marker = doc.querySelector(
-              '[data-sb-plotly-visibility-scope="' + CSS.escape(scope) + '"]'
+          function nodeContainsReadyMarker(node) {{
+            return Boolean(
+              node?.nodeType === 1
+              && (
+                node.matches?.('[data-bending-diagram-ready]')
+                || node.querySelector?.('[data-bending-diagram-ready]')
+              )
             );
-            if (!marker) return;
-            let node = marker.closest('[data-testid="stElementContainer"]');
-            let plot = null;
-            while (node && !plot && (node = node.nextElementSibling)) {{
-              plot = node.querySelector?.('.js-plotly-plot') || null;
-            }}
-            if (!plot) return;
-            const counts = function (name) {{
-              return (marker.getAttribute(name) || '').split(',').map(Number);
-            }};
-            const stateForLayoutIndex = function (layoutIndex, groupCounts) {{
-              let offset = 0;
-              for (let groupIndex = 0; groupIndex < groupCounts.length; groupIndex += 1) {{
-                offset += groupCounts[groupIndex];
-                if (layoutIndex < offset) return groupIndex;
-              }}
-              return -1;
-            }};
-            const tagIndexedGroup = function (nodes, groupCounts) {{
-              nodes.forEach(function (node, fallbackIndex) {{
-                const parsedIndex = Number(node.getAttribute('data-index'));
-                const layoutIndex = Number.isFinite(parsedIndex) ? parsedIndex : fallbackIndex;
-                const groupIndex = stateForLayoutIndex(layoutIndex, groupCounts);
-                node.dataset.sbPlotlyState = String(groupIndex);
-              }});
-            }};
-            const tagTraceGroup = function (nodes) {{
-              const stateOrder = (marker.getAttribute(
-                'data-sb-trace-state-order'
-              ) || '').split(',').map(Number);
-              nodes.forEach(function (node, domIndex) {{
-                node.dataset.sbPlotlyState = String(stateOrder[domIndex]);
-              }});
-            }};
-            const started = window.parent.performance.now();
-            const traceNodes = [...plot.querySelectorAll('.scatterlayer .trace')];
-            const shapeNodes = [...plot.querySelectorAll('g.shapelayer .shape-group')];
-            const annotationNodes = [...plot.querySelectorAll('.annotation')];
-            const visibilityNodes = traceNodes.concat(shapeNodes, annotationNodes);
-            if (
-              plot.dataset.sbPlotlyVisibilityTagged !== '1'
-              || visibilityNodes.some(node => !node.hasAttribute('data-sb-plotly-state'))
-            ) {{
-              tagTraceGroup(traceNodes);
-              tagIndexedGroup(
-                shapeNodes,
-                counts('data-sb-shape-groups')
-              );
-              tagIndexedGroup(
-                annotationNodes,
-                counts('data-sb-annotation-groups')
-              );
-              plot.dataset.sbPlotlyVisibilityTagged = '1';
-            }}
-            const taggingComplete = visibilityNodes.length > 0 && visibilityNodes.every(
-              function (node) {{
-                const state = Number(node.getAttribute('data-sb-plotly-state'));
-                return Number.isInteger(state) && state >= 0 && state <= 2;
-              }}
-            );
-            if (!taggingComplete) {{
-              plot.removeAttribute('data-sb-plotly-visibility-ready');
-              return;
-            }}
-            plot.setAttribute('data-sb-preloaded-plotly-state', String(requestedIndex));
-            plot.setAttribute('data-sb-plotly-visibility-ready', '1');
-            const plotly = window.parent.Plotly || window.Plotly;
-            if (plotly && plotly.Plots && typeof plotly.Plots.resize === 'function') {{
-              window.parent.requestAnimationFrame(function () {{
-                plotly.Plots.resize(plot);
-              }});
-            }}
-            if (recordTiming) {{
-              window.parent.requestAnimationFrame(function () {{
-                doc.documentElement.setAttribute(
-                  'data-sb-last-plotly-visibility-switch-ms',
-                  String(window.parent.performance.now() - started)
-                );
-              }});
-            }}
           }}
-          function scheduleCurrentPlotlyVisibility(group) {{
-            if (group.dataset.sbPlotlyVisibilityPending === '1') return;
-            group.dataset.sbPlotlyVisibilityPending = '1';
-            window.parent.requestAnimationFrame(function () {{
-              delete group.dataset.sbPlotlyVisibilityPending;
-              const radios = [...group.querySelectorAll('input[type="radio"]')];
-              const requestedIndex = radios.findIndex(function (radio) {{
-                return radio.checked;
-              }});
-              if (requestedIndex >= 0) {{
-                switchPreloadedPlotlyVisibility(group, requestedIndex, false);
-              }}
-            }});
-          }}
-          function holdPosition(pending) {{
+
+          function maybeRestoreWidgetScroll(records) {{
+            const pending = pendingWidgetRestore;
+            if (!pending || pending.cancelled) return;
             if (Date.now() >= pending.expires) {{
-              doc.documentElement.removeAttribute(pendingAttribute);
+              clearWidgetRestore();
               return;
             }}
-            const scroller = doc.querySelector('section.stMain');
-            if (scroller && Math.abs(scroller.scrollTop - pending.top) > 1) {{
-              scroller.scrollTop = pending.top;
-            }}
-            window.parent.requestAnimationFrame(function () {{ holdPosition(pending); }});
+            if (records?.some(function (record) {{
+              return [...record.removedNodes].some(nodeContainsReadyMarker);
+            }})) pending.sawReadyRemoval = true;
+            const ready = doc.querySelector('[data-bending-diagram-ready]');
+            if (!pending.sawReadyRemoval || !ready) return;
+
+            window.parent.requestAnimationFrame(function () {{
+              if (pending !== pendingWidgetRestore || pending.cancelled) return;
+              const scroller = doc.querySelector('section.stMain');
+              if (scroller && Math.abs(scroller.scrollTop - pending.top) > 1) {{
+                scroller.scrollTop = pending.top;
+              }}
+              clearWidgetRestore();
+            }});
           }}
 
           function snapshotWidget(event) {{
@@ -266,44 +225,86 @@ def render_stable_tabs(
               'input[type="radio"]'
             ) || event.target?.closest?.('input[type="radio"]');
             const requestedIndex = radios.indexOf(radio);
-            if (requestedIndex >= 0) {{
-              switchPreloadedPlotlyVisibility(group, requestedIndex, true);
+            const visibleStateAttribute = group.dataset.sbVisibleStateAttribute;
+            const visibleStateKeys = (group.dataset.sbVisibleStateKeys || '')
+              .split(',').filter(Boolean);
+            if (
+              requestedIndex >= 0
+              && visibleStateAttribute
+              && visibleStateKeys[requestedIndex]
+            ) {{
+              const stateSwitchStarted = window.parent.performance.now();
+              doc.documentElement.setAttribute(
+                visibleStateAttribute,
+                visibleStateKeys[requestedIndex]
+              );
+              const stateGeneration = Number(
+                doc.documentElement.getAttribute('data-sb-bending-state-generation') || 0
+              ) + 1;
+              doc.documentElement.setAttribute(
+                'data-sb-bending-state-generation',
+                String(stateGeneration)
+              );
+              window.parent.requestAnimationFrame(function () {{
+                doc.querySelectorAll(
+                  '[class*="st-key-bending_state_plot_"] .js-plotly-plot'
+                ).forEach(function (plot) {{
+                  if (plot.getClientRects().length) {{
+                    try {{ window.parent.Plotly?.Plots?.resize(plot); }} catch (_error) {{}}
+                  }}
+                }});
+                doc.documentElement.setAttribute(
+                  'data-sb-last-bending-host-switch-ms',
+                  String(window.parent.performance.now() - stateSwitchStarted)
+                );
+              }});
             }}
             const scroller = doc.querySelector('section.stMain');
             if (!scroller) return;
-            const pending = {{
+            pendingWidgetRestore = {{
               scope: group.dataset.sbStableWidgetScroll,
               top: scroller.scrollTop,
-              expires: Date.now() + 3500,
+              expires: Date.now() + 1500,
+              sawReadyRemoval: false,
+              cancelled: false,
             }};
-            doc.documentElement.setAttribute(pendingAttribute, JSON.stringify(pending));
-            function lockScroll() {{
-              if (Date.now() < pending.expires) {{
-                const activeScroller = doc.querySelector('section.stMain') || scroller;
-                if (Math.abs(activeScroller.scrollTop - pending.top) > 1) {{
-                  activeScroller.scrollTop = pending.top;
-                }}
-              }}
-              const activeGroup = doc.activeElement?.closest?.(
-                '[data-sb-stable-widget-scroll]'
-              );
-              if (activeGroup) doc.activeElement.blur();
-            }}
-            scroller.addEventListener('scroll', lockScroll, {{ passive: true }});
-            const mutationGuard = new MutationObserver(lockScroll);
-            mutationGuard.observe(doc.body, {{ childList: true, subtree: true }});
+            doc.documentElement.setAttribute(
+              pendingAttribute,
+              JSON.stringify({{
+                scope: pendingWidgetRestore.scope,
+                top: pendingWidgetRestore.top,
+                expires: pendingWidgetRestore.expires,
+              }})
+            );
+            const captured = pendingWidgetRestore;
             window.parent.setTimeout(function () {{
-              scroller.removeEventListener('scroll', lockScroll);
-              mutationGuard.disconnect();
-            }}, 3600);
-            holdPosition(pending);
+              if (pendingWidgetRestore === captured) clearWidgetRestore();
+            }}, 1500);
           }}
 
+          tagStableTabsets();
           tagWidgetMarkers();
-          const widgetMarkerObserver = new MutationObserver(tagWidgetMarkers);
-          widgetMarkerObserver.observe(doc.body, {{ childList: true, subtree: true }});
+          const stableMarkerObserver = new MutationObserver(function (records) {{
+            tagStableTabsets();
+            tagWidgetMarkers();
+            maybeRestoreWidgetScroll(records);
+          }});
+          stableMarkerObserver.observe(doc.body, {{ childList: true, subtree: true }});
+
+          doc.addEventListener('wheel', cancelPendingScrollPreservation, {{
+            capture: true,
+            passive: true,
+          }});
+          doc.addEventListener('touchmove', cancelPendingScrollPreservation, {{
+            capture: true,
+            passive: true,
+          }});
 
           doc.addEventListener('pointerdown', function (event) {{
+            if (
+              pendingWidgetRestore
+              && !event.target?.closest?.('[data-sb-stable-widget-scroll]')
+            ) cancelPendingScrollPreservation();
             snapshotTab(event);
             snapshotWidget(event);
           }}, true);
@@ -311,7 +312,11 @@ def render_stable_tabs(
             if (event.key === 'Enter' || event.key === ' ') {{
               snapshotTab(event);
               snapshotWidget(event);
+              return;
             }}
+            if ([
+              'PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End'
+            ].includes(event.key)) cancelPendingScrollPreservation();
           }}, true);
         }})();
         </script>
@@ -344,25 +349,29 @@ def preserve_scroll_for_preceding_widget(
     st_module: Any,
     *,
     scope_id: str,
-    target_plotly_visibility_scope_id: str | None = None,
+    visible_state_attribute: str | None = None,
+    visible_state_keys: tuple[str, ...] = (),
 ) -> None:
-    """Keep the main scroller fixed while a widget reruns its fragment."""
+    """Guard one widget rerun without overriding deliberate user scrolling."""
 
     scope = str(scope_id).strip()
     if not scope:
         raise ValueError("scope_id must be non-empty")
 
     escaped_scope = html.escape(scope, quote=True)
-    plotly_visibility_attribute = ""
-    if target_plotly_visibility_scope_id is not None:
-        visibility_scope = str(target_plotly_visibility_scope_id).strip()
-        if not visibility_scope:
+    visible_state_markup = ""
+    if visible_state_attribute is not None:
+        attribute = str(visible_state_attribute).strip()
+        keys = tuple(str(value).strip() for value in visible_state_keys)
+        if not attribute or not keys or any(not value for value in keys):
             raise ValueError(
-                "target_plotly_visibility_scope_id must be non-empty when provided"
+                "visible state attribute and keys must be non-empty when provided"
             )
-        plotly_visibility_attribute = (
-            ' data-sb-widget-target-plotly-visibility="'
-            + html.escape(visibility_scope, quote=True)
+        visible_state_markup = (
+            ' data-sb-widget-visible-state-attribute="'
+            + html.escape(attribute, quote=True)
+            + '" data-sb-widget-visible-state-keys="'
+            + html.escape(",".join(keys), quote=True)
             + '"'
         )
     st_module.markdown(
@@ -376,7 +385,7 @@ def preserve_scroll_for_preceding_widget(
         'margin:0!important;padding:0!important;}'
         '</style>'
         f'<span data-sb-widget-scroll-marker="{escaped_scope}"'
-        f'{plotly_visibility_attribute} '
+        f'{visible_state_markup} '
         'aria-hidden="true" style="display:none"></span>',
         unsafe_allow_html=True,
     )
