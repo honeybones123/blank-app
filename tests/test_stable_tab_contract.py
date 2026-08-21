@@ -33,7 +33,9 @@ def test_bending_state_switch_changes_only_complete_plot_hosts() -> None:
     assert "data-sb-bending-browser-ready" not in helper
     assert "publishWhenPainted" not in diagrams
     assert "data-sb-bending-browser-ready" not in diagrams
-    assert ".js-plotly-plot .scatterlayer .trace" in diagrams
+    assert diagrams.count(".js-plotly-plot .scatterlayer .trace") == 4
+    assert diagrams.count(".js-plotly-plot g.shapelayer .shape-group") == 4
+    assert diagrams.count(".js-plotly-plot .annotation") == 4
     assert "bending_state_plot_" in diagrams
     assert "state_figures[option]" in diagrams
     assert "display:none!important" in diagrams

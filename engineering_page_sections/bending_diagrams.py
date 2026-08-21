@@ -66,6 +66,10 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
         }
         html:not([data-sb-bending-visible-state]):has(
           .st-key-bending_state_plot_uls .js-plotly-plot .scatterlayer .trace
+        ):has(
+          .st-key-bending_state_plot_uls .js-plotly-plot g.shapelayer .shape-group
+        ):has(
+          .st-key-bending_state_plot_uls .js-plotly-plot .annotation
         )
         .st-key-bending_diagram_frame
         > div[data-testid="stLayoutWrapper"]:has(
@@ -73,6 +77,10 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
         ),
         html[data-sb-bending-visible-state="uls"]:has(
           .st-key-bending_state_plot_uls .js-plotly-plot .scatterlayer .trace
+        ):has(
+          .st-key-bending_state_plot_uls .js-plotly-plot g.shapelayer .shape-group
+        ):has(
+          .st-key-bending_state_plot_uls .js-plotly-plot .annotation
         )
         .st-key-bending_diagram_frame
         > div[data-testid="stLayoutWrapper"]:has(
@@ -80,6 +88,10 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
         ),
         html[data-sb-bending-visible-state="sls-cracked"]:has(
           .st-key-bending_state_plot_sls_cracked .js-plotly-plot .scatterlayer .trace
+        ):has(
+          .st-key-bending_state_plot_sls_cracked .js-plotly-plot g.shapelayer .shape-group
+        ):has(
+          .st-key-bending_state_plot_sls_cracked .js-plotly-plot .annotation
         )
         .st-key-bending_diagram_frame
         > div[data-testid="stLayoutWrapper"]:has(
@@ -87,6 +99,10 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
         ),
         html[data-sb-bending-visible-state="uncracked"]:has(
           .st-key-bending_state_plot_uncracked .js-plotly-plot .scatterlayer .trace
+        ):has(
+          .st-key-bending_state_plot_uncracked .js-plotly-plot g.shapelayer .shape-group
+        ):has(
+          .st-key-bending_state_plot_uncracked .js-plotly-plot .annotation
         )
         .st-key-bending_diagram_frame
         > div[data-testid="stLayoutWrapper"]:has(

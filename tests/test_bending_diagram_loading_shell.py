@@ -61,7 +61,10 @@ def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None
     assert 'data-bending-diagram-shell="GENERATION"' in source
     assert 'data-bending-diagram-ready="{int(diagram_shell_generation)}"' in source
     assert "pointer-events: none" in source
-    assert '.js-plotly-plot .scatterlayer .trace' in source
+    assert source.count('.js-plotly-plot .scatterlayer .trace') == 4
+    assert source.count('.js-plotly-plot g.shapelayer .shape-group') == 4
+    assert source.count('.js-plotly-plot .annotation') == 4
+    assert 'data-sb-bending-plot-ready' not in source
     assert source.count(
         'data-bending-diagram-geometry-token="--sb-bending-diagram-region-height"'
     ) == 2
@@ -89,6 +92,9 @@ def test_bending_browser_regression_measures_live_geometry_and_blank_hosts() -> 
     assert "cold shell blocked downward scrolling" in verifier
     assert "scroll position was forced after user input" in verifier
     assert "mixed or blank state frame" in verifier
+    assert "partial Plotly host escaped the loading shell" in verifier
+    assert "incomplete visible state host" in verifier
+    assert "cold_paint_frames" in verifier
     assert 'state="hidden"' in verifier
     assert '"switches": 20' in verifier
     assert '"SLS (cracked)": "sls-cracked"' in verifier

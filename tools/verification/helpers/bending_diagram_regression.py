@@ -75,15 +75,21 @@ async def _visible_state(page: Page) -> dict:
               && getComputedStyle(host).display !== 'none'
               && box.height > 100
             );
+            const traces = plot?.querySelectorAll('.scatterlayer .trace').length || 0;
+            const shapes = plot?.querySelectorAll(
+              'g.shapelayer .shape-group'
+            ).length || 0;
+            const annotations = plot?.querySelectorAll('.annotation').length || 0;
             return {
               key,
               mounted: Boolean(plot),
               visible,
               width: box?.width || 0,
               height: box?.height || 0,
-              traces: plot?.querySelectorAll('.scatterlayer .trace').length || 0,
-              shapes: plot?.querySelectorAll('g.shapelayer .shape-group').length || 0,
-              annotations: plot?.querySelectorAll('.annotation').length || 0,
+              traces,
+              shapes,
+              annotations,
+              complete: traces > 0 && shapes > 0 && annotations > 0,
             };
           });
           return {
@@ -121,9 +127,9 @@ async def _assert_state(page: Page, expected: str) -> dict:
             host
             && getComputedStyle(host).display !== 'none'
             && host.getBoundingClientRect().height > 100
-            && plot?.querySelector(
-              '.scatterlayer .trace, g.shapelayer .shape-group, .annotation'
-            )
+            && plot?.querySelector('.scatterlayer .trace')
+            && plot?.querySelector('g.shapelayer .shape-group')
+            && plot?.querySelector('.annotation')
           );
         }
         """,
@@ -136,12 +142,8 @@ async def _assert_state(page: Page, expected: str) -> dict:
         raise AssertionError(
             f"expected one complete {expected} host, received {visible}"
         )
-    if not (
-        visible[0]["traces"]
-        or visible[0]["shapes"]
-        or visible[0]["annotations"]
-    ):
-        raise AssertionError(f"{expected} Plotly host is mounted but blank")
+    if not visible[0]["complete"]:
+        raise AssertionError(f"{expected} Plotly host is incomplete: {visible[0]}")
     return state
 
 
@@ -160,18 +162,32 @@ async def _begin_frame_probe(page: Page, duration_ms: int = 450) -> None:
               'sls-cracked': 'sls_cracked',
               'uncracked': 'uncracked',
             };
-            const visible = Object.entries(keys).filter(([, cssKey]) => {
+            const visibleHosts = Object.entries(keys).map(([key, cssKey]) => {
               const host = document.querySelector(
                 '.st-key-bending_state_plot_' + cssKey
               );
-              return host
+              const plot = host?.querySelector('.js-plotly-plot');
+              const traces = plot?.querySelectorAll('.scatterlayer .trace').length || 0;
+              const shapes = plot?.querySelectorAll(
+                'g.shapelayer .shape-group'
+              ).length || 0;
+              const annotations = plot?.querySelectorAll('.annotation').length || 0;
+              const visible = Boolean(host
                 && getComputedStyle(host).display !== 'none'
-                && host.getBoundingClientRect().height > 100;
-            }).map(([key]) => key);
+                && host.getBoundingClientRect().height > 100);
+              return {
+                key,
+                visible,
+                complete: traces > 0 && shapes > 0 && annotations > 0,
+              };
+            }).filter(host => host.visible);
             window.__sbBendingFrameProbe.push({
               t: performance.now() - started,
               state,
-              visible,
+              visible: visibleHosts.map(host => host.key),
+              incomplete: visibleHosts.filter(host => !host.complete).map(
+                host => host.key
+              ),
             });
             if (performance.now() - started < duration) {
               requestAnimationFrame(sample);
@@ -190,14 +206,91 @@ async def _end_frame_probe(page: Page, duration_ms: int = 450) -> list[dict]:
     for frame in frames:
         if len(frame["visible"]) != 1:
             raise AssertionError(f"mixed or blank state frame: {frame}")
+        if frame["incomplete"]:
+            raise AssertionError(f"incomplete visible state host: {frame}")
         if frame["state"] and frame["visible"][0] != frame["state"]:
             raise AssertionError(f"visible diagram does not match state marker: {frame}")
+    return frames
+
+
+async def _begin_cold_paint_probe(page: Page) -> None:
+    await page.evaluate(
+        """
+        () => {
+          window.__sbBendingColdPaintProbe = [];
+          const started = performance.now();
+          let previous = '';
+          const sample = () => {
+            const state = document.documentElement.getAttribute(
+              'data-sb-bending-visible-state'
+            ) || 'uls';
+            const cssKey = {
+              'uls': 'uls',
+              'sls-cracked': 'sls_cracked',
+              'uncracked': 'uncracked',
+            }[state] || 'uls';
+            const host = document.querySelector(
+              '.st-key-bending_state_plot_' + cssKey
+            );
+            const plot = host?.querySelector('.js-plotly-plot');
+            const shell = document.querySelector('[data-bending-diagram-shell]');
+            const shellVisible = Boolean(
+              shell
+              && getComputedStyle(shell).display !== 'none'
+              && shell.getBoundingClientRect().height > 100
+            );
+            const hostVisible = Boolean(
+              host
+              && getComputedStyle(host).display !== 'none'
+              && host.getBoundingClientRect().height > 100
+            );
+            const frame = {
+              t: performance.now() - started,
+              state,
+              shell_visible: shellVisible,
+              host_visible: hostVisible,
+              traces: plot?.querySelectorAll('.scatterlayer .trace').length || 0,
+              shapes: plot?.querySelectorAll(
+                'g.shapelayer .shape-group'
+              ).length || 0,
+              annotations: plot?.querySelectorAll('.annotation').length || 0,
+            };
+            const signature = JSON.stringify({...frame, t: 0});
+            if (signature !== previous) {
+              window.__sbBendingColdPaintProbe.push(frame);
+              previous = signature;
+            }
+            if (shellVisible && performance.now() - started < 45_000) {
+              requestAnimationFrame(sample);
+            }
+          };
+          requestAnimationFrame(sample);
+        }
+        """
+    )
+
+
+async def _end_cold_paint_probe(page: Page) -> list[dict]:
+    await page.wait_for_timeout(80)
+    frames = await page.evaluate("() => window.__sbBendingColdPaintProbe || []")
+    for frame in frames:
+        exposed = frame["host_visible"] and not frame["shell_visible"]
+        complete = (
+            frame["traces"] > 0
+            and frame["shapes"] > 0
+            and frame["annotations"] > 0
+        )
+        if exposed and not complete:
+            raise AssertionError(
+                f"partial Plotly host escaped the loading shell: {frame}"
+            )
     return frames
 
 
 async def _cold_scroll_probe(page: Page) -> dict:
     shell = page.locator("[data-bending-diagram-shell]")
     await shell.wait_for(state="visible", timeout=30_000)
+    await _begin_cold_paint_probe(page)
     shell_box = await shell.bounding_box()
     passive = await shell.evaluate(
         """
@@ -360,6 +453,7 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
         await page.locator("[data-bending-diagram-shell]").wait_for(
             state="hidden", timeout=5_000
         )
+        cold_paint_frames = await _end_cold_paint_probe(page)
         diagram_ready_ms = (time.perf_counter() - opened) * 1_000
         loaded_inputs_y = await _document_y(
             page.get_by_text("Inputs used for this check", exact=True)
@@ -389,6 +483,7 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
         result = {
             "viewport": viewport,
             "cold": cold,
+            "cold_paint_frames": cold_paint_frames,
             "diagram_ready_ms": diagram_ready_ms,
             "shell_height": shell_height,
             "loaded_region_height": live_height,
