@@ -31,7 +31,6 @@ def test_shared_layout_tokens_preserve_the_locked_values() -> None:
         "collapsed-card-height": "40px",
         "heading-color": "#0f172a",
         "bending-diagram-plot-height": "320px",
-        "bending-diagram-region-height": "780px",
     }
     css = shared_layout_token_css()
     for name, value in SHARED_LAYOUT_TOKENS.items():

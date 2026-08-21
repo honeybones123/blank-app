@@ -19,7 +19,7 @@ def test_shared_stable_tabs_are_scoped_native_view_only_tabs() -> None:
     assert "session_state" not in source
 
 
-def test_bending_state_switch_changes_only_complete_plot_hosts() -> None:
+def test_bending_state_switch_has_one_server_owned_plot_host() -> None:
     helper = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"
     )
@@ -27,19 +27,13 @@ def test_bending_state_switch_changes_only_complete_plot_hosts() -> None:
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
 
-    assert "data-sb-widget-visible-state-attribute" in helper
-    assert "data-sb-bending-state-generation" in helper
-    assert "data-sb-last-bending-host-switch-ms" in helper
-    assert "data-sb-bending-browser-ready" not in helper
-    assert "publishWhenPainted" not in diagrams
-    assert "data-sb-bending-browser-ready" not in diagrams
-    assert diagrams.count(".js-plotly-plot .scatterlayer .trace") == 4
-    assert diagrams.count(".js-plotly-plot g.shapelayer .shape-group") == 4
-    assert diagrams.count(".js-plotly-plot .annotation") == 4
-    assert "bending_state_plot_" in diagrams
-    assert "state_figures[option]" in diagrams
-    assert "display:none!important" in diagrams
-    assert "display:block!important" in diagrams
+    assert 'key="bending_state_main"' in diagrams
+    assert diagrams.count(".js-plotly-plot .scatterlayer .trace") == 1
+    assert diagrams.count(".js-plotly-plot g.shapelayer .shape-group") == 1
+    assert diagrams.count(".js-plotly-plot .annotation") == 1
+    assert "bending_state_plot_" not in diagrams
+    assert "state_figures" not in diagrams
+    assert "data-bending-selected-state" in diagrams
     assert "switchPreloadedPlotlyVisibility" not in helper
     assert "switchPreloadedPlotlyState" not in helper
     assert "node.style.opacity" not in helper
@@ -49,14 +43,15 @@ def test_bending_state_switch_changes_only_complete_plot_hosts() -> None:
     assert "Plotly.update" not in helper
 
 
-def test_scroll_preservation_is_one_shot_and_yields_to_user_intent() -> None:
+def test_tab_scroll_preservation_is_one_shot_and_yields_to_user_intent() -> None:
     source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"
     )
 
-    assert "pendingWidgetRestore" in source
-    assert "sawReadyRemoval" in source
-    assert "clearWidgetRestore();" in source
+    assert "pendingTabRestore" in source
+    assert "pendingWidgetRestore" not in source
+    assert "sawReadyRemoval" not in source
+    assert "preserve_scroll_for_preceding_widget" not in source
     assert "cancelPendingScrollPreservation" in source
     for event_name in ("wheel", "touchmove", "PageDown", "PageUp", "Home", "End"):
         assert event_name in source

@@ -81,7 +81,6 @@ from engineering_page_sections.compact_check_inputs import (
     join_summary,
 )
 from engineering_page_sections.stable_tabs import (
-    preserve_scroll_for_preceding_widget,
     render_stable_tabs,
 )
 from inputs_application.action_source_control import uses_load_analysis_actions
@@ -176,6 +175,9 @@ _build_beam_3d_figure = _bending_diagrams_section._build_beam_3d_figure
 _bending_diagrams_section.bind_runtime(globals())
 _render_bending_state_panel = st.fragment(
     _bending_diagrams_section.render_bending_state_panel
+)
+_render_bending_secondary_state_cache = st.fragment(
+    _bending_diagrams_section.render_bending_secondary_state_cache
 )
 
 
@@ -1207,13 +1209,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.session_state.get("_bending_diagram_shell_generation", 0) or 0
         ) + 1
         st.session_state["_bending_diagram_shell_generation"] = diagram_shell_generation
-        diagram_shell_should_render = not bool(
-            st.session_state.get("_bending_diagram_initial_published", False)
-        )
         diagram_frame_container = st.container(key="bending_diagram_frame")
         with diagram_frame_container:
-            diagram_shell_container = st.container(key="bending_diagram_shell")
+            diagram_options_placeholder = st.empty()
             diagram_section_placeholder = st.empty()
+            diagram_secondary_cache_placeholder = st.empty()
         inputs_placeholder = st.empty()
         # The detailed tab body is interactive.  Keep a stable multi-element
         # container for it instead of replacing an ``st.empty`` slot on every
@@ -1224,14 +1224,56 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         # Publish their contents back-to-back only after those positions are
         # allocated so the intervening placeholders cannot split the visible
         # shell across two browser paint windows.
-        if diagram_shell_should_render:
-            _bending_diagrams_section.render_bending_diagram_loading_shell(
-                diagram_shell_container,
-                generation=diagram_shell_generation,
-            )
         _bending_diagrams_section.render_bending_calculation_loading_shell(
             calc_blocks_container
         )
+        with diagram_options_placeholder.container():
+            if "concrete_stress_model" not in st.session_state:
+                st.session_state["concrete_stress_model"] = "rectangular"
+            _, col_info = st.columns([0.95, 0.05])
+            with col_info:
+                with info_i_button(help_text="Concrete stress model options"):
+                    st.markdown("**Concrete stress model**")
+                    use_parabolic = st.checkbox(
+                        "Use parabolic (non-linear) stress block",
+                        value=(
+                            st.session_state["concrete_stress_model"] == "parabolic"
+                        ),
+                        key="bending_parabolic_toggle",
+                    )
+                    st.session_state["concrete_stress_model"] = (
+                        "parabolic" if use_parabolic else "rectangular"
+                    )
+                    st.markdown(
+                        """
+                        **Rectangular (AS 3600):** Standard simplified stress
+                        block used in AS 3600 design.
+
+                        **Parabolic (non-linear):** More accurate concrete
+                        stress distribution for presentation.
+                        """
+                    )
+
+        initial_detail_view = st.session_state.get("bending_detail_view", "positive")
+        initial_showing_negative = (
+            initial_detail_view == "negative" and has_hogging_case
+        )
+        initial_mu_uls = (
+            Mu_neg_star
+            if initial_showing_negative
+            else (Mu_pos_star if has_sagging_case else 0.0)
+        )
+        with diagram_section_placeholder.container():
+            _render_bending_state_panel(
+                cached_layout=cached_layout,
+                mu_uls_active=initial_mu_uls,
+                diagram_shell_generation=diagram_shell_generation,
+            )
+        with diagram_secondary_cache_placeholder.container():
+            _render_bending_secondary_state_cache(
+                cached_layout=cached_layout,
+                diagram_shell_generation=diagram_shell_generation,
+            )
         with explainer_placeholder:
             render_timing_mark("bending_page.runtime.explainer.start")
             render_page_explainer_expander(_render_bending_explainer)
@@ -1790,40 +1832,8 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         st.markdown("</div>", unsafe_allow_html=True)
     render_timing_mark("bending_page.runtime.presentation.inputs.end")
 
-    with diagram_section_placeholder.container():
-        # --- GLOBAL CONCRETE STRESS MODEL (shared across all states) ---
-        # Initialize global state key if not present
-        if "concrete_stress_model" not in st.session_state:
-            st.session_state["concrete_stress_model"] = "rectangular"
-
+    with st.container(key="bending_post_inputs_calculation_stage"):
         with st.container():
-            # Heading row with info popover
-            col_title, col_info = st.columns([0.95, 0.05])
-            with col_title:
-                pass
-            with col_info:
-                with info_i_button(help_text="Concrete stress model options"):
-                    st.markdown("**Concrete stress model**")
-                    use_parabolic = st.checkbox(
-                        "Use parabolic (non-linear) stress block",
-                        value=(st.session_state["concrete_stress_model"] == "parabolic"),
-                        key="bending_parabolic_toggle",
-                    )
-                    if use_parabolic:
-                        st.session_state["concrete_stress_model"] = "parabolic"
-                    else:
-                        st.session_state["concrete_stress_model"] = "rectangular"
-
-                    st.markdown("""
-                    **Rectangular (AS 3600):** Standard simplified stress block used in AS 3600 design.
-
-                    **Parabolic (non-linear):** More accurate representation of concrete stress distribution,
-                    showing the non-linear relationship between strain and stress.
-                    """)
-
-            # The stable shell above already reserves this exact position.
-            diagram_placeholder = st.empty()
-
             # Resolve the active bending case before either presentation block
             # renders.  Both the diagrams and the cards consume this same
             # revision-matched publication; neither presentation owns it.
@@ -1872,40 +1882,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     "c": float(top_results_pos.get("dn_mm", top_results.get("c", 0.0)) or 0.0),
                     "d": float(top_results_pos.get("d_mm", d_eff) or d_eff),
                 })
-
-            selected_diagram_state = str(
-                st.session_state.get("bending_state_main", "ULS") or "ULS"
-            )
-            cached_sls_matches_case = (
-                st.session_state.get("bending_sls_dn") is not None
-                and st.session_state.get("bending_sls_eps_top") is not None
-                and bool(st.session_state.get("bending_sls_hogging", False))
-                == bool(showing_negative)
-            )
-            diagram_rendered_early = (
-                not selected_diagram_state.startswith("SLS")
-                or cached_sls_matches_case
-            )
-            render_timing_mark(
-                "bending_page.runtime.diagram.early_decision",
-                selected_state=selected_diagram_state,
-                cached_sls_matches_case=bool(cached_sls_matches_case),
-                diagram_rendered_early=bool(diagram_rendered_early),
-                showing_negative=bool(showing_negative),
-            )
-            if diagram_rendered_early:
-                with diagram_placeholder.container():
-                    _render_bending_state_panel(
-                        cached_layout=cached_layout,
-                        mu_uls_active=Mu_uls_active,
-                        diagram_shell_generation=diagram_shell_generation,
-                    )
-                if diagram_shell_should_render:
-                    _bending_diagrams_section.render_bending_diagram_initial_ready(
-                        diagram_shell_container,
-                        generation=diagram_shell_generation,
-                    )
-                    st.session_state["_bending_diagram_initial_published"] = True
 
             with calc_blocks_container:
                 render_timing_mark("bending_page.runtime.checks.start")
@@ -2020,24 +1996,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     unsafe_allow_html=True,
                 )
                 render_timing_mark("bending_page.runtime.checks.end")
-
-            # --------------------------------------------------
-            # Now build the 3-panel diagram, using the SLS results
-            # that render_sls_tab has just written into session_state.
-            # --------------------------------------------------
-            if not diagram_rendered_early:
-                with diagram_placeholder.container():
-                    _render_bending_state_panel(
-                        cached_layout=cached_layout,
-                        mu_uls_active=Mu_uls_active,
-                        diagram_shell_generation=diagram_shell_generation,
-                    )
-                if diagram_shell_should_render:
-                    _bending_diagrams_section.render_bending_diagram_initial_ready(
-                        diagram_shell_container,
-                        generation=diagram_shell_generation,
-                    )
-                    st.session_state["_bending_diagram_initial_published"] = True
 
             # --------------------------------------------------
             # Material stress–strain curves (concrete + steel), rendered below

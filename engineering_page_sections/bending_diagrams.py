@@ -6,53 +6,117 @@ def bind_runtime(namespace: dict) -> None:
     globals().update({key: value for key, value in namespace.items() if not key.startswith("__")})
 
 
+def _bending_state_label(option: str, *, stress_model: str) -> str:
+    """Return the presentation label without constructing engineering state."""
+    if option == "ULS":
+        return (
+            "uls – parabolic"
+            if stress_model == "parabolic"
+            else "uls – rectangular"
+        )
+    if option.startswith("SLS"):
+        return (
+            "sls – parabolic"
+            if stress_model == "parabolic"
+            else "sls – linear"
+        )
+    return (
+        "uncracked – parabolic"
+        if stress_model == "parabolic"
+        else "uncracked – linear"
+    )
+
+
+def _build_bending_state_projection(
+    option: str,
+    *,
+    stress_model: str,
+    moment_sign: str,
+):
+    """Return the exact state label and projection used by every diagram stage."""
+    state_label = _bending_state_label(option, stress_model=stress_model)
+    if option == "ULS":
+        state_for_math = "ULS"
+    elif option.startswith("SLS"):
+        state_for_math = "SLS"
+    else:
+        state_for_math = "Uncracked"
+
+    projected_state = _stress_strain_state(
+        state_for_math,
+        moment_sign=moment_sign,
+    )
+    if state_for_math == "SLS":
+        dn_cracked = st.session_state.get("bending_sls_dn")
+        if dn_cracked is not None:
+            projected_state["sls"] = {
+                "dn_cracked": float(dn_cracked),
+                "dn": float(dn_cracked),
+                "eps_c_top": st.session_state.get("bending_sls_eps_top"),
+                "eps_s_layers": [],
+                "sig_s_layers": [],
+                "y_layers": [],
+            }
+    return state_label, projected_state
+
+
 def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
-    """Reserve the shared Bending diagram frame while figures are prepared."""
+    """Reserve only the active plot canvas while its live figure is prepared.
+
+    The Bending heading, native diagram tabs, State selector and material
+    lesson are real lightweight controls and remain outside this shell.  The
+    shell therefore owns exactly the same 320 px canvas as the live Plotly
+    figure instead of approximating the depth of several unrelated sections.
+    """
 
     with container:
         st.markdown(
             """
         <style>
+        .st-key-bending_primary_plot_frame {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) !important;
+          width: 100%;
+          min-height: var(--sb-bending-diagram-plot-height, 320px);
+        }
+        .st-key-bending_primary_plot_frame
+        > div[data-testid="stLayoutWrapper"] {
+          grid-area: 1 / 1 !important;
+          width: 100%;
+          min-width: 0 !important;
+          max-width: 100% !important;
+        }
+        .st-key-bending_diagram_shell {
+          z-index: 2;
+          height: var(--sb-bending-diagram-plot-height, 320px);
+        }
+        .st-key-bending_diagram_live {
+          z-index: 1;
+          min-height: var(--sb-bending-diagram-plot-height, 320px);
+        }
+        .st-key-bending_diagram_live
+        > div[data-testid="stElementContainer"] {
+          margin-bottom: 0 !important;
+        }
         .bending-diagram-loading-region {
           box-sizing: border-box;
-          height: var(--sb-bending-diagram-region-height, 780px);
+          height: var(--sb-bending-diagram-plot-height, 320px);
           width: 100%;
           overflow: hidden;
           background: #fff;
           color: #10234a;
           pointer-events: none;
         }
-        .st-key-bending_diagram_frame {
-          position: relative;
-          min-height: var(--sb-bending-diagram-region-height, 780px);
-        }
-        .st-key-bending_diagram_frame
-        > div[data-testid="stLayoutWrapper"]:has(
-          > .st-key-bending_diagram_shell
-        ) {
-          position: absolute;
-          inset: 0;
-          z-index: 10;
-        }
-        .st-key-bending_diagram_shell {
-          height: 100%;
-        }
-        .bending-diagram-loading-heading {
-          font-size: 17.6px;
-          font-weight: 600;
-          line-height: 1.35;
-          margin: 0 0 1rem;
-        }
         .bending-diagram-loading-shell {
           display: flex;
           align-items: center;
+          justify-content: center;
           gap: .7rem;
-          min-height: 58px;
+          height: 100%;
           padding: .85rem 1rem;
           border: 1px solid #cbd5e1;
-          border-left: 5px solid #98a2b3;
           border-radius: 10px;
-          background: #fff;
+          background: #f8fafc;
           color: #475569;
         }
         .bending-diagram-loading-icon {
@@ -64,47 +128,14 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
           font-weight: 600;
           line-height: 1.4;
         }
-        html:not([data-sb-bending-visible-state]):has(
-          .st-key-bending_state_plot_uls .js-plotly-plot .scatterlayer .trace
+        html:has(
+          .st-key-bending_diagram_live .js-plotly-plot .scatterlayer .trace
         ):has(
-          .st-key-bending_state_plot_uls .js-plotly-plot g.shapelayer .shape-group
+          .st-key-bending_diagram_live .js-plotly-plot g.shapelayer .shape-group
         ):has(
-          .st-key-bending_state_plot_uls .js-plotly-plot .annotation
+          .st-key-bending_diagram_live .js-plotly-plot .annotation
         )
-        .st-key-bending_diagram_frame
-        > div[data-testid="stLayoutWrapper"]:has(
-          > .st-key-bending_diagram_shell
-        ),
-        html[data-sb-bending-visible-state="uls"]:has(
-          .st-key-bending_state_plot_uls .js-plotly-plot .scatterlayer .trace
-        ):has(
-          .st-key-bending_state_plot_uls .js-plotly-plot g.shapelayer .shape-group
-        ):has(
-          .st-key-bending_state_plot_uls .js-plotly-plot .annotation
-        )
-        .st-key-bending_diagram_frame
-        > div[data-testid="stLayoutWrapper"]:has(
-          > .st-key-bending_diagram_shell
-        ),
-        html[data-sb-bending-visible-state="sls-cracked"]:has(
-          .st-key-bending_state_plot_sls_cracked .js-plotly-plot .scatterlayer .trace
-        ):has(
-          .st-key-bending_state_plot_sls_cracked .js-plotly-plot g.shapelayer .shape-group
-        ):has(
-          .st-key-bending_state_plot_sls_cracked .js-plotly-plot .annotation
-        )
-        .st-key-bending_diagram_frame
-        > div[data-testid="stLayoutWrapper"]:has(
-          > .st-key-bending_diagram_shell
-        ),
-        html[data-sb-bending-visible-state="uncracked"]:has(
-          .st-key-bending_state_plot_uncracked .js-plotly-plot .scatterlayer .trace
-        ):has(
-          .st-key-bending_state_plot_uncracked .js-plotly-plot g.shapelayer .shape-group
-        ):has(
-          .st-key-bending_state_plot_uncracked .js-plotly-plot .annotation
-        )
-        .st-key-bending_diagram_frame
+        .st-key-bending_primary_plot_frame
         > div[data-testid="stLayoutWrapper"]:has(
           > .st-key-bending_diagram_shell
         ) {
@@ -118,43 +149,16 @@ def render_bending_diagram_loading_shell(container, *, generation: int) -> None:
         <div class="bending-diagram-loading-region"
              data-testid="bending-diagram-loading-region"
              data-bending-diagram-shell="GENERATION"
-             data-bending-diagram-geometry-token="--sb-bending-diagram-region-height"
+             data-bending-diagram-geometry-token="--sb-bending-diagram-plot-height"
              role="status" aria-live="polite">
-          <div class="bending-diagram-loading-heading">Bending Diagrams</div>
           <div class="bending-diagram-loading-shell">
             <span class="bending-diagram-loading-icon" aria-hidden="true">&#9711;</span>
-            <span class="bending-diagram-loading-copy">Preparing bending diagrams</span>
+            <span class="bending-diagram-loading-copy">Preparing section stress and strain</span>
           </div>
         </div>
             """.replace("GENERATION", str(int(generation))),
             unsafe_allow_html=True,
         )
-
-
-def render_bending_diagram_initial_ready(container, *, generation: int) -> None:
-    """Permanently retire one cold-load shell after its first live diagram."""
-
-    with container:
-        st.markdown(
-            """
-            <style>
-            div[data-testid="stElementContainer"]:has(
-              [data-bending-diagram-initial-ready="GENERATION"]
-            ) {
-              display: none !important;
-              height: 0 !important;
-              min-height: 0 !important;
-              margin: 0 !important;
-              padding: 0 !important;
-            }
-            </style>
-            <span data-bending-diagram-initial-ready="GENERATION"
-                  aria-hidden="true" style="display:none"></span>
-            """.replace("GENERATION", str(int(generation))),
-            unsafe_allow_html=True,
-        )
-
-
 def render_bending_calculation_loading_shell(container) -> None:
     """Reserve the measured collapsed ULS calculation region while mounting."""
 
@@ -258,12 +262,46 @@ def render_bending_state_panel(
     mu_uls_active: float,
     diagram_shell_generation: int,
 ) -> None:
-    """Render the state-owned diagrams and teaching panel as one fragment body.
+    """Publish the lightweight diagram panel before mounting any Plotly host.
 
-    The ULS/SLS/Uncracked selector changes presentation state only. Keeping its
-    dependent diagrams inside this boundary prevents a state change from
-    rebuilding the summary, input cards, and every calculation card.
+    The first fragment pass emits the real heading, tabs, state selector and
+    material-lesson header around a passive plot-sized shell.  A browser paint
+    handshake then requests a fragment-only rerun which mounts the currently
+    selected state.  Inactive states and inactive diagram tabs are never
+    mounted on the cold critical path.
     """
+
+    generation = int(diagram_shell_generation)
+    if int(st.session_state.get("_bending_diagram_stage_generation", -1)) != generation:
+        st.session_state["_bending_diagram_stage_generation"] = generation
+        st.session_state["_bending_diagram_render_stage"] = "lightweight"
+        st.session_state["_bending_side_view_published"] = False
+        st.session_state["_bending_moment_view_published"] = False
+
+    primary_clicked = st.button(
+        "Load primary bending diagram",
+        key="bending_deferred_primary_button",
+    )
+    side_clicked = st.button(
+        "Load bending side view",
+        key="bending_deferred_side_button",
+    )
+    moment_clicked = st.button(
+        "Load bending moment diagram",
+        key="bending_deferred_moment_button",
+    )
+    if primary_clicked or side_clicked or moment_clicked:
+        st.session_state["_bending_diagram_render_stage"] = "primary"
+    if side_clicked:
+        st.session_state["_bending_side_view_published"] = True
+    if moment_clicked:
+        st.session_state["_bending_moment_view_published"] = True
+
+    primary_published = (
+        st.session_state.get("_bending_diagram_render_stage") == "primary"
+    )
+    side_published = bool(st.session_state.get("_bending_side_view_published", False))
+    moment_published = bool(st.session_state.get("_bending_moment_view_published", False))
 
     # Direct Bending navigation intentionally lets the heading, summary,
     # calculation cards and fixed diagram shell stream before the plotting
@@ -275,9 +313,10 @@ def render_bending_state_panel(
     )
     from application.v2_runtime_warmup import start_v2_runtime_warmup
 
-    start_v2_runtime_warmup()
-    start_visualization_runtime_warmup()
-    wait_for_visualization_runtime_warmup()
+    if primary_published:
+        start_v2_runtime_warmup()
+        start_visualization_runtime_warmup()
+        wait_for_visualization_runtime_warmup()
 
     state_options = ("ULS", "SLS (cracked)", "Uncracked")
     selected_state = st.session_state.get(
@@ -292,78 +331,35 @@ def render_bending_state_panel(
     stress_model = st.session_state.get("concrete_stress_model", "rectangular")
     moment_sign = st.session_state.get("bending_detail_view", "positive")
 
-    def state_projection(option: str):
-        if option == "ULS":
-            state_label = (
-                "uls – parabolic"
-                if stress_model == "parabolic"
-                else "uls – rectangular"
-            )
-            state_for_math = "ULS"
-        elif option.startswith("SLS"):
-            state_label = (
-                "sls – parabolic"
-                if stress_model == "parabolic"
-                else "sls – linear"
-            )
-            state_for_math = "SLS"
-        else:
-            state_label = (
-                "uncracked – parabolic"
-                if stress_model == "parabolic"
-                else "uncracked – linear"
-            )
-            state_for_math = "Uncracked"
-
-        projected_state = _stress_strain_state(
-            state_for_math,
-            moment_sign=moment_sign,
-        )
-        if state_for_math == "SLS":
-            dn_cracked = st.session_state.get("bending_sls_dn")
-            if dn_cracked is not None:
-                projected_state["sls"] = {
-                    "dn_cracked": float(dn_cracked),
-                    "dn": float(dn_cracked),
-                    "eps_c_top": st.session_state.get("bending_sls_eps_top"),
-                    "eps_s_layers": [],
-                    "sig_s_layers": [],
-                    "y_layers": [],
-                }
-        return state_label, projected_state
-
-    render_timing_mark("bending_page.runtime.diagram.start")
-    diagram_state_label, _ = state_projection(main_state)
+    diagram_state_label = _bending_state_label(
+        main_state,
+        stress_model=stress_model,
+    )
     st.session_state["bending_strain_state_local"] = diagram_state_label
 
-    render_timing_mark("bending_page.runtime.diagram.figure.start")
-    _, projected_state = state_projection(main_state)
-    fig_ss = _plot_stress_strain_profiles(
-        projected_state,
-        state_label=diagram_state_label,
-        layout=cached_layout,
-        moment_sign=moment_sign,
-    )
-    selected_fig_ss = fig_ss
-    state_figures = {main_state: selected_fig_ss}
-    for option in state_options:
-        if option == main_state:
-            continue
-        option_label, option_state = state_projection(option)
-        state_figures[option] = _plot_stress_strain_profiles(
-            option_state,
-            state_label=option_label,
+    selected_fig_ss = None
+    if primary_published:
+        render_timing_mark("bending_page.runtime.diagram.start")
+        render_timing_mark("bending_page.runtime.diagram.figure.start")
+        _, projected_state = _build_bending_state_projection(
+            main_state,
+            stress_model=stress_model,
+            moment_sign=moment_sign,
+        )
+        selected_fig_ss = _plot_stress_strain_profiles(
+            projected_state,
+            state_label=diagram_state_label,
             layout=cached_layout,
             moment_sign=moment_sign,
         )
-    render_timing_mark("bending_page.runtime.diagram.figure.end")
+        render_timing_mark("bending_page.runtime.diagram.figure.end")
 
     # The deferred summary browser binding used to contribute one zero-height
     # Streamlit stack slot before this section. Recreate that exact final-page
     # geometry here, after the visible loading shells have already streamed.
     st.markdown(
         '<div data-bending-diagrams-layout-slot data-bending-diagram-region-start '
-        'data-bending-diagram-geometry-token="--sb-bending-diagram-region-height" '
+        'data-bending-diagram-geometry-token="--sb-bending-diagram-plot-height" '
         'aria-hidden="true" '
         'style="height:0;line-height:0">&#8203;</div>',
         unsafe_allow_html=True,
@@ -376,103 +372,102 @@ def render_bending_state_panel(
         install_runtime=False,
     )
     with section_tab:
-        render_timing_mark("bending_page.runtime.diagram.streamlit.start")
-        state_keys = {
-            "ULS": "uls",
-            "SLS (cracked)": "sls-cracked",
-            "Uncracked": "uncracked",
-        }
-        selected_state_key = state_keys[main_state]
-        state_container_classes = {
-            option: f"st-key-bending_state_plot_{state_keys[option].replace('-', '_')}"
-            for option in state_options
-        }
-        state_rules = "".join(
-            f'html[data-sb-bending-visible-state="{state_keys[option]}"] '
-            f'.{state_container_classes[option]}'
-            '{display:block!important;}'
-            for option in state_options
-        )
-        st.markdown(
-            '<style>'
-            + ",".join(f'.{css_class}' for css_class in state_container_classes.values())
-            + '{display:none!important;}'
-            + f'html:not([data-sb-bending-visible-state]) '
-              f'.{state_container_classes[main_state]}'
-              '{display:block!important;}'
-            + state_rules
-            + '</style>',
-            unsafe_allow_html=True,
-        )
-        for option in state_options:
-            option_key = state_keys[option].replace("-", "_")
-            with st.container(key=f"bending_state_plot_{option_key}"):
-                render_plotly_diagram(
-                    state_figures[option],
-                    key=f"bending_section_stress_strain_{option_key}",
-                    title=f"Section stress and strain — {option}",
-                    config={"displayModeBar": False},
-                )
-        st.markdown(
-            '<span data-sb-bending-server-state="'
-            f'{selected_state_key}" aria-hidden="true" style="display:none"></span>',
-            unsafe_allow_html=True,
-        )
-        render_timing_mark("bending_page.runtime.diagram.streamlit.end")
+        with st.container(key="bending_primary_plot_frame"):
+            diagram_shell_container = st.container(key="bending_diagram_shell")
+            render_bending_diagram_loading_shell(
+                diagram_shell_container,
+                generation=generation,
+            )
+            with st.container(key="bending_diagram_live"):
+                if primary_published and selected_fig_ss is not None:
+                    render_timing_mark("bending_page.runtime.diagram.streamlit.start")
+                    state_key = {
+                        "ULS": "uls",
+                        "SLS (cracked)": "sls_cracked",
+                        "Uncracked": "uncracked",
+                    }[main_state]
+                    st.plotly_chart(
+                        selected_fig_ss,
+                        key=f"bending_section_stress_strain_{state_key}_chart",
+                        width="stretch",
+                        config={"displayModeBar": False},
+                    )
+                    render_timing_mark("bending_page.runtime.diagram.streamlit.end")
+                else:
+                    st.markdown(
+                        '<span data-bending-primary-plot-deferred="1" '
+                        'aria-hidden="true" style="display:none"></span>',
+                        unsafe_allow_html=True,
+                    )
     with side_view_tab:
-        from bending_side_view_diagram import render_bending_side_view_diagram
+        if side_published:
+            from bending_side_view_diagram import render_bending_side_view_diagram
 
-        render_bending_side_view_diagram(
-            st.session_state,
-            stress_strain_fig=selected_fig_ss,
-        )
+            render_bending_side_view_diagram(
+                st.session_state,
+                stress_strain_fig=selected_fig_ss,
+            )
+        else:
+            st.markdown(
+                '<div data-bending-side-view-deferred="1" '
+                'style="height:320px" aria-hidden="true"></div>',
+                unsafe_allow_html=True,
+            )
     with moment_tab:
-        import numpy as np
+        if moment_published:
+            import numpy as np
 
-        mode = str(st.session_state.get("actions_mode", "manual") or "manual").strip().lower()
-        length_m = max(float(get_param("L", 3000.0) or 3000.0) / 1000.0, 0.1)
-        moment_x = list(st.session_state.get("moment_x") or [])
-        moment_values = list(st.session_state.get("moment_values") or [])
-        if not (
-            mode == "design"
-            and moment_x
-            and moment_values
-            and len(moment_x) == len(moment_values)
-        ):
-            moment_x = np.linspace(0.0, length_m, 100).tolist()
-            x_norm = np.asarray(moment_x, dtype=float) / length_m
-            support_type = str(
-                get_param("support_type", "simply_supported") or "simply_supported"
-            ).strip().lower()
-            if "cantilever" in support_type:
-                moment_values = (float(mu_uls_active or 0.0) * (1.0 - x_norm)).tolist()
-            else:
-                moment_values = (
-                    4.0 * float(mu_uls_active or 0.0) * x_norm * (1.0 - x_norm)
-                ).tolist()
-        bmd_state = {
-            "x_plot": moment_x,
-            "M_plot": moment_values,
-            "support_positions_plot": list(
-                st.session_state.get("bmd_support_positions_m") or []
-            ),
-            "support_types_plot": list(st.session_state.get("bmd_support_types") or []),
-            "L": float(moment_x[-1]),
-            "preview_x_m": None,
-            "design_x_m": None,
-            "preview_M": None,
-            "x_pad": max(float(moment_x[-1]) * 0.08, 0.12),
-            "support_type": str(
-                st.session_state.get("support_type") or "simply_supported"
-            ).strip().lower(),
-        }
-        render_plotly_diagram(
-            figure_bmd_from_state(bmd_state, show_m_peak=True),
-            key="bending_moment_diagram",
-            title="Bending moment diagram",
-            config={"displayModeBar": False},
-        )
-    render_timing_mark("bending_page.runtime.diagram.end")
+            mode = str(st.session_state.get("actions_mode", "manual") or "manual").strip().lower()
+            length_m = max(float(get_param("L", 3000.0) or 3000.0) / 1000.0, 0.1)
+            moment_x = list(st.session_state.get("moment_x") or [])
+            moment_values = list(st.session_state.get("moment_values") or [])
+            if not (
+                mode == "design"
+                and moment_x
+                and moment_values
+                and len(moment_x) == len(moment_values)
+            ):
+                moment_x = np.linspace(0.0, length_m, 100).tolist()
+                x_norm = np.asarray(moment_x, dtype=float) / length_m
+                support_type = str(
+                    get_param("support_type", "simply_supported") or "simply_supported"
+                ).strip().lower()
+                if "cantilever" in support_type:
+                    moment_values = (float(mu_uls_active or 0.0) * (1.0 - x_norm)).tolist()
+                else:
+                    moment_values = (
+                        4.0 * float(mu_uls_active or 0.0) * x_norm * (1.0 - x_norm)
+                    ).tolist()
+            bmd_state = {
+                "x_plot": moment_x,
+                "M_plot": moment_values,
+                "support_positions_plot": list(
+                    st.session_state.get("bmd_support_positions_m") or []
+                ),
+                "support_types_plot": list(st.session_state.get("bmd_support_types") or []),
+                "L": float(moment_x[-1]),
+                "preview_x_m": None,
+                "design_x_m": None,
+                "preview_M": None,
+                "x_pad": max(float(moment_x[-1]) * 0.08, 0.12),
+                "support_type": str(
+                    st.session_state.get("support_type") or "simply_supported"
+                ).strip().lower(),
+            }
+            render_plotly_diagram(
+                figure_bmd_from_state(bmd_state, show_m_peak=True),
+                key="bending_moment_diagram",
+                title="Bending moment diagram",
+                config={"displayModeBar": False},
+            )
+        else:
+            st.markdown(
+                '<div data-bending-moment-deferred="1" '
+                'style="height:320px" aria-hidden="true"></div>',
+                unsafe_allow_html=True,
+            )
+    if primary_published:
+        render_timing_mark("bending_page.runtime.diagram.end")
 
     st.markdown("**State:**")
     st.radio(
@@ -482,12 +477,6 @@ def render_bending_state_panel(
         horizontal=True,
         index=state_options.index(main_state),
         label_visibility="collapsed",
-    )
-    preserve_scroll_for_preceding_widget(
-        st,
-        scope_id="bending-state-selector",
-        visible_state_attribute="data-sb-bending-visible-state",
-        visible_state_keys=("uls", "sls-cracked", "uncracked"),
     )
     st.session_state["bending_state"] = st.session_state.get(
         "bending_state_main", main_state
@@ -517,12 +506,230 @@ def render_bending_state_panel(
         key="bending_material_model_expander",
     )
     st.markdown(
-        '<span data-testid="bending-diagram-ready" '
-        f'data-bending-diagram-ready="{int(diagram_shell_generation)}" '
-        'aria-hidden="true" style="display:none"></span>',
+        '<span data-bending-diagram-region-end aria-hidden="true" '
+        'style="height:0;line-height:0"></span>'
+        '<span data-bending-lightweight-ready="'
+        f'{generation}" aria-hidden="true" style="display:none"></span>',
         unsafe_allow_html=True,
     )
+    if primary_published:
+        st.markdown(
+            '<span data-testid="bending-diagram-ready" '
+            f'data-bending-diagram-ready="{generation}" '
+            f'data-bending-selected-state="{main_state}" '
+            'aria-hidden="true" style="display:none"></span>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        """
+        <style>
+        .st-key-bending_deferred_primary_button,
+        .st-key-bending_deferred_side_button,
+        .st-key-bending_deferred_moment_button {
+          display: none !important;
+          height: 0 !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    import streamlit.components.v1 as components
+
+    components.html(
+        f"""
+        <script>
+        (() => {{
+          const doc = window.parent.document;
+          const generation = {generation};
+          const runtimeKey = '__sbBendingDeferredDiagramRuntime';
+          const prior = window.parent[runtimeKey];
+          if (prior && prior.cleanup) prior.cleanup();
+
+          const button = (key) => doc.querySelector(`.st-key-${{key}} button`);
+          const clickOnce = (key) => {{
+            const target = button(key);
+            if (!target || target.disabled) return false;
+            target.click();
+            return true;
+          }};
+          let cancelled = false;
+          let timer = 0;
+          const requestPrimaryAfterPaint = () => {{
+            if (cancelled) return;
+            const light = doc.querySelector(
+              `[data-bending-lightweight-ready="${{generation}}"]`
+            );
+            const cards = doc.querySelector('[data-testid="bending-calculation-ready"]');
+            const live = doc.querySelector(
+              `[data-bending-diagram-ready="${{generation}}"]`
+            );
+            if (live) return;
+            if (!light || !cards) {{
+              timer = window.setTimeout(requestPrimaryAfterPaint, 25);
+              return;
+            }}
+            window.requestAnimationFrame(() => window.requestAnimationFrame(() => {{
+              if (cancelled) return;
+              doc.documentElement.setAttribute(
+                'data-sb-bending-lightweight-painted', String(generation)
+              );
+              // Leave a short, measurable interaction window after the first
+              // complete lightweight paint.  This is not a loading delay: it
+              // proves the browser can accept scroll input before Plotly work
+              // begins and keeps the cold-load boundary regression-testable.
+              timer = window.setTimeout(
+                () => clickOnce('bending_deferred_primary_button'), 150
+              );
+            }}));
+          }};
+
+          const onPointerDown = (event) => {{
+            const tab = event.target && event.target.closest
+              ? event.target.closest('[role="tab"]')
+              : null;
+            if (!tab) return;
+            const tabset = tab.closest('[data-testid="stTabs"]');
+            if (!tabset || tabset.dataset.sbTabScope !== 'bending-section-diagrams') return;
+            const label = (tab.textContent || '').trim();
+            if (label === 'Side view') {{
+              window.setTimeout(
+                () => clickOnce('bending_deferred_side_button'), 0
+              );
+            }} else if (label === 'Bending moment') {{
+              window.setTimeout(
+                () => clickOnce('bending_deferred_moment_button'), 0
+              );
+            }}
+          }};
+          doc.addEventListener('pointerdown', onPointerDown, true);
+          requestPrimaryAfterPaint();
+          window.parent[runtimeKey] = {{
+            cleanup: () => {{
+              cancelled = true;
+              if (timer) window.clearTimeout(timer);
+              doc.removeEventListener('pointerdown', onPointerDown, true);
+            }}
+          }};
+        }})();
+        </script>
+        """,
+        height=0,
+    )
     render_timing_mark("bending_page.runtime.material_model.end")
+
+
+def render_bending_secondary_state_cache(
+    *,
+    cached_layout: dict,
+    diagram_shell_generation: int,
+) -> None:
+    """Prepare inactive state figures after the primary chart is painted.
+
+    This fragment mounts no Plotly host.  It only fills the existing bounded
+    Python figure cache during browser idle time, so SLS and Uncracked do not
+    compete with cold-page scrolling or the initial ULS paint.
+    """
+
+    generation = int(diagram_shell_generation)
+    prepare_clicked = st.button(
+        "Prepare remaining bending states",
+        key="bending_prepare_secondary_button",
+    )
+    ready = (
+        int(
+            st.session_state.get(
+                "_bending_secondary_diagrams_ready_generation", -1
+            )
+        )
+        == generation
+    )
+    if prepare_clicked and not ready:
+        selected = str(st.session_state.get("bending_state_main", "ULS") or "ULS")
+        stress_model = st.session_state.get("concrete_stress_model", "rectangular")
+        moment_sign = st.session_state.get("bending_detail_view", "positive")
+        for option in ("ULS", "SLS (cracked)", "Uncracked"):
+            if option == selected:
+                continue
+            state_label, projected = _build_bending_state_projection(
+                option,
+                stress_model=stress_model,
+                moment_sign=moment_sign,
+            )
+            _plot_stress_strain_profiles(
+                projected,
+                state_label=state_label,
+                layout=cached_layout,
+                moment_sign=moment_sign,
+            )
+        st.session_state["_bending_secondary_diagrams_ready_generation"] = generation
+        ready = True
+
+    st.markdown(
+        """
+        <style>
+        .st-key-bending_prepare_secondary_button {
+          display: none !important;
+          height: 0 !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    if ready:
+        st.markdown(
+            '<span data-bending-secondary-diagrams-ready="'
+            f'{generation}" aria-hidden="true" style="display:none"></span>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    import streamlit.components.v1 as components
+
+    components.html(
+        f"""
+        <script>
+        (() => {{
+          const doc = window.parent.document;
+          const generation = {generation};
+          const start = () => {{
+            const plot = doc.querySelector(
+              '.st-key-bending_diagram_live .js-plotly-plot'
+            );
+            const complete = Boolean(
+              plot
+              && plot.querySelector('.scatterlayer .trace')
+              && plot.querySelector('g.shapelayer .shape-group')
+              && plot.querySelector('.annotation')
+            );
+            if (!complete) {{
+              window.setTimeout(start, 50);
+              return;
+            }}
+            const run = () => {{
+              const button = doc.querySelector(
+                '.st-key-bending_prepare_secondary_button button'
+              );
+              if (button && !button.disabled) button.click();
+            }};
+            if ('requestIdleCallback' in window.parent) {{
+              window.parent.requestIdleCallback(run, {{timeout: 750}});
+            }} else {{
+              window.setTimeout(run, 250);
+            }}
+          }};
+          start();
+        }})();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def _coalesce_num(v, default: float) -> float:

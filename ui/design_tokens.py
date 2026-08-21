@@ -20,11 +20,9 @@ SHARED_LAYOUT_TOKENS: dict[str, str] = {
     "collapsed-card-height": "40px",
     "heading-color": "#0f172a",
     "bending-diagram-plot-height": "320px",
-    "bending-diagram-region-height": "780px",
 }
 
 BENDING_DIAGRAM_PLOT_HEIGHT_PX = 320
-BENDING_DIAGRAM_REGION_HEIGHT_PX = 780
 
 
 def shared_layout_token_css() -> str:
@@ -37,7 +35,6 @@ def shared_layout_token_css() -> str:
 
 __all__ = [
     "BENDING_DIAGRAM_PLOT_HEIGHT_PX",
-    "BENDING_DIAGRAM_REGION_HEIGHT_PX",
     "SHARED_LAYOUT_TOKENS",
     "shared_layout_token_css",
 ]

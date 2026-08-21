@@ -9,12 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_bending_publishes_fixed_diagram_shell_before_calculation_cards() -> None:
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
 
-    shell = source.index("render_bending_diagram_loading_shell")
+    containers = source.index(
+        'diagram_frame_container = st.container(key="bending_diagram_frame")'
+    )
+    lightweight_panel = source.index("_render_bending_state_panel(", containers)
+    inputs = source.index("with inputs_placeholder.container():", lightweight_panel)
     checks = source.index('render_timing_mark("bending_page.runtime.checks.start")')
-    completed = source.index("with diagram_placeholder.container()")
 
-    assert shell < completed < checks
-    assert "if not diagram_rendered_early:" in source
+    assert containers < lightweight_panel < inputs < checks
+    assert "diagram_rendered_early" not in source
 
 
 def test_bending_shells_publish_back_to_back_after_stable_positions_exist() -> None:
@@ -23,26 +26,19 @@ def test_bending_shells_publish_back_to_back_after_stable_positions_exist() -> N
     frame = source.index(
         'diagram_frame_container = st.container(key="bending_diagram_frame")'
     )
-    shell_container = source.index(
-        'diagram_shell_container = st.container(key="bending_diagram_shell")',
-        frame,
-    )
-    slot = source.index("diagram_section_placeholder = st.empty()", shell_container)
+    options = source.index("diagram_options_placeholder = st.empty()", frame)
+    slot = source.index("diagram_section_placeholder = st.empty()", options)
     inputs = source.index("inputs_placeholder = st.empty()", slot)
     calculation_container = source.index("calc_blocks_container = st.container()", inputs)
-    first_shell = source.index(
-        "render_bending_diagram_loading_shell(", calculation_container
-    )
-    shell_target = source.index("diagram_shell_container", first_shell)
     calculation_shell = source.index(
         "render_bending_calculation_loading_shell(\n            calc_blocks_container",
-        first_shell,
+        calculation_container,
     )
+    lightweight_panel = source.index("_render_bending_state_panel(", calculation_shell)
     assert (
-        frame < shell_container < slot < inputs
+        frame < options < slot < inputs
         < calculation_container
-        < first_shell < shell_target
-        < calculation_shell
+        < calculation_shell < lightweight_panel
     )
 
 
@@ -52,22 +48,27 @@ def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None
     ).read_text(encoding="utf-8")
 
     assert 'data-testid="bending-diagram-loading-region"' in source
-    assert "height: var(--sb-bending-diagram-region-height, 780px)" in source
-    assert "min-height: var(--sb-bending-diagram-region-height, 780px)" in source
-    assert ".st-key-bending_diagram_frame" in source
+    assert "height: var(--sb-bending-diagram-plot-height, 320px)" in source
+    assert "min-height: var(--sb-bending-diagram-plot-height, 320px)" in source
+    assert ".st-key-bending_primary_plot_frame" in source
+    assert "grid-template-columns: minmax(0, 1fr) !important" in source
+    assert "min-width: 0 !important" in source
     assert "> .st-key-bending_diagram_shell" in source
     assert "647.15625px" not in source
-    assert "Preparing bending diagrams" in source
+    assert "780px" not in source
+    assert "Preparing section stress and strain" in source
     assert 'data-bending-diagram-shell="GENERATION"' in source
-    assert 'data-bending-diagram-ready="{int(diagram_shell_generation)}"' in source
+    assert 'data-bending-diagram-ready="{generation}"' in source
     assert "pointer-events: none" in source
-    assert source.count('.js-plotly-plot .scatterlayer .trace') == 4
-    assert source.count('.js-plotly-plot g.shapelayer .shape-group') == 4
-    assert source.count('.js-plotly-plot .annotation') == 4
+    assert source.count('.js-plotly-plot .scatterlayer .trace') == 1
+    assert source.count('.js-plotly-plot g.shapelayer .shape-group') == 1
+    assert source.count('.js-plotly-plot .annotation') == 1
     assert 'data-sb-bending-plot-ready' not in source
     assert source.count(
-        'data-bending-diagram-geometry-token="--sb-bending-diagram-region-height"'
+        'data-bending-diagram-geometry-token="--sb-bending-diagram-plot-height"'
     ) == 2
+    assert '> div[data-testid="stElementContainer"] {' in source
+    assert "margin-bottom: 0 !important" in source
 
 
 def test_bending_diagram_geometry_uses_shared_tokens() -> None:
@@ -77,7 +78,8 @@ def test_bending_diagram_geometry_uses_shared_tokens() -> None:
     ).read_text(encoding="utf-8")
 
     assert "BENDING_DIAGRAM_PLOT_HEIGHT_PX = 320" in tokens
-    assert "BENDING_DIAGRAM_REGION_HEIGHT_PX = 780" in tokens
+    assert "BENDING_DIAGRAM_REGION_HEIGHT_PX" not in tokens
+    assert "bending-diagram-region-height" not in tokens
     assert "height=BENDING_DIAGRAM_PLOT_HEIGHT_PX" in figure
 
 
@@ -88,6 +90,10 @@ def test_bending_browser_regression_measures_live_geometry_and_blank_hosts() -> 
 
     assert "layout_delta_px" in verifier
     assert "geometry_delta_px" in verifier
+    assert "shell_width_delta_px" in verifier
+    assert "live_width_delta_px" in verifier
+    assert "loading shell did not fill its frame" in verifier
+    assert "live diagram did not fill its frame" in verifier
     assert "abs(geometry_delta) > 2" in verifier
     assert "cold shell blocked downward scrolling" in verifier
     assert "scroll position was forced after user input" in verifier
@@ -130,7 +136,8 @@ def test_bending_defers_visualisation_wait_until_diagram_boundary() -> None:
     )
     assert "start_v2_runtime_warmup()" in diagram_source
     assert "start_visualization_runtime_warmup()" in diagram_source
-    assert "wait_for_visualization_runtime_warmup()" in diagram_source
-    assert diagram_source.index("wait_for_visualization_runtime_warmup()") < diagram_source.index(
+    wait = diagram_source.index("wait_for_visualization_runtime_warmup()")
+    guard = diagram_source.index("if primary_published:", 0, wait)
+    assert guard < wait < diagram_source.index(
         'state_options = ("ULS", "SLS (cracked)", "Uncracked")'
     )

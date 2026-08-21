@@ -1841,6 +1841,17 @@ def step_expander_calcbox(
         st.session_state[open_key] = bool(is_expanded)
     policy = str(render_policy or "lazy").strip().lower()
     mount_closed_body = policy in {"mounted", "eager", "client_mounted"}
+    # During the first Bending paint the page publishes every calculation-card
+    # header but deliberately avoids constructing Plotly figures hidden inside
+    # closed bodies.  Once the selected diagram has been requested, normal
+    # card render policy resumes; opening a lazy card still renders its body
+    # immediately through this nested fragment.
+    if (
+        str(uid).startswith("bending_")
+        and st.session_state.get("_bending_diagram_render_stage", "lightweight")
+        == "lightweight"
+    ):
+        mount_closed_body = False
     expander = st.expander(
         label,
         expanded=bool(is_expanded),

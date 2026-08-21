@@ -555,17 +555,20 @@ def test_bending_summary_binding_is_deferred_without_changing_layout() -> None:
     """The browser component must not delay or shift the visible shell."""
 
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
-    diagram_shell = source.index("render_bending_diagram_loading_shell(")
-    calculation_shell = source.index(
-        "render_bending_calculation_loading_shell(", diagram_shell
+    frame = source.index(
+        'diagram_frame_container = st.container(key="bending_diagram_frame")'
     )
-    binding = source.index("bind_summary_clicks()", calculation_shell)
+    calculation_shell = source.index(
+        "render_bending_calculation_loading_shell(", frame
+    )
+    diagram_panel = source.index("_render_bending_state_panel(", calculation_shell)
+    binding = source.index("bind_summary_clicks()", diagram_panel)
     diagram_source = (ROOT / "engineering_page_sections/bending_diagrams.py").read_text(
         encoding="utf-8-sig"
     )
 
-    assert diagram_shell < calculation_shell < binding
+    assert frame < calculation_shell < diagram_panel < binding
     assert "data-bending-diagrams-layout-slot" in diagram_source
-    assert ".st-key-bending_diagram_frame" in diagram_source
+    assert ".st-key-bending_primary_plot_frame" in diagram_source
     assert "> .st-key-bending_diagram_shell" in diagram_source
     assert "margin-top: 16.640625px" not in diagram_source

@@ -33,10 +33,9 @@ def render_stable_tabs(
     if not scope_id.strip():
         raise ValueError("scope_id must be non-empty")
 
-    # One document-level listener serves every explicitly marked stable tabset
-    # and widget. It never owns engineering state or keeps the page pinned.
-    # Any pending correction is one-shot and yields immediately to user scroll
-    # intent (wheel, touch, keyboard, or scrollbar/pointer interaction).
+    # One document-level listener serves every explicitly marked stable tabset.
+    # It never owns engineering state or keeps the page pinned. Any pending
+    # correction is one-shot and yields immediately to user scroll intent.
     if install_runtime:
         import streamlit.components.v1 as components
 
@@ -86,19 +85,10 @@ def render_stable_tabs(
           }}
 
           let pendingTabRestore = null;
-          let pendingWidgetRestore = null;
-          const pendingAttribute = 'data-sb-pending-widget-scroll';
-
-          function clearWidgetRestore() {{
-            pendingWidgetRestore = null;
-            doc.documentElement.removeAttribute(pendingAttribute);
-          }}
 
           function cancelPendingScrollPreservation() {{
             if (pendingTabRestore) pendingTabRestore.cancelled = true;
             pendingTabRestore = null;
-            if (pendingWidgetRestore) pendingWidgetRestore.cancelled = true;
-            clearWidgetRestore();
           }}
 
           function resizeActivePlot(tabset) {{
@@ -146,148 +136,9 @@ def render_stable_tabs(
             }});
           }}
 
-          function tagWidgetMarkers() {{
-            doc.querySelectorAll('[data-sb-widget-scroll-marker]').forEach(function (marker) {{
-              const scope = marker.getAttribute('data-sb-widget-scroll-marker');
-              const visibleStateAttribute = marker.getAttribute(
-                'data-sb-widget-visible-state-attribute'
-              );
-              const visibleStateKeys = (
-                marker.getAttribute('data-sb-widget-visible-state-keys') || ''
-              ).split(',').filter(Boolean);
-              let node = marker.closest('[data-testid="stElementContainer"]');
-              while (node && (node = node.previousElementSibling)) {{
-                const group = node.matches?.('[role="radiogroup"]')
-                  ? node
-                  : node.querySelector?.('[role="radiogroup"]');
-                if (group) {{
-                  group.dataset.sbStableWidgetScroll = scope;
-                  if (visibleStateAttribute && visibleStateKeys.length) {{
-                    group.dataset.sbVisibleStateAttribute = visibleStateAttribute;
-                    group.dataset.sbVisibleStateKeys = visibleStateKeys.join(',');
-                    if (!doc.documentElement.hasAttribute(visibleStateAttribute)) {{
-                      const radios = [...group.querySelectorAll('input[type="radio"]')];
-                      const checkedIndex = radios.findIndex(function (radio) {{
-                        return radio.checked;
-                      }});
-                      if (checkedIndex >= 0 && visibleStateKeys[checkedIndex]) {{
-                        doc.documentElement.setAttribute(
-                          visibleStateAttribute,
-                          visibleStateKeys[checkedIndex]
-                        );
-                      }}
-                    }}
-                  }}
-                  break;
-                }}
-              }}
-            }});
-          }}
-
-          function nodeContainsReadyMarker(node) {{
-            return Boolean(
-              node?.nodeType === 1
-              && (
-                node.matches?.('[data-bending-diagram-ready]')
-                || node.querySelector?.('[data-bending-diagram-ready]')
-              )
-            );
-          }}
-
-          function maybeRestoreWidgetScroll(records) {{
-            const pending = pendingWidgetRestore;
-            if (!pending || pending.cancelled) return;
-            if (Date.now() >= pending.expires) {{
-              clearWidgetRestore();
-              return;
-            }}
-            if (records?.some(function (record) {{
-              return [...record.removedNodes].some(nodeContainsReadyMarker);
-            }})) pending.sawReadyRemoval = true;
-            const ready = doc.querySelector('[data-bending-diagram-ready]');
-            if (!pending.sawReadyRemoval || !ready) return;
-
-            window.parent.requestAnimationFrame(function () {{
-              if (pending !== pendingWidgetRestore || pending.cancelled) return;
-              const scroller = doc.querySelector('section.stMain');
-              if (scroller && Math.abs(scroller.scrollTop - pending.top) > 1) {{
-                scroller.scrollTop = pending.top;
-              }}
-              clearWidgetRestore();
-            }});
-          }}
-
-          function snapshotWidget(event) {{
-            const group = event.target?.closest?.('[data-sb-stable-widget-scroll]');
-            if (!group) return;
-            const radios = [...group.querySelectorAll('input[type="radio"]')];
-            const radio = event.target?.closest?.('label')?.querySelector?.(
-              'input[type="radio"]'
-            ) || event.target?.closest?.('input[type="radio"]');
-            const requestedIndex = radios.indexOf(radio);
-            const visibleStateAttribute = group.dataset.sbVisibleStateAttribute;
-            const visibleStateKeys = (group.dataset.sbVisibleStateKeys || '')
-              .split(',').filter(Boolean);
-            if (
-              requestedIndex >= 0
-              && visibleStateAttribute
-              && visibleStateKeys[requestedIndex]
-            ) {{
-              const stateSwitchStarted = window.parent.performance.now();
-              doc.documentElement.setAttribute(
-                visibleStateAttribute,
-                visibleStateKeys[requestedIndex]
-              );
-              const stateGeneration = Number(
-                doc.documentElement.getAttribute('data-sb-bending-state-generation') || 0
-              ) + 1;
-              doc.documentElement.setAttribute(
-                'data-sb-bending-state-generation',
-                String(stateGeneration)
-              );
-              window.parent.requestAnimationFrame(function () {{
-                doc.querySelectorAll(
-                  '[class*="st-key-bending_state_plot_"] .js-plotly-plot'
-                ).forEach(function (plot) {{
-                  if (plot.getClientRects().length) {{
-                    try {{ window.parent.Plotly?.Plots?.resize(plot); }} catch (_error) {{}}
-                  }}
-                }});
-                doc.documentElement.setAttribute(
-                  'data-sb-last-bending-host-switch-ms',
-                  String(window.parent.performance.now() - stateSwitchStarted)
-                );
-              }});
-            }}
-            const scroller = doc.querySelector('section.stMain');
-            if (!scroller) return;
-            pendingWidgetRestore = {{
-              scope: group.dataset.sbStableWidgetScroll,
-              top: scroller.scrollTop,
-              expires: Date.now() + 1500,
-              sawReadyRemoval: false,
-              cancelled: false,
-            }};
-            doc.documentElement.setAttribute(
-              pendingAttribute,
-              JSON.stringify({{
-                scope: pendingWidgetRestore.scope,
-                top: pendingWidgetRestore.top,
-                expires: pendingWidgetRestore.expires,
-              }})
-            );
-            const captured = pendingWidgetRestore;
-            window.parent.setTimeout(function () {{
-              if (pendingWidgetRestore === captured) clearWidgetRestore();
-            }}, 1500);
-          }}
-
           tagStableTabsets();
-          tagWidgetMarkers();
-          const stableMarkerObserver = new MutationObserver(function (records) {{
+          const stableMarkerObserver = new MutationObserver(function () {{
             tagStableTabsets();
-            tagWidgetMarkers();
-            maybeRestoreWidgetScroll(records);
           }});
           stableMarkerObserver.observe(doc.body, {{ childList: true, subtree: true }});
 
@@ -301,17 +152,11 @@ def render_stable_tabs(
           }});
 
           doc.addEventListener('pointerdown', function (event) {{
-            if (
-              pendingWidgetRestore
-              && !event.target?.closest?.('[data-sb-stable-widget-scroll]')
-            ) cancelPendingScrollPreservation();
             snapshotTab(event);
-            snapshotWidget(event);
           }}, true);
           doc.addEventListener('keydown', function (event) {{
             if (event.key === 'Enter' || event.key === ' ') {{
               snapshotTab(event);
-              snapshotWidget(event);
               return;
             }}
             if ([
@@ -343,52 +188,6 @@ def render_stable_tabs(
         unsafe_allow_html=True,
     )
     return tuple(st_module.tabs(tab_labels))
-
-
-def preserve_scroll_for_preceding_widget(
-    st_module: Any,
-    *,
-    scope_id: str,
-    visible_state_attribute: str | None = None,
-    visible_state_keys: tuple[str, ...] = (),
-) -> None:
-    """Guard one widget rerun without overriding deliberate user scrolling."""
-
-    scope = str(scope_id).strip()
-    if not scope:
-        raise ValueError("scope_id must be non-empty")
-
-    escaped_scope = html.escape(scope, quote=True)
-    visible_state_markup = ""
-    if visible_state_attribute is not None:
-        attribute = str(visible_state_attribute).strip()
-        keys = tuple(str(value).strip() for value in visible_state_keys)
-        if not attribute or not keys or any(not value for value in keys):
-            raise ValueError(
-                "visible state attribute and keys must be non-empty when provided"
-            )
-        visible_state_markup = (
-            ' data-sb-widget-visible-state-attribute="'
-            + html.escape(attribute, quote=True)
-            + '" data-sb-widget-visible-state-keys="'
-            + html.escape(",".join(keys), quote=True)
-            + '"'
-        )
-    st_module.markdown(
-        '<style>'
-        'div[data-testid="stElementContainer"]:has([data-sb-widget-scroll-marker]){'
-        'display:none!important;height:0!important;min-height:0!important;'
-        'margin:0!important;padding:0!important;}'
-        'div[data-testid="stElementContainer"]:has([data-sb-widget-scroll-marker])'
-        '+div[data-testid="stElementContainer"]:has(iframe){'
-        'display:none!important;height:0!important;min-height:0!important;'
-        'margin:0!important;padding:0!important;}'
-        '</style>'
-        f'<span data-sb-widget-scroll-marker="{escaped_scope}"'
-        f'{visible_state_markup} '
-        'aria-hidden="true" style="display:none"></span>',
-        unsafe_allow_html=True,
-    )
 
 
 def synchronize_stable_tab_scopes(
@@ -494,7 +293,6 @@ def synchronize_stable_tab_scopes(
 
 
 __all__ = [
-    "preserve_scroll_for_preceding_widget",
     "render_stable_tabs",
     "synchronize_stable_tab_scopes",
 ]

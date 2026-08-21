@@ -56,51 +56,37 @@ async def _visible_state(page: Page) -> dict:
     return await page.evaluate(
         """
         () => {
-          const state = document.documentElement.getAttribute(
-            'data-sb-bending-visible-state'
+          const ready = document.querySelector('[data-bending-selected-state]');
+          const label = ready?.getAttribute('data-bending-selected-state') || '';
+          const state = {
+            'ULS': 'uls',
+            'SLS (cracked)': 'sls-cracked',
+            'Uncracked': 'uncracked',
+          }[label] || '';
+          const plot = document.querySelector(
+            '.st-key-bending_diagram_live .js-plotly-plot'
           );
-          const hostKeys = {
-            'uls': 'uls',
-            'sls-cracked': 'sls_cracked',
-            'uncracked': 'uncracked',
+          const box = plot?.getBoundingClientRect();
+          const traces = plot?.querySelectorAll('.scatterlayer .trace').length || 0;
+          const shapes = plot?.querySelectorAll(
+            'g.shapelayer .shape-group'
+          ).length || 0;
+          const annotations = plot?.querySelectorAll('.annotation').length || 0;
+          const host = {
+            key: state,
+            mounted: Boolean(plot),
+            visible: Boolean(plot && box.height > 100),
+            width: box?.width || 0,
+            height: box?.height || 0,
+            traces,
+            shapes,
+            annotations,
+            complete: traces > 0 && shapes > 0 && annotations > 0,
           };
-          const hosts = Object.entries(hostKeys).map(([key, cssKey]) => {
-            const host = document.querySelector(
-              '.st-key-bending_state_plot_' + cssKey
-            );
-            const plot = host?.querySelector('.js-plotly-plot');
-            const box = host?.getBoundingClientRect();
-            const visible = Boolean(
-              host
-              && getComputedStyle(host).display !== 'none'
-              && box.height > 100
-            );
-            const traces = plot?.querySelectorAll('.scatterlayer .trace').length || 0;
-            const shapes = plot?.querySelectorAll(
-              'g.shapelayer .shape-group'
-            ).length || 0;
-            const annotations = plot?.querySelectorAll('.annotation').length || 0;
-            return {
-              key,
-              mounted: Boolean(plot),
-              visible,
-              width: box?.width || 0,
-              height: box?.height || 0,
-              traces,
-              shapes,
-              annotations,
-              complete: traces > 0 && shapes > 0 && annotations > 0,
-            };
-          });
           return {
             state,
-            host_switch_ms: Number(
-              document.documentElement.getAttribute(
-                'data-sb-last-bending-host-switch-ms'
-              ) || 0
-            ),
-            hosts,
-            visible_hosts: hosts.filter(host => host.visible),
+            hosts: host.mounted ? [host] : [],
+            visible_hosts: host.visible ? [host] : [],
           };
         }
         """
@@ -111,22 +97,21 @@ async def _assert_state(page: Page, expected: str) -> dict:
     await page.wait_for_function(
         """
         expected => {
-          if (document.documentElement.getAttribute(
-            'data-sb-bending-visible-state'
-          ) !== expected) return false;
-          const cssKey = {
-            'uls': 'uls',
-            'sls-cracked': 'sls_cracked',
-            'uncracked': 'uncracked',
-          }[expected];
-          const host = document.querySelector(
-            '.st-key-bending_state_plot_' + cssKey
+          const label = document.querySelector(
+            '[data-bending-selected-state]'
+          )?.getAttribute('data-bending-selected-state');
+          const state = {
+            'ULS': 'uls',
+            'SLS (cracked)': 'sls-cracked',
+            'Uncracked': 'uncracked',
+          }[label] || '';
+          if (state !== expected) return false;
+          const plot = document.querySelector(
+            '.st-key-bending_diagram_live .js-plotly-plot'
           );
-          const plot = host?.querySelector('.js-plotly-plot');
           return Boolean(
-            host
-            && getComputedStyle(host).display !== 'none'
-            && host.getBoundingClientRect().height > 100
+            plot
+            && plot.getBoundingClientRect().height > 100
             && plot?.querySelector('.scatterlayer .trace')
             && plot?.querySelector('g.shapelayer .shape-group')
             && plot?.querySelector('.annotation')
@@ -154,40 +139,36 @@ async def _begin_frame_probe(page: Page, duration_ms: int = 450) -> None:
           window.__sbBendingFrameProbe = [];
           const started = performance.now();
           const sample = () => {
-            const state = document.documentElement.getAttribute(
-              'data-sb-bending-visible-state'
+            const label = document.querySelector(
+              '[data-bending-selected-state]'
+            )?.getAttribute('data-bending-selected-state') || '';
+            const state = {
+              'ULS': 'uls',
+              'SLS (cracked)': 'sls-cracked',
+              'Uncracked': 'uncracked',
+            }[label] || '';
+            const plot = document.querySelector(
+              '.st-key-bending_diagram_live .js-plotly-plot'
             );
-            const keys = {
-              'uls': 'uls',
-              'sls-cracked': 'sls_cracked',
-              'uncracked': 'uncracked',
-            };
-            const visibleHosts = Object.entries(keys).map(([key, cssKey]) => {
-              const host = document.querySelector(
-                '.st-key-bending_state_plot_' + cssKey
-              );
-              const plot = host?.querySelector('.js-plotly-plot');
-              const traces = plot?.querySelectorAll('.scatterlayer .trace').length || 0;
-              const shapes = plot?.querySelectorAll(
-                'g.shapelayer .shape-group'
-              ).length || 0;
-              const annotations = plot?.querySelectorAll('.annotation').length || 0;
-              const visible = Boolean(host
-                && getComputedStyle(host).display !== 'none'
-                && host.getBoundingClientRect().height > 100);
-              return {
-                key,
-                visible,
-                complete: traces > 0 && shapes > 0 && annotations > 0,
-              };
-            }).filter(host => host.visible);
+            const shell = document.querySelector(
+              '[data-testid="bending-diagram-loading-region"]'
+            );
+            const shellVisible = Boolean(
+              shell && shell.getBoundingClientRect().height > 100
+            );
+            const traces = plot?.querySelectorAll('.scatterlayer .trace').length || 0;
+            const shapes = plot?.querySelectorAll(
+              'g.shapelayer .shape-group'
+            ).length || 0;
+            const annotations = plot?.querySelectorAll('.annotation').length || 0;
+            const visible = Boolean(plot && plot.getBoundingClientRect().height > 100);
             window.__sbBendingFrameProbe.push({
               t: performance.now() - started,
               state,
-              visible: visibleHosts.map(host => host.key),
-              incomplete: visibleHosts.filter(host => !host.complete).map(
-                host => host.key
-              ),
+              shell_visible: shellVisible,
+              visible: visible ? [state] : [],
+              incomplete: visible && !(traces && shapes && annotations)
+                ? [state] : [],
             });
             if (performance.now() - started < duration) {
               requestAnimationFrame(sample);
@@ -204,6 +185,8 @@ async def _end_frame_probe(page: Page, duration_ms: int = 450) -> list[dict]:
     await page.wait_for_timeout(duration_ms + 80)
     frames = await page.evaluate("() => window.__sbBendingFrameProbe || []")
     for frame in frames:
+        if frame["shell_visible"]:
+            continue
         if len(frame["visible"]) != 1:
             raise AssertionError(f"mixed or blank state frame: {frame}")
         if frame["incomplete"]:
@@ -221,18 +204,17 @@ async def _begin_cold_paint_probe(page: Page) -> None:
           const started = performance.now();
           let previous = '';
           const sample = () => {
-            const state = document.documentElement.getAttribute(
-              'data-sb-bending-visible-state'
-            ) || 'uls';
-            const cssKey = {
-              'uls': 'uls',
-              'sls-cracked': 'sls_cracked',
-              'uncracked': 'uncracked',
-            }[state] || 'uls';
-            const host = document.querySelector(
-              '.st-key-bending_state_plot_' + cssKey
+            const label = document.querySelector(
+              '[data-bending-selected-state]'
+            )?.getAttribute('data-bending-selected-state') || '';
+            const state = {
+              'ULS': 'uls',
+              'SLS (cracked)': 'sls-cracked',
+              'Uncracked': 'uncracked',
+            }[label] || '';
+            const plot = document.querySelector(
+              '.st-key-bending_diagram_live .js-plotly-plot'
             );
-            const plot = host?.querySelector('.js-plotly-plot');
             const shell = document.querySelector('[data-bending-diagram-shell]');
             const shellVisible = Boolean(
               shell
@@ -240,9 +222,7 @@ async def _begin_cold_paint_probe(page: Page) -> None:
               && shell.getBoundingClientRect().height > 100
             );
             const hostVisible = Boolean(
-              host
-              && getComputedStyle(host).display !== 'none'
-              && host.getBoundingClientRect().height > 100
+              plot && plot.getBoundingClientRect().height > 100
             );
             const frame = {
               t: performance.now() - started,
@@ -292,6 +272,9 @@ async def _cold_scroll_probe(page: Page) -> dict:
     await shell.wait_for(state="visible", timeout=30_000)
     await _begin_cold_paint_probe(page)
     shell_box = await shell.bounding_box()
+    frame_box = await page.locator(
+        ".st-key-bending_primary_plot_frame"
+    ).first.bounding_box()
     passive = await shell.evaluate(
         """
         node => {
@@ -324,25 +307,38 @@ async def _cold_scroll_probe(page: Page) -> dict:
         raise AssertionError(f"cold shell blocked upward scrolling: {samples}")
     if abs(samples[4] - samples[3]) > 4:
         raise AssertionError(f"scroll position was forced after user input: {samples}")
-    return {"shell": shell_box, "passive": passive, "scroll_samples": samples}
+    return {
+        "shell": shell_box,
+        "frame": frame_box,
+        "passive": passive,
+        "scroll_samples": samples,
+    }
 
 
-async def _loaded_region_height(page: Page) -> float:
-    return float(
-        await page.evaluate(
-            """
-            () => {
-              const frame = document.querySelector(
-                '.st-key-bending_diagram_frame'
-              );
-              return frame?.getBoundingClientRect().height || -1;
-            }
-            """
-        )
+async def _loaded_region_box(page: Page) -> dict:
+    return await page.evaluate(
+        """
+        () => {
+          const frame = document.querySelector(
+            '.st-key-bending_primary_plot_frame'
+          )?.getBoundingClientRect();
+          const plot = document.querySelector(
+            '.st-key-bending_diagram_live .js-plotly-plot'
+          )?.getBoundingClientRect();
+          return {
+            frame: frame ? {width: frame.width, height: frame.height} : null,
+            plot: plot ? {width: plot.width, height: plot.height} : null,
+          };
+        }
+        """
     )
 
 
-async def _exercise_states(page: Page) -> tuple[list[dict], list[dict]]:
+async def _exercise_states(
+    page: Page,
+    *,
+    screenshot_output: Path | None = None,
+) -> tuple[list[dict], list[dict]]:
     results = []
     frame_results = []
     for label in ("SLS (cracked)", "Uncracked", "ULS"):
@@ -352,6 +348,14 @@ async def _exercise_states(page: Page) -> tuple[list[dict], list[dict]]:
         state = await _assert_state(page, STATE_KEYS[label])
         latency_ms = (time.perf_counter() - started) * 1_000
         frames = await _end_frame_probe(page)
+        if screenshot_output is not None and label == "SLS (cracked)":
+            await page.screenshot(
+                path=screenshot_output / "04-sls-loaded.png", full_page=True
+            )
+        elif screenshot_output is not None and label == "Uncracked":
+            await page.screenshot(
+                path=screenshot_output / "05-uncracked-loaded.png", full_page=True
+            )
         results.append({"label": label, "latency_ms": latency_ms, **state})
         frame_results.append({"label": label, "frames": frames})
     return results, frame_results
@@ -361,7 +365,6 @@ async def _stress_states(page: Page) -> dict:
     sequence = ["ULS", "SLS (cracked)", "Uncracked"] * 7
     expected_counts: dict[str, tuple[int, int, int]] = {}
     latencies = []
-    host_switch_latencies = []
     for index, label in enumerate(sequence[:20]):
         started = time.perf_counter()
         await page.get_by_text(label, exact=True).click(no_wait_after=True)
@@ -369,7 +372,6 @@ async def _stress_states(page: Page) -> dict:
         latencies.append((time.perf_counter() - started) * 1_000)
         await page.wait_for_timeout(40)
         state = await _visible_state(page)
-        host_switch_latencies.append(float(state["host_switch_ms"]))
         host = state["visible_hosts"][0]
         counts = (host["traces"], host["shapes"], host["annotations"])
         if label in expected_counts and counts != expected_counts[label]:
@@ -380,8 +382,6 @@ async def _stress_states(page: Page) -> dict:
         "switches": 20,
         "median_ms": statistics.median(latencies),
         "worst_ms": max(latencies),
-        "host_switch_median_ms": statistics.median(host_switch_latencies),
-        "host_switch_worst_ms": max(host_switch_latencies),
         "node_counts": {key: list(value) for key, value in expected_counts.items()},
     }
 
@@ -398,7 +398,7 @@ async def _exercise_tabs(page: Page) -> list[dict]:
             await page.get_by_role("tab", name=label).click()
             panel = page.locator('[role="tabpanel"]:visible')
             plot = panel.locator(".js-plotly-plot:visible").first
-            await plot.wait_for(state="visible", timeout=5_000)
+            await plot.wait_for(state="visible", timeout=15_000)
             box = await plot.bounding_box()
             if not box or box["height"] <= 100:
                 raise AssertionError(f"{label} did not mount a visible Plotly diagram")
@@ -440,11 +440,22 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
         url = f"{base_url.rstrip('/')}?page=bending&cid=bending-regression-{uuid4()}"
         opened = time.perf_counter()
         await page.goto(url, wait_until="domcontentloaded")
-        cold = await _cold_scroll_probe(page)
-        loading_inputs_y = await _document_y(
-            page.get_by_text("Inputs used for this check", exact=True)
+        await page.locator("[data-bending-diagram-shell]").wait_for(
+            state="visible", timeout=30_000
         )
+        if name == "desktop":
+            await page.screenshot(
+                path=output / "01-light-page-shell-visible.png", full_page=True
+            )
+        cold = await _cold_scroll_probe(page)
+        state_heading = page.get_by_text("State:", exact=True).first
+        loading_state_y = await _document_y(state_heading)
         await page.screenshot(path=output / f"{name}-loading.png", full_page=True)
+        if name == "desktop":
+            await page.screenshot(
+                path=output / "02-user-scrolled-while-shell-visible.png",
+                full_page=True,
+            )
 
         await page.locator("[data-bending-diagram-ready]").wait_for(
             state="attached", timeout=45_000
@@ -455,23 +466,47 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
         )
         cold_paint_frames = await _end_cold_paint_probe(page)
         diagram_ready_ms = (time.perf_counter() - opened) * 1_000
-        loaded_inputs_y = await _document_y(
-            page.get_by_text("Inputs used for this check", exact=True)
+        await page.locator("[data-bending-secondary-diagrams-ready]").wait_for(
+            state="attached", timeout=15_000
         )
-        live_height = await _loaded_region_height(page)
-        shell_height = float(cold["shell"]["height"])
+        secondary_ready_ms = (time.perf_counter() - opened) * 1_000
+        loaded_state_y = await _document_y(state_heading)
+        loaded_box = await _loaded_region_box(page)
+        live_height = float(loaded_box["frame"]["height"])
+        shell_height = float(cold["frame"]["height"])
         geometry_delta = live_height - shell_height
         if abs(geometry_delta) > 2:
             raise AssertionError(
                 f"shell/live region height movement was {geometry_delta:.3f}px"
             )
-        inputs_delta = loaded_inputs_y - loading_inputs_y
-        if abs(inputs_delta) > 2:
+        shell_width_delta = float(cold["shell"]["width"]) - float(
+            cold["frame"]["width"]
+        )
+        live_width_delta = float(loaded_box["plot"]["width"]) - float(
+            cold["frame"]["width"]
+        )
+        if abs(shell_width_delta) > 2:
             raise AssertionError(
-                f"loading-to-live downstream movement was {inputs_delta:.3f}px"
+                f"loading shell did not fill its frame by {shell_width_delta:.3f}px"
+            )
+        if abs(live_width_delta) > 2:
+            raise AssertionError(
+                f"live diagram did not fill its frame by {live_width_delta:.3f}px"
+            )
+        state_delta = loaded_state_y - loading_state_y
+        if abs(state_delta) > 2:
+            raise AssertionError(
+                f"loading-to-live State movement was {state_delta:.3f}px"
             )
 
-        state_results, frame_results = await _exercise_states(page)
+        if name == "desktop":
+            await page.screenshot(
+                path=output / "03-uls-diagram-loaded.png", full_page=True
+            )
+        state_results, frame_results = await _exercise_states(
+            page,
+            screenshot_output=output if name == "desktop" else None,
+        )
         stress_result = await _stress_states(page)
         tab_results = await _exercise_tabs(page)
         await page.get_by_role("tab", name="Section & stress-strain models").click()
@@ -485,12 +520,16 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
             "cold": cold,
             "cold_paint_frames": cold_paint_frames,
             "diagram_ready_ms": diagram_ready_ms,
+            "secondary_ready_ms": secondary_ready_ms,
             "shell_height": shell_height,
+            "shell_canvas_height": float(cold["shell"]["height"]),
             "loaded_region_height": live_height,
             "geometry_delta_px": geometry_delta,
-            "loading_inputs_y": loading_inputs_y,
-            "loaded_inputs_y": loaded_inputs_y,
-            "layout_delta_px": inputs_delta,
+            "shell_width_delta_px": shell_width_delta,
+            "live_width_delta_px": live_width_delta,
+            "loading_state_y": loading_state_y,
+            "loaded_state_y": loaded_state_y,
+            "layout_delta_px": state_delta,
             "states": state_results,
             "transition_frames": frame_results,
             "stress": stress_result,
@@ -504,52 +543,68 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
 
 async def _performance_run(browser, base_url: str, index: int) -> dict:
     context = await browser.new_context(viewport=VIEWPORTS["desktop"])
+    await context.add_init_script(
+        """
+        (() => {
+          window.__sbBendingFrameGaps = [];
+          let prior = 0;
+          const frame = now => {
+            if (prior) window.__sbBendingFrameGaps.push(now - prior);
+            prior = now;
+            if (now < 45000) requestAnimationFrame(frame);
+          };
+          requestAnimationFrame(frame);
+        })();
+        """
+    )
     page = await context.new_page()
     url = f"{base_url.rstrip('/')}?page=bending&cid=bending-perf-{index}-{uuid4()}"
     started = time.perf_counter()
     await page.goto(url, wait_until="domcontentloaded")
     await page.get_by_role("heading", name="Bending capacity").wait_for(timeout=30_000)
     summary_ms = (time.perf_counter() - started) * 1_000
+    await page.locator("[data-bending-diagram-shell]").wait_for(
+        state="visible", timeout=30_000
+    )
+    shell_ms = (time.perf_counter() - started) * 1_000
+    before_scroll = await _scroll_top(page)
+    await page.mouse.move(300, 400)
+    await page.mouse.wheel(0, 300)
+    await page.wait_for_timeout(50)
+    after_scroll = await _scroll_top(page)
+    first_scroll_ms = (
+        (time.perf_counter() - started) * 1_000
+        if after_scroll > before_scroll + 2
+        else None
+    )
     await page.locator("[data-bending-diagram-ready]").wait_for(
         state="attached", timeout=45_000
     )
     await _assert_state(page, "uls")
-    await page.wait_for_function(
-        "() => Boolean(document.documentElement.getAttribute("
-        "'data-sb-bending-browser-ready'))",
-        timeout=5_000,
-    )
     diagram_ms = (time.perf_counter() - started) * 1_000
+    await page.locator("[data-bending-secondary-diagrams-ready]").wait_for(
+        state="attached", timeout=15_000
+    )
+    secondary_ready_ms = (time.perf_counter() - started) * 1_000
     switch_started = time.perf_counter()
     await page.get_by_text("SLS (cracked)", exact=True).click(no_wait_after=True)
     await _assert_state(page, "sls-cracked")
     sls_ms = (time.perf_counter() - switch_started) * 1_000
-    await page.wait_for_timeout(40)
-    sls_host_ms = float(
-        await page.evaluate(
-            "() => Number(document.documentElement.getAttribute("
-            "'data-sb-last-bending-host-switch-ms') || 0)"
-        )
-    )
     switch_started = time.perf_counter()
     await page.get_by_text("Uncracked", exact=True).click(no_wait_after=True)
     await _assert_state(page, "uncracked")
     uncracked_ms = (time.perf_counter() - switch_started) * 1_000
-    await page.wait_for_timeout(40)
-    uncracked_host_ms = float(
-        await page.evaluate(
-            "() => Number(document.documentElement.getAttribute("
-            "'data-sb-last-bending-host-switch-ms') || 0)"
-        )
-    )
+    frame_gaps = await page.evaluate("() => window.__sbBendingFrameGaps || []")
     await context.close()
     return {
         "summary_ms": summary_ms,
+        "shell_ms": shell_ms,
+        "first_scroll_ms": first_scroll_ms,
         "diagram_ms": diagram_ms,
+        "secondary_ready_ms": secondary_ready_ms,
         "uls_to_sls_ms": sls_ms,
         "sls_to_uncracked_ms": uncracked_ms,
-        "uls_to_sls_host_ms": sls_host_ms,
-        "sls_to_uncracked_host_ms": uncracked_host_ms,
+        "largest_frame_gap_ms": max(frame_gaps) if frame_gaps else 0.0,
     }
 
 
@@ -563,7 +618,7 @@ async def _performance(base_url: str, runs: int) -> dict:
         await browser.close()
     summary = {}
     for metric in results[0]:
-        values = [result[metric] for result in results]
+        values = [result[metric] for result in results if result[metric] is not None]
         summary[metric] = {
             "median": statistics.median(values),
             "worst": max(values),
