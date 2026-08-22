@@ -280,6 +280,64 @@ def compute_sls_bending_values_from_state(publish: bool = True) -> float | None:
     It intentionally owns session/result side effects so orchestration does not
     need to import bending_page.
     """
+    authoritative = current_authoritative_family(st.session_state, "bending") or {}
+    cracked = authoritative.get("sls_cracked_section")
+    if isinstance(cracked, Mapping) and cracked:
+        try:
+            layers = tuple(
+                layer
+                for layer in tuple(cracked.get("layers", ()) or ())
+                if isinstance(layer, Mapping)
+                and layer.get("state") == "tension"
+                and bool(layer.get("included", True))
+            )
+            outer = max(
+                layers,
+                key=lambda layer: float(
+                    layer.get("depth_from_compression_mm", 0.0) or 0.0
+                ),
+                default=None,
+            )
+            if outer is None:
+                return None
+            dn_top = float(
+                cracked.get(
+                    "neutral_axis_depth_from_top_mm",
+                    cracked.get("neutral_axis_depth_mm", 0.0),
+                )
+                or 0.0
+            )
+            dn_compression = float(cracked.get("neutral_axis_depth_mm", 0.0) or 0.0)
+            depth = float(cracked.get("depth_mm", get_param("D", 0.0)) or 0.0)
+            kappa = float(cracked.get("curvature_per_mm", 0.0) or 0.0)
+            compression_face = str(cracked.get("compression_face", "top") or "top")
+            top_from_compression = depth if compression_face == "bottom" else 0.0
+            eps_top = kappa * (top_from_compression - dn_compression)
+            fs_outer = float(outer.get("stress_mpa", 0.0) or 0.0)
+            eps_outer = float(outer.get("strain", 0.0) or 0.0)
+            y_outer = float(outer.get("depth_from_top_mm", 0.0) or 0.0)
+
+            st.session_state["bending_sls_dn"] = dn_top
+            st.session_state["bending_sls_kappa"] = kappa
+            st.session_state["bending_sls_eps_top"] = eps_top
+            st.session_state["bending_sls_fs_outer"] = fs_outer
+            st.session_state["bending_sls_eps_s_outer"] = eps_outer
+            st.session_state["bending_sls_y_tension_outer"] = y_outer
+            st.session_state["bending_sls_eps_bot"] = eps_outer
+            st.session_state["bending_sls_y_bot"] = y_outer
+            if publish:
+                update_results(
+                    sigma_s_sls=abs(fs_outer),
+                    bending_sls_fs_outer=fs_outer,
+                    bending_sls_dn_mm=dn_top,
+                )
+            return abs(fs_outer)
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    # Compatibility fallback for projects without a revision-matched V2
+    # publication. Current Bending calculations use the authoritative branch
+    # above and never create a second teaching solver.
     b = get_param("b")
     D = get_param("D")
     d = get_param("d")

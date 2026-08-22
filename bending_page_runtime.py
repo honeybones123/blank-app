@@ -156,6 +156,10 @@ def _overlay_authoritative_bending_result(target, bending, ductility, default_de
         # forces/stresses.  The detail cards must not relabel effective depth
         # ``d`` as the steel-layer coordinate ``y_s``.
         "steel_layer_depths_mm": tuple(bending.get("steel_layer_depths_mm", ()) or ()),
+        "sls_cracked_section": dict(bending.get("sls_cracked_section", {}) or {}),
+        "sls_cracked_section_ignore_compression": dict(
+            bending.get("sls_cracked_section_ignore_compression", {}) or {}
+        ),
     })
     if ductility:
         target.update({

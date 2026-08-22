@@ -11,6 +11,7 @@ from bending_diagrams import (
     _make_uls_stress_block_figure,
     _make_uls_force_model_figure,
     _make_sls_stress_block_figure,  # still used elsewhere, untouched
+    make_sls_transformed_section_figure,
 )
 from bending_core import _fmt, _layout_bars_in_rows, _stress_strain_state
 from state_and_helpers import get_param, update_results, render_timing_mark
@@ -2835,6 +2836,23 @@ def render_sls_tab(
     moment_sign: str = "positive",
 ):
     """SLS cracked-section (summary_mode parameter ignored, kept for compatibility)."""
+    from engineering_page_sections.bending_sls_checks import (
+        render_authoritative_sls_checks,
+    )
+
+    del summary_mode, jump_uid
+    return render_authoritative_sls_checks(
+        top_results=top_results,
+        b=b,
+        D=D,
+        d=d,
+        Ast=Ast,
+        Ec=Ec,
+        Es=Es,
+        Mu_star=Mu_star,
+        moment_sign=moment_sign,
+    )
+
     """
     Tab 3 â€“ SLS cracked-section teaching model.
     
