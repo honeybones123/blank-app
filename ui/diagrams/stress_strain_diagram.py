@@ -251,14 +251,9 @@ def plot_stress_strain_profiles(
     alpha2 = state_dict["alpha2"]
 
     # Layout + canonical tension/compression geometry (bending_layer_semantics — single source of truth).
-    current_shape = _get_current_shape_from_session()
     lay = layout
     if lay is None:
         lay = compute_section_layout()
-    else:
-        layout_shape = _norm_shape_name(str(lay.get("shape_name", "")))
-        if layout_shape != current_shape:
-            lay = compute_section_layout()
     layout = lay
 
     geom_bundle = resolve_bending_layer_geometry(
@@ -269,7 +264,14 @@ def plot_stress_strain_profiles(
     )
     tension_face = str(geom_bundle["tension_face"])
     plot_neg = bool(geom_bundle["plot_neg"])
-    geom_d_mm = float(get_param("d", geom_bundle["d_value"]) or geom_bundle["d_value"])
+    # The state and layout were built from one committed beam revision.  A
+    # compatibility ``get_param('d')`` read here previously replaced that
+    # geometry with an old widget mirror after consecutive Design Brain
+    # applies, producing y_s=255 mm on a 550 mm deep beam.
+    geom_d_mm = float(
+        state_dict.get("d", geom_bundle["d_value"])
+        or geom_bundle["d_value"]
+    )
     if plot_neg:
         y_tension_geom = float(max(0.0, float(D) - geom_d_mm))
     else:
@@ -331,7 +333,7 @@ def plot_stress_strain_profiles(
     # - ULS: alpha2 * f'c
     # - SLS/Uncracked: Ec * eps_c (elastic top fibre)
     try:
-        Ec = float(get_param("Ec", 30000.0))
+        Ec = float(state_dict.get("Ec", get_param("Ec", 30000.0)))
     except Exception:
         Ec = 30000.0
 
@@ -1041,7 +1043,7 @@ def plot_stress_strain_profiles(
     # (so it matches Step 3.2)
     # ------------------------------------------------------------
     try:
-        Es = float(get_param("Es", 200000.0))  # MPa
+        Es = float(state_dict.get("Es", get_param("Es", 200000.0)))  # MPa
     except Exception:
         Es = 200000.0
 

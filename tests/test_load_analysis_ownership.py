@@ -6,6 +6,7 @@ from pathlib import Path
 from calculations.design_actions import resolve_design_actions_from_state
 from engineering_page_sections.design_check_summary_policy import (
     load_analysis_action_projection,
+    resolve_authoritative_pack_capacity,
 )
 from inputs_application.load_analysis_state_store import LoadAnalysisStateStore
 from ui.summary_sections import build_final_summary_check_card_model
@@ -119,6 +120,14 @@ def test_load_analysis_summary_always_uses_page_solved_actions() -> None:
     assert "design_state = dict(st.session_state)" in source
     assert "design_state.update(" in source
     assert "This projection does not overwrite manual action inputs." in source
+
+
+def test_load_analysis_capacity_prefers_current_authoritative_pack() -> None:
+    assert resolve_authoritative_pack_capacity(
+        pack={"summary_phiMu_kNm": 506.2},
+        pack_key="summary_phiMu_kNm",
+        legacy_fallback=501.14,
+    ) == 506.2
 
 
 def test_design_section_commit_resolves_actions_from_analysis_arrays() -> None:

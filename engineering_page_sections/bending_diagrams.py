@@ -32,6 +32,8 @@ def _build_bending_state_projection(
     *,
     stress_model: str,
     moment_sign: str,
+    input_state=None,
+    authoritative_bending=None,
 ):
     """Return the exact state label and projection used by every diagram stage."""
     state_label = _bending_state_label(option, stress_model=stress_model)
@@ -45,6 +47,8 @@ def _build_bending_state_projection(
     projected_state = _stress_strain_state(
         state_for_math,
         moment_sign=moment_sign,
+        input_state=input_state,
+        authoritative_bending=authoritative_bending,
     )
     if state_for_math == "SLS":
         dn_cracked = st.session_state.get("bending_sls_dn")

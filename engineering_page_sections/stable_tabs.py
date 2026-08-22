@@ -81,6 +81,10 @@ def render_stable_tabs(
               ? target.closest('[role="tab"]')
               : null;
             const tabset = tab?.closest?.('[data-testid="stTabs"]');
+            // Streamlit may stream a tabset after this zero-height runtime.
+            // Resolve the marker relationship lazily at interaction time rather
+            // than observing a DOM node owned by another window realm.
+            if (tabset && !tabset.dataset.sbTabScope) tagStableTabsets();
             return tabset?.dataset?.sbTabScope ? {{ tab, tabset }} : null;
           }}
 
@@ -137,10 +141,9 @@ def render_stable_tabs(
           }}
 
           tagStableTabsets();
-          const stableMarkerObserver = new MutationObserver(function () {{
-            tagStableTabsets();
-          }});
-          stableMarkerObserver.observe(doc.body, {{ childList: true, subtree: true }});
+          window.parent.requestAnimationFrame(tagStableTabsets);
+          window.parent.setTimeout(tagStableTabsets, 0);
+          window.parent.setTimeout(tagStableTabsets, 250);
 
           doc.addEventListener('wheel', cancelPendingScrollPreservation, {{
             capture: true,

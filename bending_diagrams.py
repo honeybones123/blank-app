@@ -281,10 +281,17 @@ def _plot_material_stress_strain_curves():
     ``ui.diagrams.stress_strain_diagram``.
     """
     try:
-        fc = float(get_param("fc", 40.0))
-        fsy = float(get_param("fsy", 500.0))
-        Ec = float(get_param("Ec", 30000.0))
-        Es = float(get_param("Es", 200000.0))
+        from inputs_application.active_beam_engineering_state import (
+            resolve_active_beam_engineering_state,
+        )
+
+        material_state = dict(
+            resolve_active_beam_engineering_state(st.session_state).values
+        )
+        fc = float(material_state.get("fc", 40.0))
+        fsy = float(material_state.get("fsy", 500.0))
+        Ec = float(material_state.get("Ec", 30000.0))
+        Es = float(material_state.get("Es", 200000.0))
     except Exception:
         fc, fsy, Ec, Es = 40.0, 500.0, 30000.0, 200000.0
 

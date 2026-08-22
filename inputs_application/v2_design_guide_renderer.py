@@ -45,6 +45,7 @@ def _commit_v2_design_guide_apply(
 
     _queue_v2_design_guide_apply(st_module, payload)
     apply_handler()
+    st_module.session_state["_inputs_atomic_revision_guard_pending"] = True
 
 
 def _format_clause_reference(value: Any) -> str:

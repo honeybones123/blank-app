@@ -5,7 +5,10 @@ from __future__ import annotations
 import time
 from typing import Any, MutableMapping
 
-from inputs_application.engineering_input_store import TRANSACTION_META_KEY
+from inputs_application.engineering_input_store import (
+    TRANSACTION_META_KEY,
+    InputSnapshotStore,
+)
 
 
 class InputsWorkspaceStateStore:
@@ -26,6 +29,19 @@ class InputsWorkspaceStateStore:
         self._state = session_state
 
     def workspace_revision(self) -> int:
+        # Engineering revisions are beam-owned.  The legacy global
+        # transaction counter still advances whenever a different beam is
+        # committed, so using it as the active workspace identity makes a new
+        # beam appear one revision ahead of its calculation forever.  Prefer
+        # the selected beam's immutable snapshot and retain the global value
+        # only for startup/migration sessions without a beam-local commit.
+        active_beam_id = str(self._state.get("active_beam_id") or "").strip()
+        if active_beam_id:
+            beam_revision = InputSnapshotStore(self._state).current_for_beam(
+                active_beam_id
+            ).revision
+            if beam_revision > 0:
+                return int(beam_revision)
         transaction = self._state.get(TRANSACTION_META_KEY)
         if isinstance(transaction, dict) and transaction.get("revision") is not None:
             return int(transaction.get("revision", 0) or 0)

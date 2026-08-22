@@ -154,6 +154,18 @@ def _prepare_identity(
     from engineering_page_sections.bending_diagrams import (
         _build_bending_state_projection,
     )
+    from inputs_application.active_beam_engineering_state import (
+        resolve_active_beam_engineering_state,
+    )
+    from inputs_application.authoritative_check_packs import (
+        current_authoritative_family,
+    )
+
+    active_inputs = resolve_active_beam_engineering_state(st.session_state)
+    input_values = dict(active_inputs.values)
+    authoritative_bending = current_authoritative_family(
+        st.session_state, "bending"
+    )
 
     stress_model = str(
         st.session_state.get("concrete_stress_model", "rectangular")
@@ -170,6 +182,8 @@ def _prepare_identity(
             option,
             stress_model=stress_model,
             moment_sign=moment_sign,
+            input_state=input_values,
+            authoritative_bending=authoritative_bending,
         )
         projections[option] = {
             "state_label": state_label,
@@ -182,11 +196,14 @@ def _prepare_identity(
                 "projection": projected_state,
                 "layout": cached_layout,
                 "moment_sign": moment_sign,
+                "beam_revision": active_inputs.revision,
+                "engineering_hash": active_inputs.engineering_hash,
+                "authority_hash": active_inputs.authority_hash,
                 "material": {
-                    "fc": get_param("fc", None),
-                    "Ec": get_param("Ec", None),
-                    "fsy": get_param("fsy", None),
-                    "Es": get_param("Es", None),
+                    "fc": input_values.get("fc"),
+                    "Ec": input_values.get("Ec"),
+                    "fsy": input_values.get("fsy"),
+                    "Es": input_values.get("Es"),
                     "stress_model": stress_model,
                 },
             }
@@ -215,6 +232,7 @@ def _prepare_identity(
         "side_fingerprints": side_fingerprints,
         "moment_fingerprint": moment_fingerprint,
         "bmd_state": bmd_state,
+        "active_inputs": active_inputs,
     }
 
 

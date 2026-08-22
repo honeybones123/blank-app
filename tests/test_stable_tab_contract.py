@@ -66,6 +66,15 @@ def test_tab_scroll_preservation_is_one_shot_and_yields_to_user_intent() -> None
     assert "event.preventDefault()" not in source
 
 
+def test_stable_tabs_runtime_does_not_observe_cross_realm_parent_dom() -> None:
+    source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "MutationObserver" not in source
+    assert "if (tabset && !tabset.dataset.sbTabScope) tagStableTabsets();" in source
+
+
 def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:
     source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"

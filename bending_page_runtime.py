@@ -779,6 +779,14 @@ def render_bending():
     if "bending_active_mode" not in st.session_state:
         st.session_state["bending_active_mode"] = "ULS"
 
+    from inputs_application.active_beam_engineering_state import (
+        resolve_active_beam_engineering_state,
+    )
+
+    page_engineering_state = dict(
+        resolve_active_beam_engineering_state(st.session_state).values
+    )
+
 
     # Remove green background from inline math (Streamlit wraps math in code tags)
     # But preserve katex rendering by only targeting background, not font styling
@@ -887,48 +895,13 @@ def render_bending():
 
     phi_Mu_cap_top = top_results["phi_Mu_cap"]
 
-    # ============================================================
-    # COMPUTE CACHED LAYOUT ONCE - reuse for all diagrams
-    # ============================================================
-    from section_layout import compute_section_layout_cached
+    # The section layout and every stress-state projection must share one
+    # revision-bound input object.  Reading ``get_param`` here previously let
+    # old widget mirrors survive Design Brain Apply while the calculation
+    # cards already displayed the new authoritative result.
+    from section_layout import compute_section_layout
 
-    # Get all inputs from results (matches shear pattern)
-    results = st.session_state.get("results", {})
-
-    # --- ARCHITECTURE LOCK: bending diagrams must use results (with fallback to shared) ---
-    # Note: Geometry values (b, D, d) are not in results - they're in shared state.
-    # The guard ensures results dict exists and diagrams use the fallback pattern correctly.
-    if st.session_state.get("_dev_mode", False):
-        if "results" not in st.session_state:
-            raise RuntimeError(
-                "[ARCHITECTURE VIOLATION] Bending diagrams require results dict to exist. "
-                "Call update_results() or run compute functions first."
-            )
-
-    # Filter signature to only include parameters that compute_section_layout_cached accepts
-    layout_sig = {
-        "b": get_param("b", results.get("b", 400.0)),
-        "D": get_param("D", results.get("D", 600.0)),
-        "cover_bot": get_param("cover_bot", results.get("cover_bot", 40.0)),
-        "cover_top": get_param("cover_top", results.get("cover_top", 40.0)),
-        "cover_side": get_param("cover_side", results.get("cover_side", 40.0)),
-        "nb_or_s_bot_1": get_param("nb_or_s_bot_1", results.get("nb_or_s_bot_1", 4.0)),
-        "db_bot_1": get_param("db_bot_1", results.get("db_bot_1", 20.0)),
-        "nb_or_s_bot_2": get_param("nb_or_s_bot_2", results.get("nb_or_s_bot_2", 0.0)),
-        "db_bot_2": get_param("db_bot_2", results.get("db_bot_2", 20.0)),
-        "nb_or_s_top_1": get_param("nb_or_s_top_1", results.get("nb_or_s_top_1", 2.0)),
-        "db_top_1": get_param("db_top_1", results.get("db_top_1", 16.0)),
-        "nb_or_s_top_2": get_param("nb_or_s_top_2", results.get("nb_or_s_top_2", 0.0)),
-        "db_top_2": get_param("db_top_2", results.get("db_top_2", 16.0)),
-        "rowgap_bot": get_param("rowgap_bot", results.get("rowgap_bot", 60.0)),
-        "rowgap_top": get_param("rowgap_top", results.get("rowgap_top", 60.0)),
-        "lig_legs": get_param("lig_legs", results.get("lig_legs", 2)),
-        "lig_d": get_param("lig_d", results.get("lig_d", 10.0)),
-    }
-
-    # Compute cached layout once using filtered signature
-    from section_layout import compute_section_layout_cached
-    cached_layout = compute_section_layout_cached(**layout_sig)
+    cached_layout = compute_section_layout(page_engineering_state)
     c_top = top_results["c"]
 
     # Canonical bending state shared by 3D & bottom radios (ULS / SLS / Uncracked)
@@ -1379,16 +1352,22 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with inputs_placeholder.container():
         page_divider()
 
-        _bend_shape_summary = str(get_param("sec_shape", "RECT") or "RECT")
-        _bend_b_summary = float(get_param("b", 0.0) or 0.0)
-        _bend_D_summary = float(get_param("D", 0.0) or 0.0)
-        _bend_fc_summary = float(get_param("fc", 0.0) or 0.0)
+        _bend_shape_summary = str(page_engineering_state.get("sec_shape", "RECT") or "RECT")
+        _bend_b_summary = float(page_engineering_state.get("b", 0.0) or 0.0)
+        _bend_D_summary = float(page_engineering_state.get("D", 0.0) or 0.0)
+        _bend_fc_summary = float(page_engineering_state.get("fc", 0.0) or 0.0)
         _bend_m_summary = max(abs(Mu_pos_star), abs(Mu_neg_star))
-        _bend_n_summary = float(get_param("P_star", 0.0) or 0.0)
-        _bend_bot_count = int(get_param("nb_or_s_bot_1", get_param("nb_bot", 0)) or 0)
-        _bend_bot_dia = float(get_param("db_bot_1", get_param("db_bot", 0.0)) or 0.0)
-        _bend_top_count = int(get_param("nb_or_s_top_1", get_param("nb_top", 0)) or 0)
-        _bend_top_dia = float(get_param("db_top_1", get_param("db_top", 0.0)) or 0.0)
+        _bend_n_summary = float(page_engineering_state.get("P_star", 0.0) or 0.0)
+        from application.bottom_reinforcement_policy import (
+            format_longitudinal_reinforcement_rows,
+        )
+
+        _bend_bottom_summary = format_longitudinal_reinforcement_rows(
+            page_engineering_state, face="bottom"
+        )
+        _bend_top_summary = format_longitudinal_reinforcement_rows(
+            page_engineering_state, face="top"
+        )
         _bending_input_config = CheckInputPanelConfig(
             page_slug="bending",
             mount_closed_bodies=True,
@@ -1419,8 +1398,8 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 CheckInputCategory(
                     "reinforcement", "Reinforcement",
                     join_summary(
-                        f"Bottom {_bend_bot_count}-N{_bend_bot_dia:.0f}",
-                        f"Top {_bend_top_count}-N{_bend_top_dia:.0f}",
+                        f"Bottom {_bend_bottom_summary}",
+                        f"Top {_bend_top_summary}",
                     ),
                     lambda: None, icon="●",
                 ),
