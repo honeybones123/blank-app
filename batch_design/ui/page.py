@@ -20,8 +20,13 @@ from batch_design.ui.project_beam_load_table import (
     ACTION_COLUMNS,
     ACTION_LABELS,
     apply_project_beam_load_editor_rows,
+    project_beam_editor_styler,
     project_beam_load_editor_frame,
     project_beam_templates_from_frame,
+)
+from batch_design.ui.passive_capacity import (
+    PASSIVE_CAPACITY_CACHE_KEY,
+    apply_passive_capacity_checks,
 )
 from batch_design.ui.results_table import render_results_table
 
@@ -266,6 +271,17 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
         _render_workflow_mode_selector(ctx, workflow)
         return
 
+    passive_capacity_cache = st.session_state.setdefault(
+        PASSIVE_CAPACITY_CACHE_KEY,
+        {},
+    )
+    schedule_df = apply_passive_capacity_checks(
+        schedule_df,
+        adapter=ctx.design_brain_adapter,
+        beam_records=st.session_state.get("beam_records"),
+        assumptions=workflow.assumptions,
+        cache=passive_capacity_cache,
+    )
     editor_df = project_beam_load_editor_frame(schedule_df, workflow)
     visible_columns = [
         "active",
@@ -313,7 +329,7 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
         st.session_state.get("_batch_design_project_beam_editor_epoch", 0) or 0
     )
     edited_schedule_df = st.data_editor(
-        editor_df,
+        project_beam_editor_styler(editor_df),
         key=f"batch_design_project_beam_reo_editor_{editor_epoch}",
         hide_index=True,
         use_container_width=True,
@@ -380,6 +396,10 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
             "lig_legs": st.column_config.NumberColumn("Lig legs"),
             "s_lig": st.column_config.NumberColumn("Lig spacing"),
         },
+    )
+    st.caption(
+        "Row colours and current capacities use the authoritative calculator only. "
+        "Batch Design Brain runs only when Run design or Auto assign is pressed."
     )
     # Preserve the exact table projection the user can see.  Run design must
     # consume this same frame; rebuilding from a separate raw schedule can

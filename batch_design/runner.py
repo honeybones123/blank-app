@@ -73,8 +73,12 @@ def run_single_design_brain_path(
     return _coerce_result(case, adapter.run_case(case, assumptions=assumptions))
 
 
-def _pre_optimisation_projection(result: BatchDesignResult) -> dict[str, Any]:
-    """Retain the authoritative current-design evidence without duplicating it."""
+def current_capacity_projection(result: BatchDesignResult) -> dict[str, Any]:
+    """Project an authoritative current-design result for neutral UI consumers.
+
+    This projection contains calculation evidence only.  It does not request,
+    select, or apply a Design Brain proposal.
+    """
 
     raw_result = dict(result.raw_result or {})
     payload = dict(raw_result.get("design_brain_payload") or {})
@@ -87,10 +91,17 @@ def _pre_optimisation_projection(result: BatchDesignResult) -> dict[str, Any]:
         "utilisation": result.utilisation,
         "family_utilisations": dict(overview.get("family_utilisations") or {}),
         "family_capacities": dict(overview.get("family_capacities") or {}),
+        "statuses": dict(overview.get("statuses") or {}),
         "engineering_hash": debug_trace.get("engineering_hash"),
         "input_revision": debug_trace.get("input_revision"),
         "error": result.error,
     }
+
+
+# Retain the private name for callers/tests written against the initial batch
+# pre-pass implementation.  New presentation code should use the public,
+# calculation-only name above.
+_pre_optimisation_projection = current_capacity_projection
 
 
 def run_batch_design(
@@ -124,7 +135,7 @@ def run_batch_design(
             )
             if baseline_result is not None:
                 raw_result = dict(optimised_result.raw_result or {})
-                raw_result["pre_optimisation"] = _pre_optimisation_projection(
+                raw_result["pre_optimisation"] = current_capacity_projection(
                     baseline_result
                 )
                 raw_result["batch_execution_order"] = (

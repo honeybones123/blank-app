@@ -3,6 +3,8 @@ from __future__ import annotations
 from batch_design.models import BatchBeamCase, BatchDesignResult
 from batch_design.runner import run_batch_design
 from batch_design.ui.results_table import design_results_frame
+from batch_design.ui.passive_capacity import apply_passive_capacity_checks
+from batch_design.ui.project_beam_load_table import project_beam_editor_styler
 from application.beam_summary_policy import _sanitize_beam_summary
 
 
@@ -86,6 +88,7 @@ def test_batch_calculates_current_capacity_before_optimisation() -> None:
         "utilisation": 1.6,
         "family_utilisations": {"bending": 1.6, "shear": 0.7},
         "family_capacities": {"bending": 125.0, "shear": 210.0},
+        "statuses": {},
         "engineering_hash": "current-hash",
         "input_revision": 4,
         "error": None,
@@ -165,9 +168,20 @@ def test_batch_does_not_optimise_when_current_capacity_cannot_be_calculated() ->
     assert result.error == "current capacity failed"
 
 
-def test_current_design_request_uses_authoritative_calculation_without_proposal() -> None:
-    from inputs_application.batch_design_guidance import compute_design_guidance_items
+def test_current_design_request_uses_authoritative_calculation_without_proposal(monkeypatch) -> None:
+    from inputs_application import batch_design_guidance
     from state_and_helpers import SHARED_DEFAULTS
+
+    class _ForbiddenDesignBrainService:
+        def run(self, request):
+            del request
+            raise AssertionError("current-design capacity must not activate Design Brain")
+
+    monkeypatch.setattr(
+        batch_design_guidance,
+        "_V2_BATCH_DESIGN_BRAIN_SERVICE",
+        _ForbiddenDesignBrainService(),
+    )
 
     state = dict(SHARED_DEFAULTS)
     state.update(
@@ -195,10 +209,148 @@ def test_current_design_request_uses_authoritative_calculation_without_proposal(
         }
     )
 
-    payload = compute_design_guidance_items(state, request_kind="current_design")
+    payload = batch_design_guidance.compute_design_guidance_items(
+        state,
+        request_kind="current_design",
+    )
 
     debug = payload["debug_trace"]
     assert debug["request_kind"] == "current_design"
     assert debug["result_basis"] == "current_design"
     assert debug["overview"]["family_capacities"]["bending"] > 0.0
     assert payload["design_brain_result"]["selected_updates"] == {}
+
+
+class _PassiveCapacityOnlyAdapter:
+    def __init__(self) -> None:
+        self.current_calls = 0
+        self.design_brain_calls = 0
+
+    def evaluate_current_case(self, case, *, assumptions=None, base_state=None):
+        del assumptions, base_state
+        self.current_calls += 1
+        return BatchDesignResult(
+            member_id=case.member_id,
+            input_case=case,
+            passed=True,
+            utilisation=0.82,
+            raw_result={
+                "design_brain_payload": {
+                    "debug_trace": {
+                        "overview": {
+                            "statuses": {
+                                "bending": "PASS",
+                                "shear": "PASS",
+                                "crack": "PASS",
+                                "deflection": "PASS",
+                            },
+                            "family_utilisations": {
+                                "bending": 0.82,
+                                "shear": 0.61,
+                                "crack": 0.45,
+                                "deflection": 0.50,
+                            },
+                            "family_capacities": {
+                                "bending": 245.0,
+                                "shear": 310.0,
+                            },
+                        }
+                    }
+                }
+            },
+        )
+
+    def run_case(self, *args, **kwargs):
+        del args, kwargs
+        self.design_brain_calls += 1
+        raise AssertionError("passive table status must not run Design Brain")
+
+
+def test_project_table_passively_calculates_status_without_design_brain() -> None:
+    import pandas as pd
+
+    adapter = _PassiveCapacityOnlyAdapter()
+    frame = pd.DataFrame(
+        [
+            {
+                "beam_id": "beam_1",
+                "beam_label": "Beam 1",
+                "sec_shape": "RECT",
+                "b": 300.0,
+                "D": 600.0,
+                "L": 6.0,
+                "mz_star": 200.0,
+                "vy_star": 100.0,
+            }
+        ]
+    )
+    cache = {}
+
+    result = apply_passive_capacity_checks(
+        frame,
+        adapter=adapter,
+        beam_records={"beam_1": {"params": {"b": 300.0, "D": 600.0}}},
+        assumptions={},
+        cache=cache,
+    )
+
+    row = result.iloc[0].to_dict()
+    assert adapter.current_calls == 1
+    assert adapter.design_brain_calls == 0
+    assert row["capacity_status"] == "PASS"
+    assert row["current_phi_mu_knm"] == 245.0
+    assert row["current_phi_vu_kn"] == 310.0
+    assert row["current_utilisation"] == 0.82
+    assert row["Mu_utilisation"] == 0.82
+
+    # A normal Streamlit rerun reuses the calculation-only result.
+    second = apply_passive_capacity_checks(
+        frame,
+        adapter=adapter,
+        beam_records={"beam_1": {"params": {"b": 300.0, "D": 600.0}}},
+        assumptions={},
+        cache=cache,
+    )
+    assert adapter.current_calls == 1
+    assert second.iloc[0]["capacity_status"] == "PASS"
+
+
+def test_project_table_passive_capacity_cache_invalidates_with_actions() -> None:
+    import pandas as pd
+
+    adapter = _PassiveCapacityOnlyAdapter()
+    cache = {}
+    frame = pd.DataFrame(
+        [{"beam_id": "beam_1", "b": 300.0, "D": 600.0, "mz_star": 200.0}]
+    )
+    common = {
+        "adapter": adapter,
+        "beam_records": {"beam_1": {"params": {"b": 300.0, "D": 600.0}}},
+        "assumptions": {},
+        "cache": cache,
+    }
+
+    apply_passive_capacity_checks(frame, **common)
+    changed = frame.copy(deep=True)
+    changed.loc[0, "mz_star"] = 250.0
+    apply_passive_capacity_checks(changed, **common)
+
+    assert adapter.current_calls == 2
+    assert adapter.design_brain_calls == 0
+
+
+def test_project_table_row_styles_are_status_coordinated() -> None:
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        [
+            {"beam_id": "pass", "overall_status": "PASS"},
+            {"beam_id": "fail", "overall_status": "FAIL"},
+            {"beam_id": "check", "overall_status": "CHECK"},
+        ]
+    )
+    computed = project_beam_editor_styler(frame)._compute()
+
+    assert ("background-color", "#ecfdf3") in computed.ctx[(0, 0)]
+    assert ("background-color", "#fff1f2") in computed.ctx[(1, 0)]
+    assert ("background-color", "#fffbeb") in computed.ctx[(2, 0)]
