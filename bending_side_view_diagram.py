@@ -26,12 +26,9 @@ def __getattr__(name: str) -> Any:
     return getattr(_impl, name)
 
 
-@st.fragment
-def render_bending_side_view_diagram(
-    state: Any,
-    *,
-    stress_strain_fig: go.Figure | None = None,
-) -> None:
+def render_bending_side_view_controls() -> tuple[bool, bool]:
+    """Render lightweight side-view controls and return their current values."""
+
     st.markdown("**Beam side view (bending)**")
     st.caption(
         "Shows the beam side view and the current bending critical section. "
@@ -50,15 +47,40 @@ def render_bending_side_view_diagram(
             value=False,
             key="bending_side_view_show_stress",
         )
-    fig, meta = build_bending_side_view_figure(
-        state,
-        stress_strain_fig=stress_strain_fig,
-        show_strain_diagram=show_strain,
-        show_stress_diagram=show_stress,
-    )
+    return bool(show_strain), bool(show_stress)
+
+
+def render_prepared_bending_side_view_diagram(
+    fig: go.Figure,
+    *,
+    render_controls: bool = True,
+) -> None:
+    """Mount a side-view figure that was prepared by the Bending bundle."""
+
+    if render_controls:
+        render_bending_side_view_controls()
     render_plotly_diagram(
         fig,
         key="bending_side_view",
         title="Beam side view (bending)",
         config={"displayModeBar": False},
     )
+
+
+@st.fragment
+def render_bending_side_view_diagram(
+    state: Any,
+    *,
+    stress_strain_fig: go.Figure | None = None,
+) -> None:
+    """Compatibility path for callers outside the bundled Bending page."""
+
+    show_strain = bool(st.session_state.get("bending_side_view_show_strain", False))
+    show_stress = bool(st.session_state.get("bending_side_view_show_stress", False))
+    fig, _meta = build_bending_side_view_figure(
+        state,
+        stress_strain_fig=stress_strain_fig,
+        show_strain_diagram=show_strain,
+        show_stress_diagram=show_stress,
+    )
+    render_prepared_bending_side_view_diagram(fig)

@@ -12,7 +12,9 @@ def test_bending_publishes_fixed_diagram_shell_before_calculation_cards() -> Non
     containers = source.index(
         'diagram_frame_container = st.container(key="bending_diagram_frame")'
     )
-    lightweight_panel = source.index("_render_bending_state_panel(", containers)
+    lightweight_panel = source.index(
+        "_render_bending_diagram_bundle_panel(", containers
+    )
     inputs = source.index("with inputs_placeholder.container():", lightweight_panel)
     checks = source.index('render_timing_mark("bending_page.runtime.checks.start")')
 
@@ -34,7 +36,9 @@ def test_bending_shells_publish_back_to_back_after_stable_positions_exist() -> N
         "render_bending_calculation_loading_shell(\n            calc_blocks_container",
         calculation_container,
     )
-    lightweight_panel = source.index("_render_bending_state_panel(", calculation_shell)
+    lightweight_panel = source.index(
+        "_render_bending_diagram_bundle_panel(", calculation_shell
+    )
     assert (
         frame < options < slot < inputs
         < calculation_container
@@ -45,6 +49,9 @@ def test_bending_shells_publish_back_to_back_after_stable_positions_exist() -> N
 def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None:
     source = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+    bundle = (
+        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
     ).read_text(encoding="utf-8")
 
     assert 'data-testid="bending-diagram-loading-region"' in source
@@ -57,8 +64,9 @@ def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None
     assert "647.15625px" not in source
     assert "780px" not in source
     assert "Preparing section stress and strain" in source
-    assert 'data-bending-diagram-shell="GENERATION"' in source
-    assert 'data-bending-diagram-ready="{generation}"' in source
+    assert 'data-bending-diagram-shell="{int(generation)}"' in source
+    assert "published.setAttribute('data-bending-diagram-ready'" in bundle
+    assert "published.setAttribute(\n                  'data-bending-diagram-bundle-ready'" in bundle
     assert "pointer-events: none" in source
     assert source.count('.js-plotly-plot .scatterlayer .trace') == 1
     assert source.count('.js-plotly-plot g.shapelayer .shape-group') == 1
@@ -66,7 +74,10 @@ def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None
     assert 'data-sb-bending-plot-ready' not in source
     assert source.count(
         'data-bending-diagram-geometry-token="--sb-bending-diagram-plot-height"'
-    ) == 2
+    ) == 1
+    assert bundle.count(
+        'data-bending-diagram-geometry-token="--sb-bending-diagram-plot-height"'
+    ) == 1
     assert '> div[data-testid="stElementContainer"] {' in source
     assert "margin-bottom: 0 !important" in source
 
@@ -124,7 +135,7 @@ def test_bending_calculation_shell_reserves_the_measured_collapsed_region() -> N
 def test_bending_defers_visualisation_wait_until_diagram_boundary() -> None:
     app_source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
     diagram_source = (
-        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
     ).read_text(encoding="utf-8")
 
     assert 'if _opening_page_slug != "bending":' in app_source
@@ -137,7 +148,7 @@ def test_bending_defers_visualisation_wait_until_diagram_boundary() -> None:
     assert "start_v2_runtime_warmup()" in diagram_source
     assert "start_visualization_runtime_warmup()" in diagram_source
     wait = diagram_source.index("wait_for_visualization_runtime_warmup()")
-    guard = diagram_source.index("if primary_published:", 0, wait)
+    guard = diagram_source.index("if bundle is None and bundle_clicked:", 0, wait)
     assert guard < wait < diagram_source.index(
-        'state_options = ("ULS", "SLS (cracked)", "Uncracked")'
+        "selected_label = identity[\"projections\"][main_state][\"state_label\"]"
     )

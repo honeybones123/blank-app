@@ -561,14 +561,21 @@ def test_bending_summary_binding_is_deferred_without_changing_layout() -> None:
     calculation_shell = source.index(
         "render_bending_calculation_loading_shell(", frame
     )
-    diagram_panel = source.index("_render_bending_state_panel(", calculation_shell)
+    diagram_panel = source.index(
+        "_render_bending_diagram_bundle_panel(", calculation_shell
+    )
     binding = source.index("bind_summary_clicks()", diagram_panel)
-    diagram_source = (ROOT / "engineering_page_sections/bending_diagrams.py").read_text(
+    diagram_source = (
+        ROOT / "engineering_page_sections/bending_diagram_bundle.py"
+    ).read_text(
         encoding="utf-8-sig"
     )
 
     assert frame < calculation_shell < diagram_panel < binding
     assert "data-bending-diagrams-layout-slot" in diagram_source
-    assert ".st-key-bending_primary_plot_frame" in diagram_source
-    assert "> .st-key-bending_diagram_shell" in diagram_source
+    shell_source = (
+        ROOT / "engineering_page_sections/bending_diagrams.py"
+    ).read_text(encoding="utf-8-sig")
+    assert ".st-key-bending_primary_plot_frame" in shell_source
+    assert "> .st-key-bending_diagram_shell" in shell_source
     assert "margin-top: 16.640625px" not in diagram_source

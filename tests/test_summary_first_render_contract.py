@@ -27,7 +27,7 @@ def test_bending_summary_renders_before_explainer_inputs_diagram_and_checks():
     summary_mark = text.index("bending_page.runtime.summary_table.rendered")
     explainer = text.index("render_page_explainer_expander(_render_bending_explainer)")
     inputs = text.index("with inputs_placeholder.container():")
-    diagram = text.index("_render_bending_state_panel(")
+    diagram = text.index("_render_bending_diagram_bundle_panel(")
     checks = text.index("bending_page.runtime.checks.start")
     authority = text.index("build_bending_check_rows_from_state(st.session_state)")
 

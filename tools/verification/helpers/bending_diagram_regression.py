@@ -427,6 +427,40 @@ async def _material_lesson(page: Page) -> dict:
     return {"box": box, "traces": traces}
 
 
+async def _warm_bending_revisit(page: Page) -> dict:
+    """Prove an unchanged Bending revisit mounts the cached full bundle."""
+
+    started = time.perf_counter()
+    await page.get_by_text("Shear", exact=True).first.click()
+    await page.wait_for_url("**page=shear**", timeout=30_000)
+    await page.get_by_text("Bending", exact=True).first.click()
+    await page.wait_for_url("**page=bending**", timeout=30_000)
+    marker = page.locator("[data-bending-diagram-bundle-published]")
+    await marker.wait_for(state="attached", timeout=45_000)
+    await page.locator("[data-bending-diagram-ready]").wait_for(
+        state="attached", timeout=45_000
+    )
+    cache_status = await marker.get_attribute("data-bending-bundle-cache")
+    mounted = await page.locator(
+        ".st-key-bending_diagram_live .js-plotly-plot, "
+        ".st-key-bending_side_diagram_live .js-plotly-plot, "
+        ".st-key-bending_moment_diagram_live .js-plotly-plot"
+    ).count()
+    if cache_status != "hit":
+        raise AssertionError(
+            f"unchanged warm Bending revisit was not a cache hit: {cache_status!r}"
+        )
+    if mounted != 3:
+        raise AssertionError(
+            f"warm Bending revisit mounted {mounted} bundled Plotly hosts"
+        )
+    return {
+        "elapsed_ms": (time.perf_counter() - started) * 1_000,
+        "cache": cache_status,
+        "mounted_bundle_hosts": mounted,
+    }
+
+
 async def _capture_viewport(base_url: str, output: Path, name: str, viewport: dict) -> dict:
     async with async_playwright() as playwright:
         try:
@@ -461,15 +495,26 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
             state="attached", timeout=45_000
         )
         await _assert_state(page, "uls")
+        mounted_bundle = await page.locator(
+            ".st-key-bending_diagram_live .js-plotly-plot, "
+            ".st-key-bending_side_diagram_live .js-plotly-plot, "
+            ".st-key-bending_moment_diagram_live .js-plotly-plot"
+        ).count()
+        if mounted_bundle != 3:
+            raise AssertionError(
+                f"expected all three bundled Plotly hosts, received {mounted_bundle}"
+            )
+        obsolete_loaders = await page.locator(
+            ".st-key-bending_deferred_side_button, "
+            ".st-key-bending_deferred_moment_button"
+        ).count()
+        if obsolete_loaders:
+            raise AssertionError("obsolete per-tab hidden loaders remain mounted")
         await page.locator("[data-bending-diagram-shell]").wait_for(
             state="hidden", timeout=5_000
         )
         cold_paint_frames = await _end_cold_paint_probe(page)
         diagram_ready_ms = (time.perf_counter() - opened) * 1_000
-        await page.locator("[data-bending-secondary-diagrams-ready]").wait_for(
-            state="attached", timeout=15_000
-        )
-        secondary_ready_ms = (time.perf_counter() - opened) * 1_000
         loaded_state_y = await _document_y(state_heading)
         loaded_box = await _loaded_region_box(page)
         live_height = float(loaded_box["frame"]["height"])
@@ -512,6 +557,7 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
         await page.get_by_role("tab", name="Section & stress-strain models").click()
         material = await _material_lesson(page)
         await page.screenshot(path=output / f"{name}-loaded.png", full_page=True)
+        warm_revisit = await _warm_bending_revisit(page) if name == "desktop" else None
         if errors:
             raise AssertionError(f"browser exceptions: {errors}")
 
@@ -520,7 +566,8 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
             "cold": cold,
             "cold_paint_frames": cold_paint_frames,
             "diagram_ready_ms": diagram_ready_ms,
-            "secondary_ready_ms": secondary_ready_ms,
+            "bundle_ready_ms": diagram_ready_ms,
+            "mounted_bundle_hosts": mounted_bundle,
             "shell_height": shell_height,
             "shell_canvas_height": float(cold["shell"]["height"]),
             "loaded_region_height": live_height,
@@ -535,6 +582,7 @@ async def _capture_viewport(base_url: str, output: Path, name: str, viewport: di
             "stress": stress_result,
             "tabs": tab_results,
             "material_plot": material,
+            "warm_revisit": warm_revisit,
         }
         await context.close()
         await browser.close()
@@ -582,10 +630,6 @@ async def _performance_run(browser, base_url: str, index: int) -> dict:
     )
     await _assert_state(page, "uls")
     diagram_ms = (time.perf_counter() - started) * 1_000
-    await page.locator("[data-bending-secondary-diagrams-ready]").wait_for(
-        state="attached", timeout=15_000
-    )
-    secondary_ready_ms = (time.perf_counter() - started) * 1_000
     switch_started = time.perf_counter()
     await page.get_by_text("SLS (cracked)", exact=True).click(no_wait_after=True)
     await _assert_state(page, "sls-cracked")
@@ -595,16 +639,18 @@ async def _performance_run(browser, base_url: str, index: int) -> dict:
     await _assert_state(page, "uncracked")
     uncracked_ms = (time.perf_counter() - switch_started) * 1_000
     frame_gaps = await page.evaluate("() => window.__sbBendingFrameGaps || []")
+    warm_revisit = await _warm_bending_revisit(page)
     await context.close()
     return {
         "summary_ms": summary_ms,
         "shell_ms": shell_ms,
         "first_scroll_ms": first_scroll_ms,
         "diagram_ms": diagram_ms,
-        "secondary_ready_ms": secondary_ready_ms,
+        "bundle_ready_ms": diagram_ms,
         "uls_to_sls_ms": sls_ms,
         "sls_to_uncracked_ms": uncracked_ms,
         "largest_frame_gap_ms": max(frame_gaps) if frame_gaps else 0.0,
+        "warm_return_ms": warm_revisit["elapsed_ms"],
     }
 
 

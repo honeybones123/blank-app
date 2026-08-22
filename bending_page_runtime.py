@@ -173,11 +173,11 @@ _get_build_beam_3d_figure_pure = _bending_diagrams_section._get_build_beam_3d_fi
 _build_beam_3d_figure_pure_impl = _bending_diagrams_section._build_beam_3d_figure_pure_impl
 _build_beam_3d_figure = _bending_diagrams_section._build_beam_3d_figure
 _bending_diagrams_section.bind_runtime(globals())
-_render_bending_state_panel = st.fragment(
-    _bending_diagrams_section.render_bending_state_panel
-)
-_render_bending_secondary_state_cache = st.fragment(
-    _bending_diagrams_section.render_bending_secondary_state_cache
+from engineering_page_sections import bending_diagram_bundle as _bending_diagram_bundle
+
+_bending_diagram_bundle.bind_runtime(globals())
+_render_bending_diagram_bundle_panel = st.fragment(
+    _bending_diagram_bundle.render_bending_diagram_bundle_panel
 )
 
 
@@ -1213,7 +1213,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         with diagram_frame_container:
             diagram_options_placeholder = st.empty()
             diagram_section_placeholder = st.empty()
-            diagram_secondary_cache_placeholder = st.empty()
         inputs_placeholder = st.empty()
         # The detailed tab body is interactive.  Keep a stable multi-element
         # container for it instead of replacing an ``st.empty`` slot on every
@@ -1264,14 +1263,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             else (Mu_pos_star if has_sagging_case else 0.0)
         )
         with diagram_section_placeholder.container():
-            _render_bending_state_panel(
+            _render_bending_diagram_bundle_panel(
                 cached_layout=cached_layout,
                 mu_uls_active=initial_mu_uls,
-                diagram_shell_generation=diagram_shell_generation,
-            )
-        with diagram_secondary_cache_placeholder.container():
-            _render_bending_secondary_state_cache(
-                cached_layout=cached_layout,
                 diagram_shell_generation=diagram_shell_generation,
             )
         with explainer_placeholder:

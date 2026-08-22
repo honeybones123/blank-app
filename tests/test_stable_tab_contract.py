@@ -24,13 +24,17 @@ def test_bending_state_switch_has_one_server_owned_plot_host() -> None:
         encoding="utf-8"
     )
     diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
+    ).read_text(encoding="utf-8")
+    shell = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
 
     assert 'key="bending_state_main"' in diagrams
-    assert diagrams.count(".js-plotly-plot .scatterlayer .trace") == 1
-    assert diagrams.count(".js-plotly-plot g.shapelayer .shape-group") == 1
-    assert diagrams.count(".js-plotly-plot .annotation") == 1
+    assert diagrams.count("st.plotly_chart(") == 1
+    assert shell.count(".js-plotly-plot .scatterlayer .trace") == 1
+    assert shell.count(".js-plotly-plot g.shapelayer .shape-group") == 1
+    assert shell.count(".js-plotly-plot .annotation") == 1
     assert "bending_state_plot_" not in diagrams
     assert "state_figures" not in diagrams
     assert "data-bending-selected-state" in diagrams
@@ -91,7 +95,7 @@ def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:
 
 def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
     bending = (
-        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
     ).read_text(encoding="utf-8")
     shear = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8-sig")
     creep = (ROOT / "creep.py").read_text(encoding="utf-8-sig")
@@ -107,7 +111,7 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
 def test_bending_owns_one_stable_interaction_runtime() -> None:
     runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
     diagrams = (
-        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
     ).read_text(encoding="utf-8")
 
     assert 'scope_id="bending-calculation-checks"' in runtime

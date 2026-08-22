@@ -1,8 +1,6 @@
 # bending_diagrams.py
 import math
 import os
-import hashlib
-import json
 import numpy as np
 import streamlit as st
 
@@ -243,116 +241,21 @@ def _sigma_c_parabolic(eps, sigma_peak, eps0=0.002, eps_cu=0.003):
 # ============================================================
 #  MAIN 3-PANEL SECTION / STRAIN / STRESS DIAGRAM
 # ============================================================
-_BENDING_MAIN_FIGURE_CACHE_KEY = "_bending_main_stress_strain_figure_cache"
-_BENDING_MAIN_FIGURE_CACHE_LIMIT = 6
-_BENDING_MAIN_FIGURE_SESSION_KEYS = (
-    "shape_name",
-    "sec_shape",
-    "section_shape",
-    "geometry_section_shape",
-    "bending_sls_dn",
-    "bending_sls_eps_top",
-    "bending_sls_eps_bot",
-    "bending_sls_kappa",
-    "bending_sls_eps_s_outer",
-    "eps_s_sls_bot",
-    "eps_s_sls_bottom",
-    "eps_s_bottom_sls",
-)
-
-
-def _bending_main_figure_fingerprint(
-    state_dict,
-    *,
-    state_label,
-    layout,
-    moment_sign: str,
-) -> str:
-    """Fingerprint every state dependency read by the shared 3-panel builder."""
-    session_inputs = {
-        key: st.session_state.get(key) for key in _BENDING_MAIN_FIGURE_SESSION_KEYS
-    }
-    param_inputs = {
-        "d": get_param("d", None),
-        "sigma_s_sls": get_param("sigma_s_sls", None),
-        "Ec": get_param("Ec", 30000.0),
-        "fsy": get_param("fsy", 500.0),
-        "Es": get_param("Es", 200000.0),
-    }
-    payload = {
-        "version": 1,
-        "state_dict": state_dict,
-        "state_label": state_label,
-        "layout": layout,
-        "moment_sign": str(moment_sign or "positive"),
-        "session_inputs": session_inputs,
-        "param_inputs": param_inputs,
-    }
-    encoded = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _plot_stress_strain_profiles(
     state_dict, state_label=None, layout=None, moment_sign: str = "positive"
 ):
-    """Return the shared 3-panel figure, reusing identical presentation states.
+    """Build the shared 3-panel figure from resolved engineering state.
 
-    The cache is deliberately session-local and bounded. It owns no engineering result:
-    all calculation state is resolved before this wrapper, and every
-    dependency read by the shared figure builder is part of the fingerprint.
-    Keeping a few exact states avoids rebuilding ULS when a user returns from
-    SLS or Uncracked. Dev mode bypasses caching so diagram consistency
-    diagnostics still execute.
+    Bending-page reuse is owned by the bounded diagram-bundle presentation
+    cache.  Keeping this builder free of session cache ownership prevents two
+    competing invalidation paths.
     """
-    if layout is None or state_label is None or st.session_state.get("_dev_mode", False):
-        return _stress_diagram_plot_stress_strain_profiles(
-            state_dict,
-            state_label=state_label,
-            layout=layout,
-            moment_sign=moment_sign,
-        )
-
-    fingerprint = _bending_main_figure_fingerprint(
+    return _stress_diagram_plot_stress_strain_profiles(
         state_dict,
         state_label=state_label,
         layout=layout,
         moment_sign=moment_sign,
     )
-    cached = st.session_state.get(_BENDING_MAIN_FIGURE_CACHE_KEY)
-    entries = dict(cached.get("entries") or {}) if isinstance(cached, dict) else {}
-    order = [
-        str(value)
-        for value in (cached.get("order") or ())
-        if str(value) in entries
-    ] if isinstance(cached, dict) else []
-    if entries.get(fingerprint) is not None:
-        order = [value for value in order if value != fingerprint] + [fingerprint]
-        st.session_state[_BENDING_MAIN_FIGURE_CACHE_KEY] = {
-            "entries": entries,
-            "order": order,
-        }
-        return entries[fingerprint]
-
-    figure = _stress_diagram_plot_stress_strain_profiles(
-        state_dict,
-        state_label=state_label,
-        layout=layout,
-        moment_sign=moment_sign,
-    )
-    entries[fingerprint] = figure
-    order = [value for value in order if value != fingerprint] + [fingerprint]
-    while len(order) > _BENDING_MAIN_FIGURE_CACHE_LIMIT:
-        entries.pop(order.pop(0), None)
-    st.session_state[_BENDING_MAIN_FIGURE_CACHE_KEY] = {
-        "entries": entries,
-        "order": order,
-    }
-    return figure
 
 
 def _plot_strain_profile(

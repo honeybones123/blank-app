@@ -14,6 +14,9 @@ def test_canonical_calcbox_owns_light_and_heavy_render_policy() -> None:
     assert 'mount_closed_body = policy in {"mounted", "eager", "client_mounted"}' in renderer
     assert 'on_change="ignore" if mount_closed_body else "rerun"' in renderer
     assert 'if not expander.open and not mount_closed_body:' in renderer
+    assert 'if str(uid).startswith("bending_"):' in renderer
+    assert '"_bending_diagram_bundle_ready_fingerprint"' not in renderer
+    assert '"_bending_diagram_render_stage"' not in renderer
 
 
 def test_bending_opts_light_cards_into_canonical_mounted_policy() -> None:
