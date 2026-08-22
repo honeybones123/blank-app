@@ -101,6 +101,11 @@ def _activate_selected_project_beam(ctx: BatchDesignPageContext) -> None:
     if not selected_beam_id or selected_beam_id == active_beam_id:
         return
     if ctx.set_active_beam(selected_beam_id):
+        # Beam revisions are independent per beam. Arm the Inputs atomic
+        # presentation gate so a switch between equal numeric revisions is
+        # still revealed only after the selected beam's complete controls and
+        # result projection have arrived.
+        st.session_state["_inputs_atomic_revision_guard_pending"] = True
         ctx.force_refresh("beam_selector_change")
         ctx.log_rerun("beam_selector_change")
 
@@ -267,6 +272,9 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
         "beam_id",
         "use_for_auto_design",
         "design_state",
+        "current_phi_mu_knm",
+        "current_phi_vu_kn",
+        "current_utilisation",
         "bending_utilisation",
         "shear_utilisation",
         "crack_utilisation",
@@ -316,6 +324,9 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
             "beam_id",
             "capacity_status",
             "design_state",
+            "current_phi_mu_knm",
+            "current_phi_vu_kn",
+            "current_utilisation",
             "bending_utilisation",
             "shear_utilisation",
             "crack_utilisation",
@@ -330,6 +341,15 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
                 default=False,
             ),
             "design_state": st.column_config.TextColumn("Design state", disabled=True),
+            "current_phi_mu_knm": st.column_config.NumberColumn(
+                "Current phiMu (kNm)", format="%.1f", disabled=True
+            ),
+            "current_phi_vu_kn": st.column_config.NumberColumn(
+                "Current phiVu (kN)", format="%.1f", disabled=True
+            ),
+            "current_utilisation": st.column_config.TextColumn(
+                "Current utilisation", disabled=True
+            ),
             "bending_utilisation": st.column_config.TextColumn("Bending", disabled=True),
             "shear_utilisation": st.column_config.TextColumn("Shear", disabled=True),
             "crack_utilisation": st.column_config.TextColumn("Crack", disabled=True),
@@ -439,7 +459,7 @@ def _run_batch_design_now(workflow: BatchDesignWorkflowState, ctx: BatchDesignPa
         st.info("Design Brain adapter is not connected for this app session.")
         return
 
-    with st.spinner("Running Design Brain for reviewed batch rows..."):
+    with st.spinner("Calculating current capacities, then running optimisation..."):
         results = run_reviewed_batch_design(
             workflow,
             ctx.design_brain_adapter,
@@ -602,7 +622,7 @@ def _render_run_design(workflow: BatchDesignWorkflowState, ctx: BatchDesignPageC
         if ctx.design_brain_adapter is None:
             st.info("Design Brain adapter is not connected for this app session.")
         elif st.button("Run design", key="batch_design_run_design"):
-            with st.spinner("Running Design Brain for reviewed batch rows..."):
+            with st.spinner("Calculating current capacities, then running optimisation..."):
                 results = run_reviewed_batch_design(
                     workflow,
                     ctx.design_brain_adapter,
@@ -617,7 +637,7 @@ def _render_run_design(workflow: BatchDesignWorkflowState, ctx: BatchDesignPageC
                 )
             else:
                 st.success(f"Design Brain completed for {len(results)} row(s).")
-        st.caption("Runs the batch design for included rows using the current settings.")
+        st.caption("Calculates each current beam capacity first, then optimises included rows.")
 
     if workflow.design_results:
         passed = len([result for result in workflow.design_results if result.passed is True])

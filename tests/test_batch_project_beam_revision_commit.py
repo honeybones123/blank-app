@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
 from inputs_application.page_runtime import batch as batch_runtime
+from batch_design.ui import page as batch_page
 
 
 def _record_commit_boundary(monkeypatch, events: list[tuple[str, str]]) -> None:
@@ -120,3 +122,27 @@ def test_batch_context_reads_live_project_identity_after_local_rerun(monkeypatch
     assert context.beam_order == ["beam_1", "beam_2"]
     assert context.active_beam_id == "beam_2"
     assert context.beam_labels["beam_2"] == "Beam 2"
+
+
+def test_beam_selector_arms_atomic_gate_before_inputs_refresh(monkeypatch) -> None:
+    events: list[tuple[str, object]] = []
+    state: dict[str, object] = {
+        batch_page.ACTIVE_BEAM_SELECTOR_KEY: "beam_2",
+        "active_beam_id": "beam_1",
+    }
+    monkeypatch.setattr(batch_page, "st", SimpleNamespace(session_state=state))
+    context = SimpleNamespace(
+        set_active_beam=lambda beam_id: events.append(("set", beam_id)) or True,
+        force_refresh=lambda reason: events.append(
+            ("refresh_guard", state.get("_inputs_atomic_revision_guard_pending"))
+        ),
+        log_rerun=lambda reason: events.append(("log", reason)),
+    )
+
+    batch_page._activate_selected_project_beam(context)
+
+    assert events == [
+        ("set", "beam_2"),
+        ("refresh_guard", True),
+        ("log", "beam_selector_change"),
+    ]

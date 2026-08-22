@@ -77,6 +77,9 @@ BEAM_MANAGER_TABLE_COLUMNS = [
     "my_star",
     "mz_star",
     "design_utilisation",
+    "current_utilisation",
+    "current_phi_mu_knm",
+    "current_phi_vu_kn",
     "bending_utilisation",
     "shear_utilisation",
     "crack_utilisation",
@@ -204,6 +207,9 @@ def build_beam_schedule_df() -> pd.DataFrame:
             "my_star": item.get("my_star"),
             "mz_star": item.get("mz_star"),
             "design_utilisation": item.get("design_utilisation"),
+            "current_utilisation": item.get("current_utilisation"),
+            "current_phi_mu_knm": item.get("current_phi_mu_knm"),
+            "current_phi_vu_kn": item.get("current_phi_vu_kn"),
             "bending_utilisation": item.get("Mu_utilisation"),
             "shear_utilisation": item.get("Vu_utilisation"),
             "crack_utilisation": item.get("crack_utilisation"),
@@ -284,6 +290,11 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
         if isinstance(existing_summary, dict):
             summary.update(existing_summary)
         raw_result = getattr(result, "raw_result", {})
+        pre_optimisation = (
+            raw_result.get("pre_optimisation", {})
+            if isinstance(raw_result, dict)
+            else {}
+        )
         raw_payload = (
             raw_result.get("design_brain_payload", {})
             if isinstance(raw_result, dict)
@@ -307,6 +318,21 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
         summary["overall_status"] = status
         summary["strength_status"] = status
         summary["batch_design_utilisation"] = utilisation
+        summary["batch_pre_optimisation_utilisation"] = None
+        summary["batch_pre_optimisation_phiMu_kNm"] = None
+        summary["batch_pre_optimisation_phiVu_kN"] = None
+        if isinstance(pre_optimisation, dict):
+            pre_capacities = pre_optimisation.get("family_capacities")
+            summary["batch_pre_optimisation_utilisation"] = pre_optimisation.get(
+                "utilisation"
+            )
+            if isinstance(pre_capacities, dict):
+                summary["batch_pre_optimisation_phiMu_kNm"] = pre_capacities.get(
+                    "bending"
+                )
+                summary["batch_pre_optimisation_phiVu_kN"] = pre_capacities.get(
+                    "shear"
+                )
         # Batch results are authoritative for every check in this row. Clear
         # unavailable SLS values rather than retaining a prior result.
         summary["Mu_utilisation"] = _family_utilisation("bending")

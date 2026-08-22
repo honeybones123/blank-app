@@ -45,11 +45,13 @@ def test_atomic_workspace_markers_bind_revision_and_expected_controls() -> None:
 
     engineering_workspace._render_atomic_workspace_start(
         st_module=st_probe,
+        beam_id="beam_2",
         revision=17,
         guard_required=True,
     )
     engineering_workspace._render_atomic_workspace_complete(
         st_module=st_probe,
+        beam_id="beam_2",
         revision=17,
         expected_width_mm=325.0,
         expected_depth_mm=650.0,
@@ -57,11 +59,13 @@ def test_atomic_workspace_markers_bind_revision_and_expected_controls() -> None:
 
     rendered = "\n".join(st_probe.calls)
     assert 'data-inputs-workspace-revision-start="17"' in rendered
+    assert 'data-inputs-workspace-identity-start="beam_2:17"' in rendered
     assert 'data-atomic-guard="1"' in rendered
     assert "data-inputs-workspace-revision-complete='17'" in rendered
+    assert "data-inputs-workspace-identity-complete='beam_2:17'" in rendered
     assert "data-expected-width-mm='325'" in rendered
     assert "data-expected-depth-mm='650'" in rendered
-    assert "data-inputs-workspace-browser-settled-revision" in rendered
+    assert "data-inputs-workspace-browser-settled-identity" in rendered
 
 
 def test_atomic_scroll_bridge_is_one_shot_and_user_cancellable() -> None:
@@ -79,4 +83,7 @@ def test_atomic_scroll_bridge_is_one_shot_and_user_cancellable() -> None:
     assert "while (" not in source
     assert "data-expected-width-mm" in source
     assert "data-expected-depth-mm" in source
+    assert "beamSelector" in source
+    assert "previousIdentity" in source
+    assert "identity === pending.previousIdentity) return" in source
     assert "if (!doc || !doc.body) return;" in source

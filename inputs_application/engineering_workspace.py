@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
 import json
 import os
 import time
@@ -70,7 +71,14 @@ def _render_atomic_workspace_browser_runtime() -> None:
   const doc = parentWindow && parentWindow.document;
   if (!doc || !doc.body) return;
 
-  const runtimeKey = "__inputsAtomicRevisionRuntimeV1";
+  const previousRuntime = (
+    parentWindow.__inputsAtomicRevisionRuntimeV2 ||
+    parentWindow.__inputsAtomicRevisionRuntimeV1
+  );
+  if (previousRuntime?.observer) previousRuntime.observer.disconnect();
+  delete parentWindow.__inputsAtomicRevisionRuntimeV1;
+  delete parentWindow.__inputsAtomicRevisionRuntimeV2;
+  const runtimeKey = "__inputsAtomicRevisionRuntimeV3";
   if (parentWindow[runtimeKey]) return;
 
   let pending = null;
@@ -79,6 +87,7 @@ def _render_atomic_workspace_browser_runtime() -> None:
   let settleStartedAt = 0;
   const workspaceSelector = '[class*="st-key-inputs_engineering_workspace_atomic"]';
   const applySelector = '[class*="st-key-v2_design_guide_apply_scope"] button';
+  const beamSelector = '[role="combobox"][aria-label="Active set"]';
 
   function scroller() {
     return doc.querySelector('section.stMain');
@@ -88,9 +97,13 @@ def _render_atomic_workspace_browser_runtime() -> None:
     return doc.querySelector(workspaceSelector);
   }
 
-  function completeRevision(root) {
+  function completeIdentity(root) {
     const marker = root && root.querySelector('[data-inputs-workspace-revision-complete]');
-    return marker ? String(marker.getAttribute('data-inputs-workspace-revision-complete') || '') : '';
+    return marker ? String(
+      marker.getAttribute('data-inputs-workspace-identity-complete') ||
+      marker.getAttribute('data-inputs-workspace-revision-complete') ||
+      ''
+    ) : '';
   }
 
   function numericInputValue(label) {
@@ -124,7 +137,10 @@ def _render_atomic_workspace_browser_runtime() -> None:
       const root = workspace();
       const main = scroller();
       const target = event.target;
-      if (target && target.closest && target.closest(applySelector)) return;
+      if (
+        target && target.closest &&
+        (target.closest(applySelector) || target.closest(beamSelector))
+      ) return;
       if (!main || !root) return;
       const rect = main.getBoundingClientRect();
       const onScrollbar = event.clientX >= rect.right - 24;
@@ -133,9 +149,23 @@ def _render_atomic_workspace_browser_runtime() -> None:
     clearPending();
   }
 
-  function captureApply(event) {
+  function captureWorkspaceTransition(event) {
     const target = event.target;
-    if (!target || !target.closest || !target.closest(applySelector)) return;
+    if (!target || !target.closest) return;
+    const source = target.closest(applySelector)
+      ? 'apply'
+      : (target.closest(beamSelector) ? 'beam_switch' : '');
+    if (!source) {
+      const option = target.closest('[role="option"]');
+      if (!pending || pending.source !== 'beam_switch' || !option) return;
+      const currentValue = String(doc.querySelector(beamSelector)?.value || '').trim();
+      const selectedValue = String(option.textContent || '').trim();
+      if (currentValue && selectedValue === currentValue) {
+        clearPending();
+        return;
+      }
+      return;
+    }
     const main = scroller();
     const root = workspace();
     if (!main || !root) return;
@@ -144,7 +174,8 @@ def _render_atomic_workspace_browser_runtime() -> None:
     pending = {
       scrollTop: Number(main.scrollTop || 0),
       height: Math.max(0, rect.height),
-      previousRevision: completeRevision(root),
+      previousIdentity: completeIdentity(root),
+      source: source,
       timeoutId: parentWindow.setTimeout(clearPending, 5000)
     };
     root.style.setProperty('--inputs-workspace-previous-height', `${pending.height}px`);
@@ -159,8 +190,12 @@ def _render_atomic_workspace_browser_runtime() -> None:
       root.style.setProperty('--inputs-workspace-previous-height', `${pending.height}px`);
     }
     const marker = root.querySelector('[data-inputs-workspace-revision-complete]');
-    const revision = marker ? String(marker.getAttribute('data-inputs-workspace-revision-complete') || '') : '';
-    if (!revision) return;
+    const identity = marker ? String(
+      marker.getAttribute('data-inputs-workspace-identity-complete') ||
+      marker.getAttribute('data-inputs-workspace-revision-complete') ||
+      ''
+    ) : '';
+    if (!identity) return;
     if (!expectedControlsReady(marker)) {
       if (!settleStartedAt) settleStartedAt = parentWindow.performance.now();
       if (parentWindow.performance.now() - settleStartedAt < 3000 && !settleTimer) {
@@ -171,16 +206,21 @@ def _render_atomic_workspace_browser_runtime() -> None:
       }
       return;
     }
-    if (root.getAttribute('data-inputs-workspace-browser-settled-revision') !== revision) {
-      root.setAttribute('data-inputs-workspace-browser-settled-revision', revision);
+    if (root.getAttribute('data-inputs-workspace-browser-settled-identity') !== identity) {
+      root.setAttribute('data-inputs-workspace-browser-settled-identity', identity);
     }
     settleStartedAt = 0;
     if (settleTimer) parentWindow.clearTimeout(settleTimer);
     settleTimer = null;
-    if (!pending || revision === pending.previousRevision) {
+    if (!pending) {
       clearPending();
       return;
     }
+    // Opening the selector and choosing an option mutates the DOM before the
+    // selected beam's server render arrives.  Seeing the old complete marker
+    // during that interval is not completion and must not discard the saved
+    // scroll position.  Wait for a genuinely different beam/revision identity.
+    if (identity === pending.previousIdentity) return;
     completionScheduled = true;
     parentWindow.requestAnimationFrame(function () {
       parentWindow.requestAnimationFrame(function () {
@@ -191,7 +231,7 @@ def _render_atomic_workspace_browser_runtime() -> None:
     });
   }
 
-  doc.addEventListener('pointerdown', captureApply, true);
+  doc.addEventListener('pointerdown', captureWorkspaceTransition, true);
   doc.addEventListener('wheel', cancelForUserIntent, {capture: true, passive: true});
   doc.addEventListener('touchmove', cancelForUserIntent, {capture: true, passive: true});
   doc.addEventListener('keydown', function (event) {
@@ -203,7 +243,7 @@ def _render_atomic_workspace_browser_runtime() -> None:
 
   const observer = new parentWindow.MutationObserver(inspectCompletion);
   observer.observe(doc.body, {childList: true, subtree: true, attributes: true});
-  doc.documentElement.dataset.inputsAtomicRevisionRuntime = '1';
+  doc.documentElement.dataset.inputsAtomicRevisionRuntime = '3';
   parentWindow[runtimeKey] = {observer, inspectCompletion};
 })();
 </script>
@@ -216,36 +256,41 @@ def _render_atomic_workspace_browser_runtime() -> None:
 def _render_atomic_workspace_start(
     *,
     st_module: Any,
+    beam_id: str,
     revision: int,
     guard_required: bool,
 ) -> None:
     """Hide a partially streamed revision without changing its final layout."""
 
     revision_text = str(int(revision))
+    identity_text = html.escape(
+        f"{str(beam_id or '').strip() or 'active'}:{revision_text}",
+        quote=True,
+    )
     st_module.markdown(
         f"""
 <style>
 [class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"] {{
   position: relative;
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-revision-start="{revision_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-revision="{revision_text}"]) {{
+[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"]) {{
   min-height: var(--inputs-workspace-previous-height, 640px);
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-revision-start="{revision_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-revision="{revision_text}"])
-  [data-testid="stElementContainer"]:not(:has([data-inputs-workspace-revision-start="{revision_text}"])),
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-revision-start="{revision_text}"]):not(:has([data-inputs-workspace-revision-complete="{revision_text}"]))
-  [data-testid="stLayoutWrapper"]:not(:has([data-inputs-workspace-revision-start="{revision_text}"])) {{
+[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
+  [data-testid="stElementContainer"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])),
+[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"]):not(:has([data-inputs-workspace-identity-complete="{identity_text}"]))
+  [data-testid="stLayoutWrapper"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])) {{
   visibility: hidden !important;
 }}
 [class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]
-  [data-testid="stElementContainer"]:has([data-inputs-workspace-revision-start="{revision_text}"]) {{
+  [data-testid="stElementContainer"]:has([data-inputs-workspace-identity-start="{identity_text}"]) {{
   display: block !important;
   visibility: visible !important;
 }}
 .inputs-workspace-atomic-status {{
   display: none;
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-revision-start="{revision_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-revision="{revision_text}"])
+[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
   .inputs-workspace-atomic-status {{
   display: flex;
   position: absolute;
@@ -264,7 +309,7 @@ def _render_atomic_workspace_start(
   box-sizing: border-box;
 }}
 </style>
-<div data-inputs-workspace-revision-start="{revision_text}" data-atomic-guard="{'1' if guard_required else '0'}" aria-hidden="true">
+<div data-inputs-workspace-revision-start="{revision_text}" data-inputs-workspace-identity-start="{identity_text}" data-atomic-guard="{'1' if guard_required else '0'}" aria-hidden="true">
   <div class="inputs-workspace-atomic-status" role="status" aria-live="polite">
     Updating beam revision&hellip;
   </div>
@@ -277,13 +322,19 @@ def _render_atomic_workspace_start(
 def _render_atomic_workspace_complete(
     *,
     st_module: Any,
+    beam_id: str,
     revision: int,
     expected_width_mm: float,
     expected_depth_mm: float,
 ) -> None:
+    identity_text = html.escape(
+        f"{str(beam_id or '').strip() or 'active'}:{int(revision)}",
+        quote=True,
+    )
     st_module.markdown(
         "<div data-inputs-workspace-revision-complete="
-        f"'{int(revision)}' data-expected-width-mm='{float(expected_width_mm):.9g}' "
+        f"'{int(revision)}' data-inputs-workspace-identity-complete='{identity_text}' "
+        f"data-expected-width-mm='{float(expected_width_mm):.9g}' "
         f"data-expected-depth-mm='{float(expected_depth_mm):.9g}' "
         "style='display:none' aria-hidden='true'></div>",
         unsafe_allow_html=True,
@@ -1708,6 +1759,9 @@ def render_engineering_workspace(
 
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     revision = int(workspace_store.workspace_revision())
+    active_beam_id = str(
+        st_module.session_state.get("active_beam_id") or "active"
+    ).strip() or "active"
     guard_required = bool(
         st_module.session_state.pop(
             "_inputs_atomic_revision_guard_pending",
@@ -1717,6 +1771,7 @@ def render_engineering_workspace(
     with st_module.container(key=_ATOMIC_WORKSPACE_CONTAINER_KEY):
         _render_atomic_workspace_start(
             st_module=st_module,
+            beam_id=active_beam_id,
             revision=revision,
             guard_required=guard_required,
         )
@@ -1738,6 +1793,7 @@ def render_engineering_workspace(
         )
         _render_atomic_workspace_complete(
             st_module=st_module,
+            beam_id=str(active_state.beam_id or active_beam_id),
             revision=completed_revision,
             expected_width_mm=float(active_state.values.get("b", 0.0) or 0.0),
             expected_depth_mm=float(active_state.values.get("D", 0.0) or 0.0),

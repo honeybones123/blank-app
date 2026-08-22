@@ -176,6 +176,7 @@ def project_beam_load_editor_frame(
             f"{utilisation:.2f}" if utilisation is not None else "—"
         )
         for column in (
+            "current_utilisation",
             "bending_utilisation",
             "shear_utilisation",
             "crack_utilisation",

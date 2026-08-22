@@ -7,14 +7,28 @@ import pandas as pd
 from batch_design.models import BatchAssignmentResult, BatchDesignResult
 
 
+def _pre_optimisation_value(result: BatchDesignResult, key: str):
+    payload = result.raw_result if isinstance(result.raw_result, dict) else {}
+    baseline = payload.get("pre_optimisation")
+    return baseline.get(key) if isinstance(baseline, dict) else None
+
+
+def _pre_optimisation_capacity(result: BatchDesignResult, family: str):
+    capacities = _pre_optimisation_value(result, "family_capacities")
+    return capacities.get(family) if isinstance(capacities, dict) else None
+
+
 def design_results_frame(results: list[BatchDesignResult]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
                 "Member ID": result.member_id,
+                "Current phiMu (kNm)": _pre_optimisation_capacity(result, "bending"),
+                "Current phiVu (kN)": _pre_optimisation_capacity(result, "shear"),
+                "Current utilisation": _pre_optimisation_value(result, "utilisation"),
                 "Passed": result.passed,
                 "Selected Section": result.selected_section,
-                "Utilisation": result.utilisation,
+                "Optimised utilisation": result.utilisation,
                 "Error": result.error,
             }
             for result in results
@@ -42,6 +56,9 @@ def design_results_export_frame(results: list[BatchDesignResult]) -> pd.DataFram
         [
             {
                 "member_id": result.member_id,
+                "current_phi_mu_knm": _pre_optimisation_capacity(result, "bending"),
+                "current_phi_vu_kn": _pre_optimisation_capacity(result, "shear"),
+                "current_utilisation": _pre_optimisation_value(result, "utilisation"),
                 "passed": result.passed,
                 "selected_section": result.selected_section,
                 "utilisation": result.utilisation,
