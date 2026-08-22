@@ -164,12 +164,12 @@ def project_beam_load_editor_frame(
 ) -> pd.DataFrame:
     """Return the project beam schedule with editable batch action columns."""
 
-    if schedule_df is None or schedule_df.empty:
+    effective_df = project_beam_effective_frame(schedule_df, workflow)
+    if effective_df.empty:
         return pd.DataFrame()
 
-    cases_by_member = {str(case.member_id): case for case in workflow.imported_cases}
     rows: list[dict[str, Any]] = []
-    for row in schedule_df.to_dict("records"):
+    for row in effective_df.to_dict("records"):
         record = dict(row)
         record["capacity_status"] = _capacity_status(record)
         utilisation = _first_utilisation(record)
@@ -189,14 +189,39 @@ def project_beam_load_editor_frame(
             value = _number_or_original(record.get(column))
             record[column] = f"{value:.2f}" if isinstance(value, (int, float)) else "—"
         record["design_state"] = _design_state(record)
+        rows.append(record)
+    return pd.DataFrame(rows)
+
+
+def project_beam_effective_frame(
+    schedule_df: pd.DataFrame,
+    workflow: BatchDesignWorkflowState,
+) -> pd.DataFrame:
+    """Merge current workflow actions into the stored project-beam schedule.
+
+    The workflow owns the latest table/import action values while the project
+    schedule owns geometry, materials and reinforcement. Capacity checks must
+    consume this merged projection; applying the workflow overlay only after
+    calculation leaves visibly loaded rows classified as NO LOADS.
+    """
+
+    if schedule_df is None or schedule_df.empty:
+        return pd.DataFrame()
+
+    cases_by_member = {
+        str(case.member_id): case for case in workflow.imported_cases
+    }
+    rows: list[dict[str, Any]] = []
+    for row in schedule_df.to_dict("records"):
+        record = dict(row)
         member_id = str(record.get("beam_id") or "").strip()
         case = cases_by_member.get(member_id)
         for column in ACTION_COLUMNS:
-            imported_value = getattr(case, column, None) if case is not None else None
-            # Imported actions are intentional overrides.  Otherwise preserve
-            # the actions cached with this project's beam record.
-            if imported_value is not None:
-                record[column] = imported_value
+            workflow_value = getattr(case, column, None) if case is not None else None
+            # Workflow actions are intentional current overrides. Otherwise
+            # preserve the action retained in this beam's project record.
+            if workflow_value is not None:
+                record[column] = workflow_value
         rows.append(record)
     return pd.DataFrame(rows)
 

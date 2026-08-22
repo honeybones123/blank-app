@@ -87,7 +87,9 @@ def test_delete_project_beam_only_publishes_when_active_beam_changes(monkeypatch
 
 
 def test_batch_page_wires_identity_mutations_to_revisioned_coordinators() -> None:
-    source = inspect.getsource(batch_runtime.render_inputs_batch_design_manager_coordinator)
+    source = inspect.getsource(
+        batch_runtime._build_inputs_batch_design_page_context
+    )
 
     assert "add_beam=add_batch_project_beam" in source
     assert "duplicate_beam=duplicate_batch_project_beam" in source
@@ -95,12 +97,6 @@ def test_batch_page_wires_identity_mutations_to_revisioned_coordinators() -> Non
 
 
 def test_batch_context_reads_live_project_identity_after_local_rerun(monkeypatch) -> None:
-    captured = []
-    monkeypatch.setattr(
-        batch_runtime,
-        "render_batch_design_page",
-        lambda context: captured.append(context),
-    )
     state = {
         "active_beam_id": "beam_2",
         "beam_order": ["beam_1", "beam_2"],
@@ -110,15 +106,13 @@ def test_batch_context_reads_live_project_identity_after_local_rerun(monkeypatch
         },
     }
 
-    batch_runtime.render_inputs_batch_design_manager_coordinator(
+    context = batch_runtime._build_inputs_batch_design_page_context(
         ss=state,
         beam_labels={"beam_1": "Beam 1"},
         beam_order=["beam_1"],
         active_beam_id="beam_1",
     )
 
-    assert len(captured) == 1
-    context = captured[0]
     assert context.beam_order == ["beam_1", "beam_2"]
     assert context.active_beam_id == "beam_2"
     assert context.beam_labels["beam_2"] == "Beam 2"
@@ -130,7 +124,13 @@ def test_beam_selector_arms_atomic_gate_before_inputs_refresh(monkeypatch) -> No
         batch_page.ACTIVE_BEAM_SELECTOR_KEY: "beam_2",
         "active_beam_id": "beam_1",
     }
-    monkeypatch.setattr(batch_page, "st", SimpleNamespace(session_state=state))
+    monkeypatch.setattr(
+        batch_page,
+        "st",
+        SimpleNamespace(
+            session_state=state,
+        ),
+    )
     context = SimpleNamespace(
         set_active_beam=lambda beam_id: events.append(("set", beam_id)) or True,
         force_refresh=lambda reason: events.append(
@@ -146,3 +146,50 @@ def test_beam_selector_arms_atomic_gate_before_inputs_refresh(monkeypatch) -> No
         ("refresh_guard", True),
         ("log", "beam_selector_change"),
     ]
+
+
+def test_batch_workspace_uses_its_own_fragment_boundary(monkeypatch) -> None:
+    captured = {}
+
+    def fake_run_inputs_fragment(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(batch_runtime, "run_inputs_fragment", fake_run_inputs_fragment)
+
+    ctx = SimpleNamespace()
+    workflow = SimpleNamespace()
+    batch_runtime._render_inputs_batch_design_workspace_coordinator(ctx, workflow)
+
+    assert captured["fragment_name"] == "batch_design_shell"
+    assert captured["render_fn"] is batch_runtime._render_inputs_batch_design_workspace_fragment
+    assert captured["force_fragment"] is True
+
+
+def test_batch_manager_keeps_identity_controls_outside_workspace_fragment(
+    monkeypatch,
+) -> None:
+    captured = {}
+    context = SimpleNamespace()
+    monkeypatch.setattr(
+        batch_runtime,
+        "_build_inputs_batch_design_page_context",
+        lambda **kwargs: context,
+    )
+    monkeypatch.setattr(
+        batch_runtime,
+        "render_batch_design_page",
+        lambda ctx, **kwargs: captured.update({"ctx": ctx, **kwargs}),
+    )
+
+    batch_runtime.render_inputs_batch_design_manager_coordinator(
+        ss={},
+        beam_labels={},
+        beam_order=[],
+        active_beam_id="",
+    )
+
+    assert captured["ctx"] is context
+    assert (
+        captured["project_beam_workspace_renderer"]
+        is batch_runtime._render_inputs_batch_design_workspace_coordinator
+    )

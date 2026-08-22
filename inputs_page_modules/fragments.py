@@ -126,7 +126,18 @@ def rerun_inputs_current_scope(st_module: Any) -> None:
     st_module.rerun()
 
 
+def rerun_inputs_app_scope(st_module: Any) -> None:
+    """Request an intentional app-wide refresh through the shared boundary."""
+
+    try:
+        st_module.rerun(scope="app")
+    except TypeError:
+        # Compatibility with Streamlit versions predating scoped reruns.
+        st_module.rerun()
+
+
 __all__ = [
+    "rerun_inputs_app_scope",
     "rerun_inputs_current_scope",
     "run_inputs_fragment",
 ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from dataclasses import dataclass
 import html
 import json
@@ -273,10 +274,10 @@ def _render_atomic_workspace_start(
 [class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"] {{
   position: relative;
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"]) {{
+[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not(:has([data-inputs-workspace-identity-complete="{identity_text}"])) {{
   min-height: var(--inputs-workspace-previous-height, 640px);
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
+[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not(:has([data-inputs-workspace-identity-complete="{identity_text}"]))
   [data-testid="stElementContainer"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])),
 [class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"]):not(:has([data-inputs-workspace-identity-complete="{identity_text}"]))
   [data-testid="stLayoutWrapper"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])) {{
@@ -290,7 +291,7 @@ def _render_atomic_workspace_start(
 .inputs-workspace-atomic-status {{
   display: none;
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
+[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not(:has([data-inputs-workspace-identity-complete="{identity_text}"]))
   .inputs-workspace-atomic-status {{
   display: flex;
   position: absolute;
@@ -1202,6 +1203,8 @@ def _render_engineering_workspace_body(
     include_design_brain: bool = True,
     include_controls: bool = True,
     include_widgets: bool = True,
+    pre_batch_container: Any | None = None,
+    post_batch_container: Any | None = None,
 ) -> dict[str, Any]:
     """Render every consumer that must refresh after an engineering edit."""
     ss = st_module.session_state
@@ -1269,6 +1272,9 @@ def _render_engineering_workspace_body(
         calculation_is_current
     )
     section_started_ns = time.perf_counter_ns()
+    pre_batch_stack = ExitStack()
+    if pre_batch_container is not None:
+        pre_batch_stack.enter_context(pre_batch_container.container())
     summary_region_state = build_inputs_summary_region_state(
         session_state=st_module.session_state,
         services=services,
@@ -1308,6 +1314,7 @@ def _render_engineering_workspace_body(
     section_timings_ms["calculation"] = (
         time.perf_counter_ns() - section_started_ns
     ) / 1_000_000
+    pre_batch_stack.close()
     section_started_ns = time.perf_counter_ns()
     inputs_detailed_mode = bool(
         st_module.session_state.get("_inputs_detailed_mode", False)
@@ -1324,6 +1331,9 @@ def _render_engineering_workspace_body(
     section_timings_ms["controls_and_batch"] = (
         time.perf_counter_ns() - section_started_ns
     ) / 1_000_000
+    post_batch_stack = ExitStack()
+    if post_batch_container is not None:
+        post_batch_stack.enter_context(post_batch_container.container())
     section_started_ns = time.perf_counter_ns()
     if include_design_brain:
         design_guide_slot = st_module.empty()
@@ -1738,6 +1748,7 @@ def _render_engineering_workspace_body(
             disabled=True,
             label_visibility="collapsed",
         )
+    post_batch_stack.close()
     return {
         "inputs_detailed_mode": inputs_detailed_mode,
         "skip_active_beam_record_write": skip_active_beam_record_write,
@@ -1754,6 +1765,8 @@ def render_engineering_workspace(
     include_design_brain: bool = True,
     include_controls: bool = True,
     include_widgets: bool = True,
+    pre_batch_container: Any | None = None,
+    post_batch_container: Any | None = None,
 ) -> dict[str, Any]:
     """Render one revision-gated workspace and reveal it as one visual state."""
 
@@ -1768,6 +1781,42 @@ def render_engineering_workspace(
             False,
         )
     )
+    if pre_batch_container is not None and post_batch_container is not None:
+        with pre_batch_container.container():
+            _render_atomic_workspace_start(
+                st_module=st_module,
+                beam_id=active_beam_id,
+                revision=revision,
+                guard_required=guard_required,
+            )
+            _render_atomic_workspace_browser_runtime()
+        result = _render_engineering_workspace_body(
+            st_module=st_module,
+            runtime=runtime,
+            page_context=page_context,
+            include_design_brain=include_design_brain,
+            include_controls=include_controls,
+            include_widgets=include_widgets,
+            pre_batch_container=pre_batch_container,
+            post_batch_container=post_batch_container,
+        )
+        completed_revision = int(
+            InputsWorkspaceStateStore(st_module.session_state).last_rendered_revision()
+            or revision
+        )
+        active_state = resolve_active_beam_engineering_state(
+            st_module.session_state
+        )
+        with post_batch_container.container():
+            _render_atomic_workspace_complete(
+                st_module=st_module,
+                beam_id=str(active_state.beam_id or active_beam_id),
+                revision=completed_revision,
+                expected_width_mm=float(active_state.values.get("b", 0.0) or 0.0),
+                expected_depth_mm=float(active_state.values.get("D", 0.0) or 0.0),
+            )
+        return result
+
     with st_module.container(key=_ATOMIC_WORKSPACE_CONTAINER_KEY):
         _render_atomic_workspace_start(
             st_module=st_module,

@@ -17,6 +17,7 @@ from inputs_application.page_runtime import (
     build_inputs_page_runtime,
 )
 from inputs_application.engineering_workspace import (
+    _ATOMIC_WORKSPACE_CONTAINER_KEY,
     build_engineering_workspace_runtime,
     render_engineering_workspace,
 )
@@ -149,7 +150,12 @@ def hydrate_committed_design_action_widgets(
     )
 
 
-def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
+def _render_v2_workspace_fragment(
+    *,
+    page_context: dict[str, Any],
+    pre_batch_container: Any,
+    post_batch_container: Any,
+) -> dict[str, Any]:
     """Render the single V2 transaction inside one stable page fragment."""
 
     # Streamlit executes the Apply button callback before re-entering this
@@ -185,8 +191,10 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
         include_design_brain=True,
-        include_controls=True,
+        include_controls=False,
         include_widgets=True,
+        pre_batch_container=pre_batch_container,
+        post_batch_container=post_batch_container,
     )
 
 
@@ -247,13 +255,51 @@ def render_inputs_page() -> None:
         "engineering_input_workspace",
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
+    # Create three sibling layout targets in the original visual order. The
+    # engineering workspace fragment writes around Batch Design, while Batch
+    # owns an independent fragment in the middle. This avoids unsupported
+    # nested fragments without moving any visible section.
+    with st.container(key=_ATOMIC_WORKSPACE_CONTAINER_KEY):
+        pre_batch_container = st.container(
+            key="inputs_engineering_pre_batch_region"
+        )
+        with pre_batch_container:
+            st.markdown(
+                "<span data-testid='inputs-pre-batch-region'></span>",
+                unsafe_allow_html=True,
+            )
+        batch_container = st.container(key="inputs_batch_design_region")
+        with batch_container:
+            st.markdown(
+                "<span data-testid='inputs-batch-design-region'></span>",
+                unsafe_allow_html=True,
+            )
+        post_batch_container = st.container(
+            key="inputs_engineering_post_batch_region"
+        )
+        with post_batch_container:
+            st.markdown(
+                "<span data-testid='inputs-post-batch-region'></span>",
+                unsafe_allow_html=True,
+            )
     render_timing_mark("inputs_page.shell.workspace.start")
     run_inputs_fragment(
         st_module=st,
         fragment_name="engineering_workspace",
         render_fn=_render_v2_workspace_fragment,
-        kwargs={"page_context": page_context},
+        kwargs={
+            "page_context": page_context,
+            "pre_batch_container": pre_batch_container,
+            "post_batch_container": post_batch_container,
+        },
     )
+    with batch_container:
+        _INPUTS_PAGE_RUNTIME.render_batch_design_manager(
+            ss=ss,
+            beam_labels=dict(page_context.get("beam_labels") or {}),
+            beam_order=list(page_context.get("beam_order") or []),
+            active_beam_id=str(page_context.get("active_beam_id") or ""),
+        )
     render_timing_mark("inputs_page.shell.workspace.end")
 
     render_timing_mark("inputs_page.shell.tail.start")
