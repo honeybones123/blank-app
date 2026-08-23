@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-def bind_runtime(namespace: dict) -> None:
-    globals().update({key: value for key, value in namespace.items() if not key.startswith("__")})
+import math
+
+import streamlit as st
+
+from state_and_helpers import get_param
+from widgets_helpers import render_section_title
 
 def _seed_from_param(name: str, fallback: float) -> float:
     """Seed default widget values from shared state, with safe fallback."""

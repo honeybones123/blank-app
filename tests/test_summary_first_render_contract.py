@@ -105,20 +105,18 @@ def test_deflection_summary_renders_before_explainer_inputs_and_diagram_placehol
 def test_crack_as3600_summary_renders_before_explainer_and_inputs():
     text = _top_level_function("crack_page_runtime.py", "render_crack")
     authority = text.index("build_crack_check_rows_from_state(st.session_state)")
-    summary = text.index(
-        'clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")',
-        authority,
-    )
-    explainer = text.index("render_page_explainer_expander(_render_crack_explainer)", authority)
+    summary = text.index("render_crack_summary(", authority)
     inputs = text.index('render_timing_mark("crack_page.runtime.inputs.start")', authority)
 
-    assert authority < summary < explainer < inputs
+    assert authority < summary < inputs
 
 
 def test_crack_alternate_method_summary_helper_is_result_first():
-    text = _top_level_function("crack_page_runtime.py", "_render_method_summary")
+    text = _top_level_function(
+        "engineering_page_sections/crack_summary.py", "render_crack_summary"
+    )
     summary = text.index("clicked_uid = render_clickable_summary_table(")
-    explainer = text.index("render_page_explainer_expander(render_explainer)")
+    explainer = text.index("render_page_explainer_expander(")
     assert summary < explainer
 
 
@@ -130,7 +128,7 @@ def test_summary_first_migration_keeps_existing_input_card_and_lazy_boundaries()
     shrinkage = _top_level_function("shrinkage_page_runtime.py", "render_shrinkage")
 
     assert "render_shear_inputs(" in shear
-    assert "compact_check_input_columns(" in crack
+    assert "render_as3600_inputs(" in crack
     assert "compact_check_input_columns(" in deflection
     assert "render_creep_inputs(" in creep
     assert "render_shrinkage_inputs(" in shrinkage

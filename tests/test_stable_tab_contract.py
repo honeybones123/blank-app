@@ -115,7 +115,9 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
     creep = (
         ROOT / "engineering_page_sections" / "creep_visualisation.py"
     ).read_text(encoding="utf-8-sig")
-    crack = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
+    crack = (
+        ROOT / "engineering_page_sections" / "crack_visualisation.py"
+    ).read_text(encoding="utf-8")
 
     assert 'scope_id="bending-section-diagrams"' in bending
     assert 'scope_id="shear-visualisation-diagrams"' in shear

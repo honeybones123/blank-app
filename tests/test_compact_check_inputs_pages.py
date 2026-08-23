@@ -36,14 +36,12 @@ PAGE_CONTRACTS = {
         "categories": ("method", "section_member", "material_environment", "time_drying"),
         "widgets": ("sh_method", "sh_b", "sh_D", "sh_faces", "inputs_t_shrink"),
     },
-    "crack_page_runtime.py": {
+    "engineering_page_sections/crack_as3600_inputs.py": {
         "categories": (
             "method",
             "section_material",
             "reinforcement",
             "criteria",
-            "wall_reinforcement",
-            "restraint_parameters",
         ),
         "widgets": ("crack_fc", "crack_b", "crack_D", "crack_cover_bot", "inputs_crack_k1"),
     },
@@ -103,11 +101,21 @@ def test_inputs_load_analysis_and_start_do_not_import_the_component():
 
 
 def test_all_crack_methods_are_owned_by_the_shared_panel():
-    source = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
-    assert 'page_slug="crack"' in source
-    assert 'page_slug="crack_as5100"' in source
-    assert 'page_slug="crack_c766"' in source
-    assert source.count('key="crack_method"') == 1
+    runtime = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
+    as3600_inputs = (
+        ROOT / "engineering_page_sections" / "crack_as3600_inputs.py"
+    ).read_text(encoding="utf-8")
+    method_inputs = (
+        ROOT / "engineering_page_sections" / "crack_method_inputs.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'page_slug="crack"' in as3600_inputs
+    assert 'page_slug="crack_as5100"' in runtime
+    assert 'page_slug="crack_c766"' in runtime
+    assert '"wall_reinforcement"' in runtime
+    assert '"restraint_parameters"' in runtime
+    assert method_inputs.count('key="crack_method"') == 1
+    assert 'key="crack_method"' not in runtime
 
 
 def test_shrinkage_alternate_method_keeps_its_own_complete_result_contract():
