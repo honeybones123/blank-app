@@ -138,6 +138,7 @@ CALCULATION_REFERENCE_GROUPS = (
             "engineering_page_sections/bending_sls_checks.py",
             "engineering_page_sections/bending_minimum_strength_checks.py",
             "bending_page_runtime.py",
+            "reporting/bending_report_projection.py",
             "reporting/report_content.py",
         ),
         qualifications="The register mirrors the citations displayed by the bending calculation texts; the detailed explanation beside each calculation remains controlling.",
