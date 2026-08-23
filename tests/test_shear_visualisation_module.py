@@ -39,6 +39,9 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     module_source = (
         ROOT / "engineering_page_sections" / "shear_visualisation.py"
     ).read_text(encoding="utf-8")
+    mcft_source = (
+        ROOT / "engineering_page_sections" / "shear_mcft_strength_checks.py"
+    ).read_text(encoding="utf-8")
     runtime_source = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8")
 
     assert "def bind_runtime" not in module_source
@@ -46,7 +49,8 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "bind_runtime(" not in runtime_source
     assert "_shear_visualisation_section" not in runtime_source
     assert "render_centered_plotly=" in runtime_source
-    assert "render_animated_plotly=" in runtime_source
+    assert "render_animated_plotly=" in mcft_source
+    assert "def _render_animated_plotly_figure" not in runtime_source
     assert "def _render_shear_visualisation_block" not in runtime_source
     assert "def _render_shear_side_view" not in runtime_source
     assert "def _render_shear_cross_section" not in runtime_source
