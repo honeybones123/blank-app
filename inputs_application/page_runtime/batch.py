@@ -71,12 +71,9 @@ from batch_design.ui.project_beam_manager_adapters import (
 
 from batch_design.design_brain_adapter import BatchDesignGuidanceAdapter
 
-from batch_design.store import BatchDesignWorkflowState
-
 from batch_design.ui.page import (
     BatchDesignPageContext,
     render_batch_design_page,
-    render_project_beam_design_workspace,
 )
 
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
@@ -580,23 +577,23 @@ def _build_inputs_batch_design_page_context(
     )
 
 
-def _render_inputs_batch_design_workspace_fragment(
+def _render_inputs_batch_design_page_fragment(
     *,
     ctx: BatchDesignPageContext,
-    workflow: BatchDesignWorkflowState,
 ) -> None:
-    render_project_beam_design_workspace(ctx, workflow)
+    """Own the complete Batch shell and body in one sibling fragment."""
+
+    render_batch_design_page(ctx)
 
 
-def _render_inputs_batch_design_workspace_coordinator(
+def _render_inputs_batch_design_page_coordinator(
     ctx: BatchDesignPageContext,
-    workflow: BatchDesignWorkflowState,
 ) -> None:
     return run_inputs_fragment(
         st_module=st,
         fragment_name="batch_design_shell",
-        render_fn=_render_inputs_batch_design_workspace_fragment,
-        kwargs={"ctx": ctx, "workflow": workflow},
+        render_fn=_render_inputs_batch_design_page_fragment,
+        kwargs={"ctx": ctx},
         force_fragment=True,
     )
 
@@ -608,7 +605,7 @@ def render_inputs_batch_design_manager_coordinator(
     beam_order: list,
     active_beam_id: str,
 ) -> None:
-    """Render app-owned beam controls with a fragment-local Batch workspace."""
+    """Render the complete Batch shell through one fragment owner."""
 
     ctx = _build_inputs_batch_design_page_context(
         ss=ss,
@@ -616,9 +613,4 @@ def render_inputs_batch_design_manager_coordinator(
         beam_order=beam_order,
         active_beam_id=active_beam_id,
     )
-    return render_batch_design_page(
-        ctx,
-        project_beam_workspace_renderer=(
-            _render_inputs_batch_design_workspace_coordinator
-        ),
-    )
+    return _render_inputs_batch_design_page_coordinator(ctx)
