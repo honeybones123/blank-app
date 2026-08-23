@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-from deflection_support import deflection_has_service_load_for_calc
+import math
 
+import streamlit as st
 
-def bind_runtime(namespace: dict) -> None:
-    globals().update(
-        {
-            key: value
-            for key, value in namespace.items()
-            if not key.startswith("__")
-        }
-    )
+from state_runtime_gateway import get_param
+from widgets_helpers import label_with_hover
 
 
 def _seed_from_param(name: str, fallback: float) -> float:

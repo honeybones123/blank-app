@@ -2,25 +2,23 @@
 
 from __future__ import annotations
 
+import math
+
+import streamlit as st
+
+from state_runtime_gateway import get_param
+from calculations.deflection import (
+    active_multispan_lengths_m as _calc_active_multispan_lengths_m,
+    design_multispan_mode_from_state as _calc_is_design_multispan_mode,
+    multispan_design_elastic_loads as _calc_multispan_design_elastic_loads,
+    normalize_deflection_support_type as _normalize_deflection_support_type,
+)
+
 from deflection_support import (
     compute_and_store_multispan_deflection_metrics,
     get_deflection_diagram_support_condition,
     get_resolved_deflection_support_type,
 )
-
-
-def bind_runtime(namespace: dict) -> None:
-    """Bind calculation adapters used by the page coordinator."""
-
-    globals().update(
-        {
-            key: value
-            for key, value in namespace.items()
-            if not key.startswith("__")
-        }
-    )
-
-
 def _refresh_deflection_effective_span_from_mm(
     L_mm,
     fallback_mm: float = 0.0,

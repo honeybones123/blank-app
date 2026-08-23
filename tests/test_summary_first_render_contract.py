@@ -92,14 +92,18 @@ def test_shrinkage_summary_renders_before_explainer_inputs_and_diagram_placehold
 def test_deflection_summary_renders_before_explainer_inputs_and_diagram_placeholder():
     text = _top_level_function("deflection_page_runtime.py", "render_deflection")
     authority = text.index("build_deflection_check_rows_from_state(st.session_state)")
-    summary = text.index("render_clickable_summary_table(", authority)
-    explainer = text.index("render_page_explainer_expander(_render_deflection_explainer)")
+    summary = text.index("render_deflection_summary(", authority)
     inputs = text.index('render_timing_mark("deflection_page.runtime.inputs.start")')
     diagram = text.index("diagram_placeholder = st.empty()")
 
-    assert authority < summary < explainer
+    assert authority < summary
     assert summary < inputs
     assert summary < diagram
+
+    summary_source = _read("engineering_page_sections/deflection_summary.py")
+    assert summary_source.index("render_clickable_summary_table(") < summary_source.index(
+        "render_page_explainer_expander("
+    )
 
 
 def test_crack_as3600_summary_renders_before_explainer_and_inputs():
