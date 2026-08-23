@@ -23,7 +23,7 @@ def test_registry_defines_the_six_production_calculation_pages():
 
 def test_bending_summary_renders_before_explainer_inputs_diagram_and_checks():
     text = _top_level_function("bending_page_runtime.py", "render_bending")
-    summary = text.index("clicked_uid = render_clickable_summary_table(")
+    summary = text.index("summary_result = render_bending_summary(")
     summary_mark = text.index("bending_page.runtime.summary_table.rendered")
     explainer = text.index("render_page_explainer_expander(_render_bending_explainer)")
     inputs = text.index("with inputs_placeholder.container():")

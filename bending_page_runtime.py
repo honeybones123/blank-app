@@ -58,16 +58,8 @@ from calculations.bending import (
     stress_block_factors,
     uls_bending_report_values,
 )
-from engineering_check_ui import (
-    ENGINEERING_CHECK_COLUMNS,
-    resolve_jump_target_id,
-)
-from ui.summary_rows import (
-    build_bending_clickable_summary_rows,
-)
 from ui_seamless_steps import (
     inject_seamless_steps_css,
-    render_clickable_summary_table,
     bind_summary_clicks,
     step_card,
 )
@@ -88,6 +80,10 @@ from engineering_page_sections.bending_page_context import (
     build_bending_page_snapshot,
 )
 from engineering_page_sections.bending_page_shell import BendingPageShell
+from engineering_page_sections.bending_summary import (
+    apply_bending_summary_navigation,
+    render_bending_summary,
+)
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -1160,16 +1156,12 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 for k in debug_keys
             })
 
-        # Build ROWS from canonical bend_pack rows (stable uids); jump targets via resolve_jump_target_id / data-jump-target.
-        ROWS = build_bending_clickable_summary_rows(bend_pack.get("rows") or [])
-
-        update_results("bending", {"rows": ROWS})
-
-        # Render the engineering summary before lower-priority explanatory content.
-        # This table is the user's primary first-view result and must be emitted
-        # before the technical-basis expander, inputs, diagrams, or detailed checks.
-        clicked_uid = render_clickable_summary_table(
-            ROWS, key_prefix="bend_summary", columns=ENGINEERING_CHECK_COLUMNS
+        # Render the engineering summary before lower-priority explanatory
+        # content. The summary module owns row projection and click intent;
+        # this coordinator retains the presentation-state mutation boundary.
+        summary_result = render_bending_summary(
+            bend_pack.get("rows") or [],
+            publish_rows=lambda rows: update_results("bending", {"rows": rows}),
         )
         render_timing_mark("bending_page.runtime.summary_table.rendered")
 
@@ -1177,42 +1169,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         # widget payload until after the two visible loading regions stream.
         explainer_placeholder = st.empty()
 
-        # Handle clicked summary row: set mode, expand step, set pending scroll
-        if clicked_uid:
-            # Map calc step id to mode (use resolved jump target, not canonical row uid)
-            def uid_to_mode(step_id: str):
-                """Map a step UID to its mode (ULS, SLS, or MIN)."""
-                if step_id.startswith("bending_uls_"):
-                    return "ULS"
-                elif step_id.startswith("bending_sls_"):
-                    return "SLS"
-                elif step_id.startswith("bending_min_"):
-                    return "MIN"
-                else:
-                    return "ULS"  # Default to ULS for unknown UIDs
-
-            clicked_row = next((row for row in ROWS if row.get("uid") == clicked_uid), None)
-            target_uid = (
-                resolve_jump_target_id(clicked_row)
-                if clicked_row
-                else str(clicked_uid)
-            )
-            target_mode = uid_to_mode(target_uid)
-            st.session_state["bending_active_mode"] = target_mode
-            st.session_state["bending_check_tab"] = {
-                "ULS": "ULS Checks",
-                "SLS": "SLS Checks",
-                "MIN": "Minimum strength checks",
-            }.get(target_mode, "ULS Checks")
-
-            clicked_sign = (clicked_row or {}).get("moment_sign")
-            if clicked_sign in {"positive", "negative"}:
-                st.session_state["bending_detail_view"] = clicked_sign
-
-            open_key = f"step_open_{target_uid}"
-            st.session_state[open_key] = True
-
-            st.session_state["bending_pending_scroll_uid"] = target_uid
+        apply_bending_summary_navigation(
+            st.session_state,
+            summary_result.interaction,
+            jump_tab_key=JUMP_NAV_TAB_KEY,
+        )
 
         diagram_shell_generation = int(
             st.session_state.get("_bending_diagram_shell_generation", 0) or 0
