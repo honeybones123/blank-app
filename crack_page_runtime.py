@@ -354,7 +354,7 @@ def render_crack():
                             ),
                             restraint_early=method_inputs.restraint_early,
                             restraint_medium=method_inputs.restraint_medium,
-                            restraint_long=method_inputs.restraint_long,
+                            restraint_long_term=method_inputs.restraint_long,
                             tensile_strain_capacity=(
                                 method_inputs.tensile_strain_capacity_microstrain
                                 * 1e-6

@@ -86,6 +86,12 @@ def test_crack_runtime_delegates_all_owned_page_sections() -> None:
         assert call in source
 
 
+def test_c766_runtime_maps_long_term_restraint_to_authoritative_contract() -> None:
+    source = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
+    assert "restraint_long_term=method_inputs.restraint_long" in source
+    assert "restraint_long=method_inputs.restraint_long" not in source
+
+
 def test_extracted_crack_presentation_does_not_own_engineering_or_publication() -> None:
     for relative in (
         "engineering_page_sections/crack_as3600_checks.py",
