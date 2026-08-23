@@ -19,7 +19,7 @@ PAGE_CONTRACTS = {
             "bending_cover_{face}",
         ),
     },
-    "shear_page_runtime.py": {
+    "engineering_page_sections/shear_inputs.py": {
         "categories": (
             "design_actions",
             "section_material",
