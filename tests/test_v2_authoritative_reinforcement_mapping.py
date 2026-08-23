@@ -123,6 +123,25 @@ def test_top_reinforcement_edit_invalidates_uls_and_sls_publication() -> None:
     assert top_result.engineering_hash == top_snapshot.engineering_hash
     assert no_top_result.current_calculations["families"]["bending"]["steel_layer_faces"] == ("bottom",)
     assert top_result.current_calculations["families"]["bending"]["steel_layer_faces"] == ("bottom", "top")
+    no_top_families = no_top_result.current_calculations["families"]
+    assert set(no_top_families) >= {
+        "bending",
+        "ductility",
+        "shear",
+        "creep",
+        "shrinkage",
+        "creep_shrinkage",
+        "serviceability",
+        "crack_control",
+        "reinforcement_fit",
+        "geometry",
+    }
+    assert len(no_top_families["bending"]["steel_layer_areas_mm2"]) == 1
+    assert no_top_families["bending"]["steel_layer_areas_mm2"][0] > 0.0
+    cracked_layers = no_top_families["crack_control"]["sls_cracked_section"]["layers"]
+    assert tuple(layer["layer_id"] for layer in cracked_layers) == ("B1",)
+    assert no_top_families["crack_control"]["action_source"] == "ACTUAL_SLS_ACTIONS"
+    assert no_top_families["geometry"]["status"] == "PASS"
     # SLS families are published under the same identity and therefore cannot
     # reuse the no-top result after a top-steel edit.
     assert no_top_result.current_calculations["families"]["serviceability"]["action_source"] == "ACTUAL_SLS_ACTIONS"

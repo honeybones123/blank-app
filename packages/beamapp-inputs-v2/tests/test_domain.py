@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from inputs_v2.application.input_commands import UpdateFirstSlice, apply_input_command
@@ -42,3 +44,18 @@ def test_canonical_model_does_not_expose_legacy_aliases() -> None:
     inputs = BeamInputs()
     assert not hasattr(inputs, "bot1_count")
     assert not hasattr(inputs, "db_bot_1")
+
+
+def test_optional_top_layer_allows_zero_without_weakening_bottom_validation() -> None:
+    baseline = BeamInputs()
+    no_top = replace(
+        baseline,
+        top=replace(baseline.top, bars=0),
+    ).validated()
+
+    assert no_top.top.bars == 0
+    with pytest.raises(ValueError, match="between 2 and 12"):
+        replace(
+            baseline,
+            bottom=replace(baseline.bottom, bars=0),
+        ).validated()

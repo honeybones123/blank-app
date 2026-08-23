@@ -148,8 +148,10 @@ def test_check_2_diagram_is_an_explicit_trial_not_the_converged_result() -> None
 def test_app_prefers_its_own_authoritative_inputs_package() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8")
 
-    assert 'LOCAL_INPUTS_SRC = os.path.join(ROOT, "packages", "beamapp-inputs-v2", "src")' in source
-    assert "sys.path.insert(0, LOCAL_INPUTS_SRC)" in source
+    assert "from runtime_source_bootstrap import" in source
+    assert "prefer_runtime_checkout_sources()" in source
+    assert "LOCAL_INPUTS_SRC" not in source
+    assert "sys.path.insert" not in source
 
 
 def test_advanced_neutral_axis_math_uses_single_line_display_blocks() -> None:
