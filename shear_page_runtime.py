@@ -24,7 +24,6 @@ from shear_diagrams import (
     make_mcft_longitudinal_strain_profile_fig,
 )
 from shear_visuals import (
-    BEHAVIOUR_VISUAL_HEIGHT,
     BEHAVIOUR_VISUAL_WIDTH,
     SIDE_VIEW_VISUAL_HEIGHT,
     SIDE_VIEW_VISUAL_WIDTH,
@@ -77,25 +76,23 @@ from engineering_page_sections.shear_page_shell import ShearPageShell
 from engineering_page_sections.shear_inputs import render_shear_inputs
 
 
-from engineering_page_sections import shear_visualisation as _shear_visualisation_section
-_support_pair_from_resolved_support_type = _shear_visualisation_section._support_pair_from_resolved_support_type
-_coalesce_num = _shear_visualisation_section._coalesce_num
-_standardise_shear_visual_layout = _shear_visualisation_section._standardise_shear_visual_layout
-_render_plotly_in_mcft_column = _shear_visualisation_section._render_plotly_in_mcft_column
-_render_mcft_behaviour_chart = _shear_visualisation_section._render_mcft_behaviour_chart
-_shear_visualisation_section.bind_runtime(globals())
+from engineering_page_sections.shear_visualisation import (
+    MCFT_BEHAVIOUR_MARGIN,
+    SHEAR_VISUAL_HEIGHT_PX,
+    _coalesce_num,
+    _render_mcft_behaviour_chart,
+    _render_plotly_in_mcft_column,
+    _standardise_shear_visual_layout,
+    _support_pair_from_resolved_support_type,
+)
 
 # ------------------------------------------------------------
 #  Helper functions for diagrams
 # ------------------------------------------------------------
 
-SHEAR_VISUAL_HEIGHT_PX = BEHAVIOUR_VISUAL_HEIGHT
 SHEAR_SIDE_VIEW_HEIGHT_PX = SIDE_VIEW_VISUAL_HEIGHT
 SHEAR_SIDE_VIEW_MAX_WIDTH_PX = SIDE_VIEW_VISUAL_WIDTH
 SHEAR_VISUAL_MAX_WIDTH_PX = 760
-SHEAR_BEHAVIOUR_MAX_WIDTH_PX = BEHAVIOUR_VISUAL_WIDTH
-# MCFT / principal-stress behaviour diagrams: one canonical pixel frame on every toggle and on both pages.
-MCFT_BEHAVIOUR_MARGIN = dict(l=10, r=10, t=8, b=10)
 SHEAR_VISUAL_CONFIG = {
     "displayModeBar": False,
     "responsive": True,
@@ -503,6 +500,8 @@ def _render_shear_behaviour_plot(visual_mode: str | None = None, theta_v_deg: fl
         fig,
         chart_key="shear_behaviour_visual_mode",
         animated=bool(effective_mode == "Principal stress field" and (show_load_flow or show_stm_flow)),
+        render_centered_plotly=_render_centered_shear_plotly,
+        render_animated_plotly=_render_animated_plotly_figure,
     )
     caption = (
         "Illustrative only — schematic principal-stress-style field, not a finite-element stress solution."
@@ -551,6 +550,8 @@ def _render_shear_behaviour_diagrams(theta_v_deg: float) -> None:
         fig,
         chart_key="shear_behaviour_mcft_single",
         animated=bool(show_load_flow or show_stm_flow),
+        render_centered_plotly=_render_centered_shear_plotly,
+        render_animated_plotly=_render_animated_plotly_figure,
         height_px=300,
     )
     st.caption(
@@ -1848,7 +1849,6 @@ def compute_shear_results(publish: bool = True) -> dict:
 #  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shear():
-    _shear_visualisation_section.bind_runtime(globals())
     render_timing_mark("shear_page.runtime.start")
     # Handle cross-page navigation from Inputs page
     from jump_nav import JUMP_NAV_TAB_KEY, get_jump_uid
@@ -3259,7 +3259,11 @@ in the general shear method.
                 height=int(SHEAR_VISUAL_HEIGHT_PX),
                 width=int(BEHAVIOUR_VISUAL_WIDTH),
             )
-            _render_plotly_in_mcft_column(fig_force, chart_key="shear_mcft_diagram_force")
+            _render_plotly_in_mcft_column(
+                fig_force,
+                chart_key="shear_mcft_diagram_force",
+                render_centered_plotly=_render_centered_shear_plotly,
+            )
 
             st.markdown("#### Longitudinal strain profile")
             fig_strain = make_mcft_longitudinal_strain_profile_fig(
@@ -3275,7 +3279,11 @@ in the general shear method.
                 height=int(SHEAR_VISUAL_HEIGHT_PX),
                 width=int(BEHAVIOUR_VISUAL_WIDTH),
             )
-            _render_plotly_in_mcft_column(fig_strain, chart_key="shear_mcft_diagram_strain")
+            _render_plotly_in_mcft_column(
+                fig_strain,
+                chart_key="shear_mcft_diagram_strain",
+                render_centered_plotly=_render_centered_shear_plotly,
+            )
 
         # Info render function — only the prestress toggle (single "i" popover lives in diagram column).
         def check4_info_fn():

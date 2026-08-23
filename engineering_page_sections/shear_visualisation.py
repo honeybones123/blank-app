@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
-def bind_runtime(namespace: dict) -> None:
-    globals().update({key: value for key, value in namespace.items() if not key.startswith("__")})
+from collections.abc import Callable
+from typing import Any
+
+import plotly.graph_objects as go
+
+from shear_visuals import BEHAVIOUR_VISUAL_HEIGHT, BEHAVIOUR_VISUAL_WIDTH
+
+
+SHEAR_VISUAL_HEIGHT_PX = BEHAVIOUR_VISUAL_HEIGHT
+SHEAR_BEHAVIOUR_MAX_WIDTH_PX = BEHAVIOUR_VISUAL_WIDTH
+MCFT_BEHAVIOUR_MARGIN = dict(l=10, r=10, t=8, b=10)
 
 def _support_pair_from_resolved_support_type(support_type: str | None) -> tuple[str, str] | None:
     raw_label = str(support_type or "").strip()
@@ -34,9 +43,14 @@ def _standardise_shear_visual_layout(fig, *, title_pad_t: int = 28):
     )
     return fig
 
-def _render_plotly_in_mcft_column(fig: go.Figure, *, chart_key: str) -> None:
+def _render_plotly_in_mcft_column(
+    fig: go.Figure,
+    *,
+    chart_key: str,
+    render_centered_plotly: Callable[..., Any],
+) -> None:
     """MCFT static Plotly: same pipeline as side view / cross-section (full-width block)."""
-    _render_centered_shear_plotly(
+    render_centered_plotly(
         fig,
         chart_key=chart_key,
         max_width_px=SHEAR_BEHAVIOUR_MAX_WIDTH_PX,
@@ -50,11 +64,13 @@ def _render_mcft_behaviour_chart(
     *,
     chart_key: str,
     animated: bool,
+    render_centered_plotly: Callable[..., Any],
+    render_animated_plotly: Callable[..., Any],
     height_px: int | None = None,
 ) -> None:
     plot_h = int(height_px or fig.layout.height or SHEAR_VISUAL_HEIGHT_PX)
     if animated:
-        _render_animated_plotly_figure(
+        render_animated_plotly(
             fig,
             height=plot_h,
             centered=True,
@@ -64,7 +80,7 @@ def _render_mcft_behaviour_chart(
             max_width_px=int(BEHAVIOUR_VISUAL_WIDTH),
         )
     else:
-        _render_centered_shear_plotly(
+        render_centered_plotly(
             fig,
             chart_key=chart_key,
             max_width_px=SHEAR_BEHAVIOUR_MAX_WIDTH_PX,
@@ -72,3 +88,15 @@ def _render_mcft_behaviour_chart(
             title_pad_t=int(MCFT_BEHAVIOUR_MARGIN["t"]),
             compact_top=True,
         )
+
+
+__all__ = [
+    "MCFT_BEHAVIOUR_MARGIN",
+    "SHEAR_BEHAVIOUR_MAX_WIDTH_PX",
+    "SHEAR_VISUAL_HEIGHT_PX",
+    "_coalesce_num",
+    "_render_mcft_behaviour_chart",
+    "_render_plotly_in_mcft_column",
+    "_standardise_shear_visual_layout",
+    "_support_pair_from_resolved_support_type",
+]
