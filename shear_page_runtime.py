@@ -52,6 +52,7 @@ from ui.summary_rows import (
     filter_shear_summary_rows,
 )
 from shear_checks_helpers import (
+    build_live_canonical_shear_state,
     build_shear_calc_bundle_from_state,
     build_shear_check_rows_from_state,
 )
@@ -80,6 +81,9 @@ from engineering_page_sections.compact_check_inputs import (
     join_summary,
 )
 from engineering_page_sections.stable_tabs import render_stable_tabs
+from engineering_page_sections.shear_page_context import (
+    build_shear_page_snapshot,
+)
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -2029,15 +2033,33 @@ In short:
     # see, so it must not wait for the rest of the page to finish rendering.
     render_timing_mark("shear_page.runtime.summary.start")
     shear_pack = build_shear_check_rows_from_state(st.session_state)
-    rows_summary_full = build_shear_legacy_summary_rows(shear_pack.get("rows") or [])
-    summary_util_raw = shear_pack.get("summary_util")
+    st.session_state.setdefault("show_mcft_breakdown", False)
+    published_results = st.session_state.get("results", {})
+    if isinstance(published_results, dict):
+        published_results = published_results.get("shear", {})
+    if not isinstance(published_results, dict):
+        published_results = {}
+    shear_page_snapshot = build_shear_page_snapshot(
+        engineering_state=build_live_canonical_shear_state(st.session_state),
+        check_pack=shear_pack,
+        published_results=published_results,
+        section_layout=st.session_state.get("section_layout"),
+        actions_mode=get_param("actions_mode", "manual"),
+        show_mcft_breakdown=bool(st.session_state.get("show_mcft_breakdown", False)),
+    )
+    rows_summary_full = build_shear_legacy_summary_rows(
+        shear_page_snapshot.check_pack.get("rows") or []
+    )
+    summary_util_raw = shear_page_snapshot.check_pack.get("summary_util")
     try:
         summary_util = float(summary_util_raw)
     except (TypeError, ValueError):
         summary_util = math.nan
 
     update_results(
-        phi_Vu_cap=float(shear_pack.get("summary_phiVu_kN") or 0.0),
+        phi_Vu_cap=float(
+            shear_page_snapshot.check_pack.get("summary_phiVu_kN") or 0.0
+        ),
         Vu_utilisation=(
             float(summary_util)
             if summary_util is not None and not math.isnan(summary_util)
@@ -2046,10 +2068,9 @@ In short:
     )
     rows_full = build_shear_clickable_summary_rows(rows_summary_full)
     update_results("shear", {"rows": rows_full})
-    st.session_state.setdefault("show_mcft_breakdown", False)
     display_rows = filter_shear_summary_rows(
         rows_summary_full,
-        show_mcft_breakdown=bool(st.session_state.get("show_mcft_breakdown", False)),
+        show_mcft_breakdown=shear_page_snapshot.view.show_mcft_breakdown,
     )
     render_clickable_summary_table(
         build_shear_clickable_summary_rows(display_rows),
@@ -2069,7 +2090,7 @@ In short:
     # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
     # =====================================================
     render_timing_mark("shear_page.runtime.inputs.start")
-    actions_mode = get_param("actions_mode", "manual")
+    actions_mode = shear_page_snapshot.view.actions_mode
     design_controls = is_design_governing()
     is_design_driven = actions_mode == "design"
     support_help_text = "Support condition determines the deflection coefficient k₂ used in AS 3600 deflection calculations."
