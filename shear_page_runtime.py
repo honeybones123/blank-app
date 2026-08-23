@@ -86,6 +86,7 @@ from engineering_page_sections.shear_summary import (
     render_shear_explainer,
     render_shear_summary,
 )
+from engineering_page_sections.shear_page_shell import ShearPageShell
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -1966,11 +1967,11 @@ def render_shear():
     )
     render_timing_mark("shear_page.runtime.summary.end")
 
-    visualisation_placeholder = st.empty()
-
-    render_timing_mark("shear_page.runtime.visualisation.start")
-    # --- Shared visualisation viewport ---
-    page_divider()
+    shear_page_shell = ShearPageShell.reserve_after_summary(
+        st,
+        before_first_divider=lambda: render_timing_mark("shear_page.runtime.visualisation.start"),
+        render_first_divider=page_divider,
+    )
 
     # =====================================================
     # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
@@ -2682,8 +2683,11 @@ def render_shear():
     # route timings do not attribute the widget rail to the diagram.
     render_timing_mark("shear_page.runtime.inputs.end")
     render_timing_mark("shear_page.runtime.visualisation.render.start")
-    with visualisation_placeholder.container():
-        _render_shear_visualisation_block(theta_v_deg=shear_results.theta_v_deg)
+    shear_page_shell.render_visualisation(
+        lambda: _render_shear_visualisation_block(
+            theta_v_deg=shear_results.theta_v_deg
+        )
+    )
     render_timing_mark("shear_page.runtime.visualisation.render.end")
 
     # Check 6: Concrete shear contribution

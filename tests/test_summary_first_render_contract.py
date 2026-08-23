@@ -43,7 +43,9 @@ def test_shear_summary_renders_before_explainer_inputs_visualisation_and_checks(
     snapshot = text.index("shear_page_snapshot = build_shear_page_snapshot(")
     summary = text.index("render_shear_summary(", authority)
     explainer = text.index("render_explainer=lambda: render_shear_explainer(")
-    visualisation = text.index("visualisation_placeholder = st.empty()")
+    visualisation = text.index(
+        "shear_page_shell = ShearPageShell.reserve_after_summary("
+    )
     inputs = text.index('render_timing_mark("shear_page.runtime.inputs.start")')
     checks = text.index('render_timing_mark("shear_page.runtime.checks.start")')
 
@@ -126,5 +128,6 @@ def test_summary_first_migration_keeps_existing_input_card_and_lazy_boundaries()
     assert "compact_check_input_columns(" in deflection
     assert "render_compact_check_inputs(" in creep
     assert "render_compact_check_inputs(" in shrinkage
-    assert "visualisation_placeholder = st.empty()" in shear
+    assert "shear_page_shell = ShearPageShell.reserve_after_summary(" in shear
+    assert "shear_page_shell.render_visualisation(" in shear
     assert "diagram_placeholder = st.empty()" in deflection
