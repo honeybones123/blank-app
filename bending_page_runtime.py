@@ -36,11 +36,7 @@ from bending_core import (
 from bending_checks_helpers import build_bending_check_rows_from_state
 from inputs_application.authoritative_check_packs import current_authoritative_family
 from calculations.bending import (
-    bar_area_mm2,
     bottom_tension_effective_depth_fallback_mm,
-    minimum_moment_capacity_kNm,
-    nominal_capacity_from_phi_capacity_kNm,
-    stress_block_factors,
 )
 from ui_seamless_steps import (
     inject_seamless_steps_css,
@@ -324,8 +320,6 @@ def render_bending():
     top_results = _compute_bending_capacity()
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
-    Mu_star_sls = float(get_param("sls_Mstar") or 0.0)
-
     # Compute SLS values before summary / tabs (publishes sigma_s_sls, bending_sls_fs_outer, etc.)
     _compute_sls_bending_values()
 
@@ -362,8 +356,6 @@ def render_bending():
         authoritative_ductility,
         d_pos_val,
     )
-
-    phi_Mu_cap_top = top_results["phi_Mu_cap"]
 
     # The section layout and every stress-state projection must share one
     # revision-bound input object.  Reading ``get_param`` here previously let
@@ -733,45 +725,19 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     # Persist canonical bending state for the rest of the page (and next rerun)
     st.session_state["bending_state"] = canonical_state
 
-    # Persist canonical bending state for the rest of the page (and next rerun)
-    st.session_state["bending_state"] = canonical_state
-
-    # values for later
-    phi_Mu_cap = top_results["phi_Mu_cap"]
-    c = top_results["c"]
-    a = top_results["a"]
-    z = top_results["z"]
-    ku = top_results["ku"]
-    alpha2 = top_results["alpha2"]
-    gamma = top_results["gamma"]
-    phi = top_results["phi"]
-    fctf = top_results["fctf"]
-    Z_gross = top_results["Z_gross"]
-    Mcr = top_results["Mcr"]
-    As_min = top_results["As_min"]
     d = top_results["d"]
 
-    # shared values
     b = get_param("b")
     D = get_param("D")
     fc = get_param("fc")
     fsy = get_param("fsy")
     Ec = get_param("Ec")
     Es = get_param("Es")
-    Mu_star = get_param("Mu_star")
-    L_shared = get_param("L")
-    nb_bot = get_param("nb_bot")
     db_bot = get_param("db_bot")
     cover_bot = get_param("cover_bot")
-    nb_top = get_param("nb_top")
-    db_top = get_param("db_top")
-    cover_top = get_param("cover_top")
 
-    # local copies for table
-    fc_local = fc if fc is not None else 40.0
     cover_bot_local = cover_bot if cover_bot is not None else 40.0
     db_bot_local = db_bot if db_bot is not None else 20.0
-    nb_bot_local = int(nb_bot) if nb_bot is not None else 4
     D_local = D if D is not None else 600.0
 
     d_eff = d
@@ -781,21 +747,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             cover_bot_local,
             db_bot_local,
         )
-
-    Ast_bot = Ast
-    if Ast_bot is None or (isinstance(Ast_bot, float) and math.isnan(Ast_bot)):
-        Ast_bot = bar_area_mm2(nb_bot_local, db_bot_local)
-
-    alpha2_sb, gamma_sb = stress_block_factors(fc_local)
-    phi_b = get_param("phi_bend", 0.85)
-    ku_sb = ku if ku is not None else float("nan")
-
-    Mu_min = (
-        minimum_moment_capacity_kNm(Mcr)
-        if (Mcr is not None and not (isinstance(Mcr, float) and math.isnan(Mcr)))
-        else float("nan")
-    )
-    Mu_nom_report = nominal_capacity_from_phi_capacity_kNm(phi_Mu_cap, phi)
 
     with inputs_placeholder.container():
         render_bending_inputs(

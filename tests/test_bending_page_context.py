@@ -143,3 +143,33 @@ def test_runtime_routes_shared_case_selection_through_page_snapshot() -> None:
     assert "moment_sign = page_snapshot.view.selected_detail_view" in checks_context
     assert "case = page_snapshot.negative_case" in checks_context
     assert "demand_kNm=float(case.sls_demand_kNm)" in checks_context
+
+
+def test_runtime_has_one_canonical_bending_state_publication() -> None:
+    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+
+    assert source.count(
+        'st.session_state["bending_state"] = canonical_state'
+    ) == 1
+
+
+def test_runtime_owns_only_page_orchestration_not_superseded_derivations() -> None:
+    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+
+    for required_boundary in (
+        "BendingPageShell",
+        "render_bending_summary",
+        "render_bending_inputs",
+        "build_bending_checks_snapshot",
+        "render_bending_checks",
+    ):
+        assert required_boundary in source
+
+    for superseded_owner in (
+        "bind_runtime(",
+        "def build_bending_report(",
+        "Mu_nom_report",
+        "alpha2_sb",
+        "Ast_bot = Ast",
+    ):
+        assert superseded_owner not in source
