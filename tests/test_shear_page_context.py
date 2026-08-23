@@ -93,5 +93,5 @@ def test_runtime_routes_summary_authority_through_page_snapshot() -> None:
     source = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8")
 
     assert "shear_page_snapshot = build_shear_page_snapshot(" in source
-    assert "shear_page_snapshot.check_pack" in source
+    assert "render_shear_summary(\n        shear_page_snapshot," in source
     assert "shear_page_snapshot.view.actions_mode" in source

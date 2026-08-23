@@ -40,13 +40,14 @@ def test_bending_summary_renders_before_explainer_inputs_diagram_and_checks():
 def test_shear_summary_renders_before_explainer_inputs_visualisation_and_checks():
     text = _top_level_function("shear_page_runtime.py", "render_shear")
     authority = text.index("build_shear_check_rows_from_state(st.session_state)")
-    summary = text.index("render_clickable_summary_table(", authority)
-    explainer = text.index("render_page_explainer_expander(_render_shear_explainer)")
+    snapshot = text.index("shear_page_snapshot = build_shear_page_snapshot(")
+    summary = text.index("render_shear_summary(", authority)
+    explainer = text.index("render_explainer=lambda: render_shear_explainer(")
     visualisation = text.index("visualisation_placeholder = st.empty()")
     inputs = text.index('render_timing_mark("shear_page.runtime.inputs.start")')
     checks = text.index('render_timing_mark("shear_page.runtime.checks.start")')
 
-    assert authority < summary < explainer
+    assert authority < snapshot < summary < explainer
     assert summary < visualisation
     assert summary < inputs
     assert summary < checks

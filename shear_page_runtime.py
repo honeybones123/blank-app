@@ -45,12 +45,7 @@ from shear_core import build_shear_zone_layout_strip_figure, derive_eps_top_bot_
 from widgets_helpers import apply_result_page_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
 from step_ui import render_expandable_step
 from engineering_check_ui import SHEAR_ROW_UID_TO_TAB
-from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
-from ui.summary_rows import (
-    build_shear_clickable_summary_rows,
-    build_shear_legacy_summary_rows,
-    filter_shear_summary_rows,
-)
+from ui_seamless_steps import bind_summary_clicks
 from shear_checks_helpers import (
     build_live_canonical_shear_state,
     build_shear_calc_bundle_from_state,
@@ -86,6 +81,10 @@ from engineering_page_sections.shear_page_context import (
 )
 from engineering_page_sections.shear_checks_context import (
     build_shear_checks_snapshot,
+)
+from engineering_page_sections.shear_summary import (
+    render_shear_explainer,
+    render_shear_summary,
 )
 from inputs_application.action_source_control import uses_load_analysis_actions
 
@@ -1888,107 +1887,6 @@ def render_shear():
 
     # Initialize step UI state (always-summary mode - no checkbox)
 
-    def _render_shear_explainer() -> None:
-        col_left, col_right = st.columns([1, 1])
-
-        with col_left:
-            st.markdown(
-                r"""
-This page computes **ultimate shear and torsion capacity** outputs in accordance with **AS 3600:2018** using the MCFT-based shear method, and reports the governing utilisation checks.
-
-- **Design shear capacity**
-  $ \phi V_{uc} = \phi(V_c + V_s) $, used for the governing shear strength check.
-
-- **Concrete shear contribution (MCFT)**
-  $ V_c = k_v \cdot b_v \cdot d_v \cdot \sqrt{f'_c} $, depends on $\varepsilon_x$ and $\theta_v$.
-
-- **Torsion and interaction (when applicable)**
-  $ V_{eq}^* = \sqrt{(V^*)^2 + V_{t,eq}^2} $, used for combined shear–torsion checks.
-
-### When to use each method
-
-Use the **simplified method** for typical non-prestressed reinforced concrete beams when the **AS 3600** simplified-method conditions are satisfied.
-
-Use the **general method** when those limits are not met, or when a more rigorous shear check is needed.
-
-The simplified route is for **ordinary beams only** where the standard conditions apply—for example a **non-prestressed** member, **no applied axial tension**, and the **ordinary material and property limits** the code requires for that method.
-
-### Why
-
-The simplified method is a **faster** standard check that uses **fixed code assumptions** (the MCFT-style simplification permitted for qualifying beams).
-
-The general method is **more detailed** because it **calculates shear parameters from the actual section actions and response**. That makes it more suitable when effects such as **axial force**, **torsion**, or other **non-standard conditions** are important.
-
-In short:
-
-- **Simplified** — quicker, standard code-permitted beam check when conditions are met.
-- **General** — more detailed, action-sensitive check.
-        """
-            )
-
-        with col_right:
-            spacer_col, img_col, info_col = st.columns([1, 5, 1])
-
-            with img_col:
-                st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
-                _safe_image(
-                    "assets/shear_flexural_cracks_dv.png",
-                    caption=None,
-                    width=396,
-                )
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            with info_col:
-                with info_i_button(use_container_width=True):
-                    calcbox(
-                        r"""
-**What is shear in a beam?**
-
-
-
-
-
-
-
-- Shear forces act **perpendicular to the beam axis**.
-
-- You can picture shear as a stack of playing cards where layers **try to slide** past each other.
-
-- In a beam, one part of the cross-section wants to slide relative to the next, creating **internal shear stresses**.
-
-
-
-
-
-
-
-**Critical section for shear – $d_v$**
-
-
-
-
-
-
-
-- The design shear check is taken at a distance **$d_v$ from the face of the support**.
-
-- At this section we take the **design shear $V^{\ast}$**, ignoring any distributed load between the support and $d_v$.
-
-- If significant concentrated loads fall inside this region, the behaviour is closer to a **strut-and-tie / deep beam** and a STM model is required.
-
-- AS 3600 defines effective shear depth
-
-
-
-  $$d_v = \max\left(0.72D,\;0.9d_0\right)$$
-
-
-
-  where $d_0$ is the depth to the centroid of the **tension reinforcement** in the tensile zone.
-
-"""
-                    )
-
     debug_mode = st.sidebar.checkbox(
         "Debug session state",
         key=f"debug_state_toggle_{st.session_state.get('page_slug','page')}"
@@ -2050,37 +1948,22 @@ In short:
         actions_mode=get_param("actions_mode", "manual"),
         show_mcft_breakdown=bool(st.session_state.get("show_mcft_breakdown", False)),
     )
-    rows_summary_full = build_shear_legacy_summary_rows(
-        shear_page_snapshot.check_pack.get("rows") or []
-    )
-    summary_util_raw = shear_page_snapshot.check_pack.get("summary_util")
-    try:
-        summary_util = float(summary_util_raw)
-    except (TypeError, ValueError):
-        summary_util = math.nan
-
-    update_results(
-        phi_Vu_cap=float(
-            shear_page_snapshot.check_pack.get("summary_phiVu_kN") or 0.0
+    render_shear_summary(
+        shear_page_snapshot,
+        publish_summary=lambda capacity, utilisation: update_results(
+            phi_Vu_cap=capacity,
+            Vu_utilisation=utilisation,
         ),
-        Vu_utilisation=(
-            float(summary_util)
-            if summary_util is not None and not math.isnan(summary_util)
-            else 0.0
+        publish_rows=lambda rows: update_results("shear", {"rows": rows}),
+        bind_clicks=bind_summary_clicks,
+        render_explainer_expander=render_page_explainer_expander,
+        render_explainer=lambda: render_shear_explainer(
+            st,
+            safe_image=_safe_image,
+            info_button=info_i_button,
+            calc_box=calcbox,
         ),
     )
-    rows_full = build_shear_clickable_summary_rows(rows_summary_full)
-    update_results("shear", {"rows": rows_full})
-    display_rows = filter_shear_summary_rows(
-        rows_summary_full,
-        show_mcft_breakdown=shear_page_snapshot.view.show_mcft_breakdown,
-    )
-    render_clickable_summary_table(
-        build_shear_clickable_summary_rows(display_rows),
-        key_prefix="shear_summary",
-    )
-    bind_summary_clicks()
-    render_page_explainer_expander(_render_shear_explainer)
     render_timing_mark("shear_page.runtime.summary.end")
 
     visualisation_placeholder = st.empty()
