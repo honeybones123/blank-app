@@ -102,11 +102,42 @@ def test_input_config_builder_has_no_solver_or_global_session_dependency() -> No
     assert "streamlit" not in imported_roots
     assert "bending_core" not in imported_roots
     assert "calculations" not in imported_roots
-    assert "st.session_state" not in source
+    builder = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "build_bending_input_panel_config"
+    )
+    builder_source = ast.get_source_segment(source, builder) or ""
+    assert "st.session_state" not in builder_source
 
 
-def test_runtime_uses_shared_bending_input_config_builder() -> None:
+def test_runtime_delegates_the_complete_input_region_to_the_shared_module() -> None:
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
 
-    assert "_bending_input_config = build_bending_input_panel_config(" in source
+    assert "render_bending_inputs(" in source
     assert "CheckInputPanelConfig(" not in source
+    assert "compact_check_input_regions(" not in source
+    assert "number_row(" not in source
+
+
+def test_input_module_retains_existing_widget_keys_and_state_gateways() -> None:
+    source = (
+        ROOT / "engineering_page_sections" / "bending_inputs.py"
+    ).read_text(encoding="utf-8")
+
+    for widget_key in (
+        "bending_P_star",
+        "bending_phi_b",
+        "bending_sec_shape",
+        "bending_D",
+        "bending_L",
+        "bending_fc",
+        "bending_fsy",
+    ):
+        assert widget_key in source
+    assert 'cover_key = f"bending_cover_{face}"' in source
+    assert "save_proxies_to_active_set()" in source
+    assert "load_proxies_from_active_set()" in source
+    assert "recalc_derived_values()" in source
+    assert "update_results()" in source
