@@ -84,6 +84,9 @@ from engineering_page_sections.stable_tabs import render_stable_tabs
 from engineering_page_sections.shear_page_context import (
     build_shear_page_snapshot,
 )
+from engineering_page_sections.shear_checks_context import (
+    build_shear_checks_snapshot,
+)
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -2607,6 +2610,16 @@ In short:
         )
         or "General εₓ-based (Cl. 8.2.4.2)"
     )
+    shear_checks_snapshot = build_shear_checks_snapshot(
+        page_snapshot=shear_page_snapshot,
+        calc_bundle=shear_bundle,
+        method=method,
+    )
+    live_shear_state = shear_checks_snapshot.torsion_dimensions.live_state
+    phi = shear_checks_snapshot.torsion_dimensions.phi
+    k_d = shear_checks_snapshot.torsion_dimensions.duct_factor
+    use_general_kv = shear_checks_snapshot.mcft_strength.use_general_kv
+    method = shear_checks_snapshot.mcft_strength.method
 
     b = live_shear_state["b"]
     D = live_shear_state["D"]
