@@ -109,7 +109,9 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
     bending = (
         ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
     ).read_text(encoding="utf-8")
-    shear = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8-sig")
+    shear = (
+        ROOT / "engineering_page_sections" / "shear_visualisation.py"
+    ).read_text(encoding="utf-8")
     creep = (ROOT / "creep.py").read_text(encoding="utf-8-sig")
     crack = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
 

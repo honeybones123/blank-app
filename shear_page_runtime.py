@@ -84,6 +84,7 @@ from engineering_page_sections.shear_visualisation import (
     _render_plotly_in_mcft_column,
     _standardise_shear_visual_layout,
     _support_pair_from_resolved_support_type,
+    render_shear_visualisation_block,
 )
 
 # ------------------------------------------------------------
@@ -616,56 +617,6 @@ def _render_shear_visualisation():
         _render_shear_behaviour_plot()
     else:
         _render_shear_cross_section()
-
-
-def _render_shear_visualisation_block(theta_v_deg: float | None = None):
-    with st.container():
-        st.markdown(
-            """
-<style>
-/* Shear page only: anchor is inside this container vertical block */
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) {
-    margin-top: 0.25rem !important;
-    padding-top: 0 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) .section-title {
-    margin-bottom: 0.35rem !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) h3,
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) h4 {
-    margin-bottom: 0.35rem !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) [data-testid="stPlotlyChart"] {
-    margin-bottom: 0.2rem !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) [data-testid="stTabs"] {
-    margin-top: 0.35rem !important;
-    padding-top: 0 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) div[data-testid="stRadio"] {
-    margin-top: 0.25rem !important;
-    padding-top: 0 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) label[data-testid="stWidgetLabel"] {
-    margin-bottom: 0.2rem !important;
-}
-</style>
-<div id="shear-visuals-block" class="shear-visuals-block" style="display:none;width:0;height:0;overflow:hidden;" aria-hidden="true"></div>
-""",
-            unsafe_allow_html=True,
-        )
-        render_section_title("Visualisation")
-        side_view_tab, section_tab, shear_diagram_tab = render_stable_tabs(
-            st,
-            labels=("Side view", "Section", "Shear diagram"),
-            scope_id="shear-visualisation-diagrams",
-        )
-        with side_view_tab:
-            _render_shear_side_view()
-        with section_tab:
-            _render_shear_cross_section()
-        with shear_diagram_tab:
-            _render_shear_force_diagram()
 
 
 def build_reo_circles_from_state(shape_code: str, dims: dict):
@@ -2171,8 +2122,13 @@ def render_shear():
     render_timing_mark("shear_page.runtime.inputs.end")
     render_timing_mark("shear_page.runtime.visualisation.render.start")
     shear_page_shell.render_visualisation(
-        lambda: _render_shear_visualisation_block(
-            theta_v_deg=shear_results.theta_v_deg
+        lambda: render_shear_visualisation_block(
+            st_module=st,
+            render_section_title=render_section_title,
+            render_tabs=render_stable_tabs,
+            render_side_view=_render_shear_side_view,
+            render_cross_section=_render_shear_cross_section,
+            render_force_diagram=_render_shear_force_diagram,
         )
     )
     render_timing_mark("shear_page.runtime.visualisation.render.end")

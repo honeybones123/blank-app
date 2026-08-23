@@ -10,6 +10,31 @@ from engineering_page_sections import shear_visualisation
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class _FakeContext:
+    def __init__(self, events: list[tuple[str, object]], name: str):
+        self.events = events
+        self.name = name
+
+    def __enter__(self):
+        self.events.append(("enter", self.name))
+        return self
+
+    def __exit__(self, *_args):
+        self.events.append(("exit", self.name))
+
+
+class _FakeStreamlit:
+    def __init__(self):
+        self.events: list[tuple[str, object]] = []
+
+    def container(self):
+        self.events.append(("container", "visualisation"))
+        return _FakeContext(self.events, "visualisation")
+
+    def markdown(self, body, **kwargs):
+        self.events.append(("markdown", "shear-visuals-block" in body))
+
+
 def test_visualisation_module_has_no_runtime_global_binding() -> None:
     module_source = (
         ROOT / "engineering_page_sections" / "shear_visualisation.py"
@@ -22,6 +47,50 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "_shear_visualisation_section" not in runtime_source
     assert "render_centered_plotly=" in runtime_source
     assert "render_animated_plotly=" in runtime_source
+    assert "def _render_shear_visualisation_block" not in runtime_source
+    assert "lambda: render_shear_visualisation_block(" in runtime_source
+
+
+def test_visualisation_block_preserves_three_tab_render_order() -> None:
+    fake = _FakeStreamlit()
+
+    def render_tabs(st_module, *, labels, scope_id):
+        assert st_module is fake
+        fake.events.append(("tabs", (labels, scope_id)))
+        return tuple(_FakeContext(fake.events, label) for label in labels)
+
+    shear_visualisation.render_shear_visualisation_block(
+        st_module=fake,
+        render_section_title=lambda title: fake.events.append(("title", title)),
+        render_tabs=render_tabs,
+        render_side_view=lambda: fake.events.append(("render", "Side view")),
+        render_cross_section=lambda: fake.events.append(("render", "Section")),
+        render_force_diagram=lambda: fake.events.append(("render", "Shear diagram")),
+    )
+
+    assert fake.events == [
+        ("container", "visualisation"),
+        ("enter", "visualisation"),
+        ("markdown", True),
+        ("title", "Visualisation"),
+        (
+            "tabs",
+            (
+                ("Side view", "Section", "Shear diagram"),
+                "shear-visualisation-diagrams",
+            ),
+        ),
+        ("enter", "Side view"),
+        ("render", "Side view"),
+        ("exit", "Side view"),
+        ("enter", "Section"),
+        ("render", "Section"),
+        ("exit", "Section"),
+        ("enter", "Shear diagram"),
+        ("render", "Shear diagram"),
+        ("exit", "Shear diagram"),
+        ("exit", "visualisation"),
+    ]
 
 
 def test_static_mcft_renderer_receives_explicit_mount_dependency() -> None:
@@ -88,4 +157,3 @@ def test_support_pair_adapter_remains_stable() -> None:
     assert adapter("Pinned–Fixed") == ("Pinned", "Fixed")
     assert adapter("Continuous – interior span") == ("Pinned", "Pinned")
     assert adapter(None) is None
-
