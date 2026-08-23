@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
+import streamlit as st
 
 from shear_visuals import (
     BEHAVIOUR_VISUAL_HEIGHT,
@@ -18,6 +19,7 @@ from widgets_helpers import (
     COMPACT_SIDE_VIEW_HEIGHT_PX,
     compact_side_view_figure,
     inject_compact_side_view_spacing,
+    render_plotly_diagram,
 )
 
 
@@ -75,6 +77,57 @@ def _standardise_shear_visual_layout(fig, *, title_pad_t: int = 28):
         margin=dict(l=10, r=10, t=title_pad_t, b=10),
     )
     return fig
+
+
+def _render_centered_shear_plotly(
+    fig,
+    *,
+    chart_key: str,
+    max_width_px: int = SHEAR_VISUAL_MAX_WIDTH_PX,
+    height_px: int = SHEAR_VISUAL_HEIGHT_PX,
+    title_pad_t: int = 28,
+    compact_top: bool = False,
+    config: dict | None = None,
+):
+    """Mount a Shear Plotly figure in the established centered frame."""
+
+    fig = _standardise_shear_visual_layout(fig, title_pad_t=title_pad_t)
+    fig.update_layout(height=int(height_px))
+    wrapper_id = f"shear-plot-wrap-{chart_key}"
+    compact_top_css = ""
+    if compact_top:
+        compact_top_css = "margin-top: 0 !important; padding-top: 0 !important;"
+
+    st.markdown(
+        f"""
+        <style>
+        div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:has(#{wrapper_id}) {{
+            width: 100%;
+        }}
+        #{wrapper_id} {{
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            {compact_top_css}
+        }}
+        #{wrapper_id} > div {{
+            width: min(100%, {max_width_px}px);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f'<div id="{wrapper_id}"><div>', unsafe_allow_html=True)
+    render_plotly_diagram(
+        fig,
+        key=chart_key,
+        title="Shear diagram",
+        center=True,
+        config=config or SHEAR_VISUAL_CONFIG,
+    )
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def _render_shear_cross_section(runtime: ShearVisualisationRuntime) -> None:
@@ -404,6 +457,7 @@ __all__ = [
     "SHEAR_VISUAL_MAX_WIDTH_PX",
     "ShearVisualisationRuntime",
     "_coalesce_num",
+    "_render_centered_shear_plotly",
     "_render_mcft_behaviour_chart",
     "_render_plotly_in_mcft_column",
     "_render_shear_cross_section",
