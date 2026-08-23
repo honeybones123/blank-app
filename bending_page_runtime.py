@@ -87,6 +87,7 @@ from engineering_page_sections.bending_page_context import (
     BendingCaseSnapshot,
     build_bending_page_snapshot,
 )
+from engineering_page_sections.bending_page_shell import BendingPageShell
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -733,7 +734,8 @@ _bending_calculations_section.bind_runtime(globals())
 def render_bending():
     # Reserve the page-top result container before invisible CSS/style elements
     # so its heading aligns with the other engineering pages.
-    top_container = st.container()
+    bending_page_shell = BendingPageShell.create(st)
+    top_container = bending_page_shell.top
     render_timing_mark("bending_page.runtime.start")
     # NOTE: init_shared_session_state() is called by app.py router before this function runs.
     # Pages must NOT call init/hydrate themselves - the router owns the lifecycle.
@@ -1216,16 +1218,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.session_state.get("_bending_diagram_shell_generation", 0) or 0
         ) + 1
         st.session_state["_bending_diagram_shell_generation"] = diagram_shell_generation
-        diagram_frame_container = st.container(key="bending_diagram_frame")
-        with diagram_frame_container:
-            diagram_options_placeholder = st.empty()
-            diagram_section_placeholder = st.empty()
-        inputs_placeholder = st.empty()
-        # The detailed tab body is interactive.  Keep a stable multi-element
-        # container for it instead of replacing an ``st.empty`` slot on every
-        # tab click; replacement remounts the whole calculation subtree and
-        # makes the browser lose its scroll position.
-        calc_blocks_container = st.container()
+        shell_content = bending_page_shell.reserve_content(st)
+        diagram_options_placeholder = shell_content.diagram_options
+        diagram_section_placeholder = shell_content.diagram_section
+        inputs_placeholder = shell_content.inputs
+        calc_blocks_container = shell_content.calculations
         # Both target containers already have their final page positions.
         # Publish their contents back-to-back only after those positions are
         # allocated so the intervening placeholders cannot split the visible

@@ -555,9 +555,7 @@ def test_bending_summary_binding_is_deferred_without_changing_layout() -> None:
     """The browser component must not delay or shift the visible shell."""
 
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
-    frame = source.index(
-        'diagram_frame_container = st.container(key="bending_diagram_frame")'
-    )
+    frame = source.index("shell_content = bending_page_shell.reserve_content(st)")
     calculation_shell = source.index(
         "render_bending_calculation_loading_shell(", frame
     )

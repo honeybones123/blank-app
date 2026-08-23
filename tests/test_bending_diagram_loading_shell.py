@@ -9,9 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_bending_publishes_fixed_diagram_shell_before_calculation_cards() -> None:
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
 
-    containers = source.index(
-        'diagram_frame_container = st.container(key="bending_diagram_frame")'
-    )
+    containers = source.index("shell_content = bending_page_shell.reserve_content(st)")
     lightweight_panel = source.index(
         "_render_bending_diagram_bundle_panel(", containers
     )
@@ -23,27 +21,29 @@ def test_bending_publishes_fixed_diagram_shell_before_calculation_cards() -> Non
 
 
 def test_bending_shells_publish_back_to_back_after_stable_positions_exist() -> None:
-    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
+    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
+    shell = (
+        ROOT / "engineering_page_sections" / "bending_page_shell.py"
+    ).read_text(encoding="utf-8-sig")
 
-    frame = source.index(
-        'diagram_frame_container = st.container(key="bending_diagram_frame")'
-    )
-    options = source.index("diagram_options_placeholder = st.empty()", frame)
-    slot = source.index("diagram_section_placeholder = st.empty()", options)
-    inputs = source.index("inputs_placeholder = st.empty()", slot)
-    calculation_container = source.index("calc_blocks_container = st.container()", inputs)
-    calculation_shell = source.index(
+    frame = shell.index('st_module.container(key="bending_diagram_frame")')
+    options = shell.index("diagram_options = st_module.empty()", frame)
+    slot = shell.index("diagram_section = st_module.empty()", options)
+    inputs = shell.index("inputs = st_module.empty()", slot)
+    calculation_container = shell.index("calculations = st_module.container()", inputs)
+    reserve = runtime.index("shell_content = bending_page_shell.reserve_content(st)")
+    calculation_shell = runtime.index(
         "render_bending_calculation_loading_shell(\n            calc_blocks_container",
-        calculation_container,
+        reserve,
     )
-    lightweight_panel = source.index(
+    lightweight_panel = runtime.index(
         "_render_bending_diagram_bundle_panel(", calculation_shell
     )
     assert (
         frame < options < slot < inputs
         < calculation_container
-        < calculation_shell < lightweight_panel
     )
+    assert reserve < calculation_shell < lightweight_panel
 
 
 def test_bending_diagram_shell_reserves_locked_completed_region_height() -> None:
