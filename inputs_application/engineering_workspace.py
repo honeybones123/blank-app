@@ -70,7 +70,12 @@ def _render_atomic_workspace_browser_runtime() -> None:
 (function () {
   const parentWindow = window.parent;
   const doc = parentWindow && parentWindow.document;
-  if (!doc || !doc.body) return;
+  if (!doc) return;
+  // Capture one concrete Node before Streamlit can replace the document body
+  // during a fast page remount. Re-reading ``doc.body`` at observe-time can
+  // otherwise race with that replacement and pass ``null`` to MutationObserver.
+  const observationRoot = doc.body || doc.documentElement;
+  if (!observationRoot) return;
 
   const previousRuntime = (
     parentWindow.__inputsAtomicRevisionRuntimeV2 ||
@@ -243,7 +248,7 @@ def _render_atomic_workspace_browser_runtime() -> None:
   doc.addEventListener('pointerdown', cancelForUserIntent, true);
 
   const observer = new parentWindow.MutationObserver(inspectCompletion);
-  observer.observe(doc.body, {childList: true, subtree: true, attributes: true});
+  observer.observe(observationRoot, {childList: true, subtree: true, attributes: true});
   doc.documentElement.dataset.inputsAtomicRevisionRuntime = '3';
   parentWindow[runtimeKey] = {observer, inspectCompletion};
 })();

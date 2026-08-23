@@ -56,17 +56,21 @@ def test_shear_summary_renders_before_explainer_inputs_visualisation_and_checks(
 
 
 def test_creep_summary_renders_before_explainer_inputs_and_diagram_placeholder():
-    text = _top_level_function("creep.py", "render_creep")
+    text = _top_level_function("creep_page_runtime.py", "render_creep")
     authority = text.index("summary_values = compute_creep_results(publish=True)")
-    summary = text.index("render_clickable_summary_table(", authority)
-    explainer = text.index("render_page_explainer_expander(_render_creep_explainer)")
-    inputs = text.index("render_compact_check_inputs(")
-    diagram = text.index("side_view_placeholder = st.empty()")
+    summary = text.index("render_creep_summary(", authority)
+    explainer = text.index(
+        "render_page_explainer_expander(lambda: render_creep_explainer(st))"
+    )
+    inputs = text.index("render_creep_inputs(")
+    diagram = text.index("CreepPageShell.reserve_visualisation(st)")
 
     assert authority < summary < explainer
     assert summary < inputs
     assert summary < diagram
-    assert 'current_authoritative_family(st.session_state, "creep")' in _read("creep.py")
+    assert 'current_authoritative_family(st.session_state, "creep")' in _read(
+        "creep_page_runtime.py"
+    )
 
 
 def test_shrinkage_summary_renders_before_explainer_inputs_and_diagram_placeholder():
@@ -120,13 +124,13 @@ def test_summary_first_migration_keeps_existing_input_card_and_lazy_boundaries()
     shear = _top_level_function("shear_page_runtime.py", "render_shear")
     crack = _top_level_function("crack_page_runtime.py", "render_crack")
     deflection = _top_level_function("deflection_page_runtime.py", "render_deflection")
-    creep = _top_level_function("creep.py", "render_creep")
+    creep = _top_level_function("creep_page_runtime.py", "render_creep")
     shrinkage = _top_level_function("shrinkage.py", "render_shrinkage")
 
     assert "render_shear_inputs(" in shear
     assert "compact_check_input_columns(" in crack
     assert "compact_check_input_columns(" in deflection
-    assert "render_compact_check_inputs(" in creep
+    assert "render_creep_inputs(" in creep
     assert "render_compact_check_inputs(" in shrinkage
     assert "shear_page_shell = ShearPageShell.reserve_after_summary(" in shear
     assert "shear_page_shell.render_visualisation(" in shear

@@ -28,7 +28,7 @@ PAGE_CONTRACTS = {
         ),
         "widgets": ("shear_b", "shear_D", "shear_lig_d", "shear_lig_legs", "shear_s_lig"),
     },
-    "creep.py": {
+    "engineering_page_sections/creep_inputs.py": {
         "categories": ("section_member", "material_environment", "time_loading"),
         "widgets": ("cr_b", "cr_D", "cr_faces", "cr_env", "inputs_t_creep", "inputs_age_at_loading"),
     },

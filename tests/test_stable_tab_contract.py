@@ -94,7 +94,7 @@ def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:
             "bending-calculation-checks",
         ),
         ("shear_page_runtime.py", "shear-calculation-checks"),
-        ("creep.py", "creep-calculation-checks"),
+        ("engineering_page_sections/creep_checks.py", "creep-calculation-checks"),
     ):
         source = (ROOT / filename).read_text(encoding="utf-8-sig")
         assert "from engineering_page_sections.stable_tabs import" in source
@@ -112,7 +112,9 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
     shear = (
         ROOT / "engineering_page_sections" / "shear_visualisation.py"
     ).read_text(encoding="utf-8")
-    creep = (ROOT / "creep.py").read_text(encoding="utf-8-sig")
+    creep = (
+        ROOT / "engineering_page_sections" / "creep_visualisation.py"
+    ).read_text(encoding="utf-8-sig")
     crack = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
 
     assert 'scope_id="bending-section-diagrams"' in bending

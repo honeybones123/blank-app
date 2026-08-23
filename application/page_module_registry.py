@@ -26,7 +26,7 @@ class PageModuleSpec:
 CALCULATION_PAGE_MODULES: dict[str, PageModuleSpec] = {
     "bending": PageModuleSpec("bending_page", "render_bending"),
     "shear": PageModuleSpec("shear_page", "render_shear"),
-    "creep": PageModuleSpec("creep", "render_creep"),
+    "creep": PageModuleSpec("creep_page", "render_creep"),
     "shrinkage": PageModuleSpec("shrinkage", "render_shrinkage"),
     "crack": PageModuleSpec("crack_page", "render_crack_control"),
     "deflection": PageModuleSpec("deflection", "render_deflection"),
