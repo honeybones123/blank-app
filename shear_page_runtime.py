@@ -3,7 +3,6 @@ import os
 import json
 import time
 import re
-import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -25,8 +24,6 @@ from shear_diagrams import (
 )
 from shear_visuals import (
     BEHAVIOUR_VISUAL_WIDTH,
-    SIDE_VIEW_VISUAL_HEIGHT,
-    SIDE_VIEW_VISUAL_WIDTH,
     build_shear_behaviour_figure,
     build_shear_cross_section_figure,
     build_shear_side_view_figure,
@@ -37,7 +34,7 @@ from ui.diagrams.principal_stress_cue_diagram import (
 )
 from shear_core import build_shear_zone_layout_strip_figure, derive_eps_top_bot_for_step4_diagram
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_result_page_css, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
+from widgets_helpers import apply_result_page_css, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram
 from step_ui import render_expandable_step
 from engineering_check_ui import SHEAR_ROW_UID_TO_TAB
 from ui_seamless_steps import bind_summary_clicks
@@ -78,26 +75,20 @@ from engineering_page_sections.shear_inputs import render_shear_inputs
 
 from engineering_page_sections.shear_visualisation import (
     MCFT_BEHAVIOUR_MARGIN,
+    SHEAR_VISUAL_CONFIG,
     SHEAR_VISUAL_HEIGHT_PX,
+    SHEAR_VISUAL_MAX_WIDTH_PX,
+    ShearVisualisationRuntime,
     _coalesce_num,
     _render_mcft_behaviour_chart,
     _render_plotly_in_mcft_column,
     _standardise_shear_visual_layout,
-    _support_pair_from_resolved_support_type,
     render_shear_visualisation_block,
 )
 
 # ------------------------------------------------------------
 #  Helper functions for diagrams
 # ------------------------------------------------------------
-
-SHEAR_SIDE_VIEW_HEIGHT_PX = SIDE_VIEW_VISUAL_HEIGHT
-SHEAR_SIDE_VIEW_MAX_WIDTH_PX = SIDE_VIEW_VISUAL_WIDTH
-SHEAR_VISUAL_MAX_WIDTH_PX = 760
-SHEAR_VISUAL_CONFIG = {
-    "displayModeBar": False,
-    "responsive": True,
-}
 
 SHEAR_CHECK_TAB_LABELS = (
     "Torsion + dimensions",
@@ -167,143 +158,12 @@ def _safe_float(x, fallback):
         return float(fallback)
 
 
-def _render_shear_cross_section():
-    inject_compact_side_view_spacing("shear-section-compact")
-    fig = build_shear_cross_section_figure(height=COMPACT_SIDE_VIEW_HEIGHT_PX)
-    section_fig = compact_side_view_figure(
-        _standardise_shear_visual_layout(fig, title_pad_t=8)
-    )
-    _render_centered_shear_plotly(
-        section_fig,
-        chart_key="shear_section_diagram",
-        max_width_px=SHEAR_VISUAL_MAX_WIDTH_PX,
-        height_px=COMPACT_SIDE_VIEW_HEIGHT_PX,
-        title_pad_t=8,
-    )
+def _build_shear_sfd_bmd_figure(**kwargs):
+    """Resolve the existing SFD/BMD builder only when the Shear diagram mounts."""
 
-
-def _render_shear_side_view():
-    inject_compact_side_view_spacing("shear-side-view-compact")
-    try:
-        _phi_vu = float(get_param("phi_Vu_cap") or 0.0)
-        _v_eq = float(get_param("V_eq_kN") or 0.0)
-    except (TypeError, ValueError):
-        _phi_vu, _v_eq = 0.0, 0.0
-    # Sectional shear check (for caption + diagram title only). Zoned stirrups on the graph
-    # follow Check 10 whenever layout data exists — not only when this fails.
-    shear_fails = _phi_vu > 0.0 and _v_eq > _phi_vu + 1e-9
-    st.caption(
-        "Side view: when Check 10 layout exists, stirrups follow required zone spacings from the envelope; "
-        "otherwise at provided spacing (input s_lig). φV_u uses effective spacing from results (provided or "
-        "required when “Apply auto spacing” is on)."
-        if shear_fails
-        else "Side view: required zone spacings from Check 10 when available; otherwise provided spacing (s_lig). "
-        "φV_u check uses effective spacing (provided unless auto spacing applies envelope spacing)."
-    )
-    fig = compact_side_view_figure(
-        build_shear_side_view_figure(
-            shear_fails=shear_fails,
-            height=COMPACT_SIDE_VIEW_HEIGHT_PX,
-        )
-    )
-    _render_centered_shear_plotly(
-        fig,
-        chart_key="shear_side_view_diagram",
-        max_width_px=SHEAR_SIDE_VIEW_MAX_WIDTH_PX,
-        height_px=COMPACT_SIDE_VIEW_HEIGHT_PX,
-        title_pad_t=8,
-    )
-
-
-def _resolve_shear_visual_supports(length_m: float) -> tuple[list[float], list[str]]:
-    from deflection_support import get_deflection_diagram_support_condition, _governing_span_support_pair
-
-    support_positions: list[float] = []
-    support_types: list[str] = []
-    beam_mode = str(get_param("design_beam_system_mode", "Single span") or "Single span")
-    sup_res = get_deflection_diagram_support_condition(st.session_state)
-    support_pair = _governing_span_support_pair(st.session_state, sup_res)
-
-    if (
-        beam_mode == "Multi-span"
-        and isinstance(support_pair, tuple)
-        and len(support_pair) == 2
-    ):
-        try:
-            span_count = max(1, int(float(st.session_state.get("sfd_span_count", 0.0) or 0.0)))
-        except Exception:
-            span_count = 1
-        controlling_idx = int(sup_res.get("controlling_span_idx", 0) or 0)
-        controlling_idx = max(0, min(controlling_idx, span_count - 1))
-        try:
-            span_len_m = float(st.session_state.get(f"sfd_span_len_{controlling_idx + 1}", 0.0) or 0.0)
-        except Exception:
-            span_len_m = 0.0
-        if abs(float(span_len_m) - float(length_m)) <= 1e-6:
-            support_positions = [0.0, float(length_m)]
-            support_types = [str(support_pair[0]), str(support_pair[1])]
-
-    if not support_positions or not support_types:
-        sup = str(sup_res.get("support_type") or get_param("defl_support_type", "Simply supported") or "Simply supported")
-        support_pair_fallback = _support_pair_from_resolved_support_type(sup)
-        if "cantilever" in sup.lower():
-            support_positions = [0.0]
-            support_types = ["Fixed"]
-        elif isinstance(support_pair_fallback, tuple) and len(support_pair_fallback) == 2:
-            support_positions = [0.0, float(length_m)]
-            support_types = [str(support_pair_fallback[0]), str(support_pair_fallback[1])]
-        else:
-            support_positions = [0.0, float(length_m)]
-            support_types = ["Pinned", "Roller"]
-
-    return support_positions, support_types
-
-
-def _render_shear_force_diagram():
     from beam_diagram_runtime import plot_sfd_bmd_plotly
 
-    mode = str(get_param("actions_mode", "manual") or "manual").strip().lower()
-    L_m = max(float(get_param("L", 3000.0) or 3000.0) / 1000.0, 0.1)
-    shear_x_raw = np.asarray(get_param("shear_x", []) or [], dtype=float)
-    shear_V_signed_raw = np.asarray(get_param("shear_V_signed", []) or [], dtype=float)
-    shear_V_raw = np.asarray(get_param("shear_V", []) or [], dtype=float)
-    support_type = str(get_param("support_type", get_param("defl_support_type", "simply_supported")) or "simply_supported").strip().lower()
-
-    if mode == "design" and shear_x_raw.size > 1:
-        if shear_V_signed_raw.size == shear_x_raw.size:
-            x_plot = shear_x_raw
-            V_plot = shear_V_signed_raw
-        elif shear_V_raw.size == shear_x_raw.size:
-            x_plot = shear_x_raw
-            V_plot = shear_V_raw
-        else:
-            x_plot = np.linspace(0.0, L_m, 100)
-            V_plot = np.zeros_like(x_plot, dtype=float)
-    else:
-        x_plot = np.linspace(0.0, L_m, 100)
-        V_star = float(get_param("uls_Vstar", 0.0) or 0.0)
-        if "cantilever" in support_type:
-            V_plot = V_star * (1.0 - x_plot / max(L_m, 1e-9))
-        else:
-            V_plot = V_star * (1.0 - 2.0 * x_plot / max(L_m, 1e-9))
-
-    support_positions, support_types = _resolve_shear_visual_supports(L_m)
-    fig_sfd, _ = plot_sfd_bmd_plotly(
-        x=x_plot,
-        V=V_plot,
-        M=np.zeros_like(x_plot, dtype=float),
-        L=L_m,
-        support_positions=support_positions,
-        support_types=support_types,
-    )
-    fig_sfd.update_layout(height=320)
-    st.caption("Shear V(x)")
-    render_plotly_diagram(
-        fig_sfd,
-        key="shear_visual_sfd_diagram",
-        title="Shear force diagram",
-        config=SHEAR_VISUAL_CONFIG,
-    )
+    return plot_sfd_bmd_plotly(**kwargs)
 
 
 def _render_animated_plotly_figure(
@@ -2123,12 +1983,18 @@ def render_shear():
     render_timing_mark("shear_page.runtime.visualisation.render.start")
     shear_page_shell.render_visualisation(
         lambda: render_shear_visualisation_block(
-            st_module=st,
-            render_section_title=render_section_title,
-            render_tabs=render_stable_tabs,
-            render_side_view=_render_shear_side_view,
-            render_cross_section=_render_shear_cross_section,
-            render_force_diagram=_render_shear_force_diagram,
+            ShearVisualisationRuntime(
+                st=st,
+                get_param=get_param,
+                render_timing_mark=render_timing_mark,
+                render_plotly_diagram=render_plotly_diagram,
+                render_centered_plotly=_render_centered_shear_plotly,
+                render_section_title=render_section_title,
+                render_tabs=render_stable_tabs,
+                build_cross_section_figure=build_shear_cross_section_figure,
+                build_side_view_figure=build_shear_side_view_figure,
+                build_sfd_bmd_figure=_build_shear_sfd_bmd_figure,
+            )
         )
     )
     render_timing_mark("shear_page.runtime.visualisation.render.end")

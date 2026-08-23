@@ -48,10 +48,18 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "render_centered_plotly=" in runtime_source
     assert "render_animated_plotly=" in runtime_source
     assert "def _render_shear_visualisation_block" not in runtime_source
+    assert "def _render_shear_side_view" not in runtime_source
+    assert "def _render_shear_cross_section" not in runtime_source
+    assert "def _render_shear_force_diagram" not in runtime_source
+    assert "def _resolve_shear_visual_supports" not in runtime_source
+    assert "ShearVisualisationRuntime(" in runtime_source
+    assert "build_cross_section_figure=build_shear_cross_section_figure" in runtime_source
+    assert "build_side_view_figure=build_shear_side_view_figure" in runtime_source
+    assert "build_sfd_bmd_figure=_build_shear_sfd_bmd_figure" in runtime_source
     assert "lambda: render_shear_visualisation_block(" in runtime_source
 
 
-def test_visualisation_block_preserves_three_tab_render_order() -> None:
+def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> None:
     fake = _FakeStreamlit()
 
     def render_tabs(st_module, *, labels, scope_id):
@@ -59,14 +67,35 @@ def test_visualisation_block_preserves_three_tab_render_order() -> None:
         fake.events.append(("tabs", (labels, scope_id)))
         return tuple(_FakeContext(fake.events, label) for label in labels)
 
-    shear_visualisation.render_shear_visualisation_block(
-        st_module=fake,
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_shear_side_view",
+        lambda _runtime: fake.events.append(("render", "Side view")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_shear_cross_section",
+        lambda _runtime: fake.events.append(("render", "Section")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_shear_force_diagram",
+        lambda _runtime: fake.events.append(("render", "Shear diagram")),
+    )
+
+    runtime = shear_visualisation.ShearVisualisationRuntime(
+        st=fake,
+        get_param=lambda *_args, **_kwargs: None,
+        render_timing_mark=lambda *_args, **_kwargs: None,
+        render_plotly_diagram=lambda *_args, **_kwargs: None,
+        render_centered_plotly=lambda *_args, **_kwargs: None,
         render_section_title=lambda title: fake.events.append(("title", title)),
         render_tabs=render_tabs,
-        render_side_view=lambda: fake.events.append(("render", "Side view")),
-        render_cross_section=lambda: fake.events.append(("render", "Section")),
-        render_force_diagram=lambda: fake.events.append(("render", "Shear diagram")),
+        build_cross_section_figure=lambda **_kwargs: go.Figure(),
+        build_side_view_figure=lambda **_kwargs: go.Figure(),
+        build_sfd_bmd_figure=lambda **_kwargs: (go.Figure(), go.Figure()),
     )
+    shear_visualisation.render_shear_visualisation_block(runtime)
 
     assert fake.events == [
         ("container", "visualisation"),
