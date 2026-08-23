@@ -181,8 +181,8 @@ def build_bending_report(top_results: dict, params: dict) -> dict:
     """
     Build the bending report structure (tabs + calc boxes) from computed values.
 
-    This function replicates the calc box structure from render_uls_tab,
-    render_min_strength_tab, and render_sls_tab, but without UI rendering.
+    This function replicates the authoritative check outputs without invoking
+    any of the UI renderers.
 
     Args:
         top_results: Dict from _compute_bending_capacity() with all calculated values
@@ -509,7 +509,7 @@ def build_bending_report(top_results: dict, params: dict) -> dict:
             ],
         ))
 
-    # SLS tab - read from session_state if available (computed by render_sls_tab)
+    # SLS values are read from the authoritative publication when available.
     sls_boxes = []
     Ms = params.get("Mu_star_sls", Mu_star)  # service moment (kNm)
     if Mu_star_sls is not None:

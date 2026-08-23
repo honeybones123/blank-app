@@ -14,13 +14,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_active_sls_tab_delegates_to_the_authoritative_six_check_renderer() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
-    active = source[source.index("def render_sls_tab(") :]
+    view = (
+        ROOT / "engineering_page_sections" / "bending_sls_checks_view.py"
+    ).read_text(encoding="utf-8")
+    legacy_tabs = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
 
-    delegate = active.index("return render_authoritative_sls_checks(")
-    legacy_local_solver = active.index("nb_bot = st.session_state.get")
-    assert delegate < legacy_local_solver
-    assert "top_results=top_results" in active[:legacy_local_solver]
+    assert "render_authoritative_sls_checks(" in view
+    assert "top_results=view.mutable_results()" in view
+    assert "from bending_tabs import" not in view
+    assert "def render_sls_tab(" not in legacy_tabs
+    assert "nb_bot = st.session_state.get" not in legacy_tabs
 
 
 def test_sls_teaching_sequence_is_n_dn_icr_curvature_strain_stress() -> None:

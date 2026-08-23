@@ -5,6 +5,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import engineering_page_sections.bending_sls_checks as authoritative_sls_checks
 
 from engineering_page_sections.bending_checks_context import (
     BendingChecksSnapshot,
@@ -155,9 +156,13 @@ def test_check_view_boundaries_forward_typed_inputs_to_legacy_renderers(
         return _inner
 
     legacy.render_uls_tab = record("uls")
-    legacy.render_sls_tab = record("sls")
     legacy.render_min_strength_tab = record("minimum")
     monkeypatch.setitem(sys.modules, "bending_tabs", legacy)
+    monkeypatch.setattr(
+        authoritative_sls_checks,
+        "render_authoritative_sls_checks",
+        record("sls"),
+    )
     checks = _checks("positive")
 
     render_bending_uls_checks(checks.uls)
@@ -174,10 +179,15 @@ def test_check_view_boundaries_forward_typed_inputs_to_legacy_renderers(
         "moment_sign": "positive",
     }
     sls_args, sls_kwargs = calls["sls"]
-    assert sls_args[1:] == pytest.approx(
-        (250.0, 450.0, 410.0, 500.0, 30_000.0, 200_000.0, 70.0)
-    )
-    assert sls_kwargs == {"summary_mode": False, "moment_sign": "positive"}
+    assert sls_args == ()
+    assert sls_kwargs["b"] == pytest.approx(250.0)
+    assert sls_kwargs["D"] == pytest.approx(450.0)
+    assert sls_kwargs["d"] == pytest.approx(410.0)
+    assert sls_kwargs["Ast"] == pytest.approx(500.0)
+    assert sls_kwargs["Ec"] == pytest.approx(30_000.0)
+    assert sls_kwargs["Es"] == pytest.approx(200_000.0)
+    assert sls_kwargs["Mu_star"] == pytest.approx(70.0)
+    assert sls_kwargs["moment_sign"] == "positive"
     minimum_args, minimum_kwargs = calls["minimum"]
     assert minimum_args[1:] == pytest.approx(
         (250.0, 450.0, 40.0, 500.0, 500.0)
@@ -198,7 +208,6 @@ def test_runtime_uses_one_checks_snapshot_and_no_legacy_dom_reorder() -> None:
 def test_each_check_boundary_has_one_legacy_renderer_owner() -> None:
     files = {
         "bending_uls_checks_view.py": "render_uls_tab",
-        "bending_sls_checks_view.py": "render_sls_tab",
         "bending_minimum_strength_checks_view.py": "render_min_strength_tab",
     }
     for filename, renderer in files.items():
@@ -207,6 +216,15 @@ def test_each_check_boundary_has_one_legacy_renderer_owner() -> None:
         ).read_text(encoding="utf-8")
         assert source.count(f"from bending_tabs import {renderer}") == 1
         assert source.count(f"{renderer}(") == 1
+
+    sls_source = (
+        ROOT / "engineering_page_sections" / "bending_sls_checks_view.py"
+    ).read_text(encoding="utf-8")
+    assert "from bending_tabs import" not in sls_source
+    assert sls_source.count("render_authoritative_sls_checks(") == 1
+    assert "def render_sls_tab(" not in (
+        ROOT / "bending_tabs.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_checks_coordinator_is_the_only_calculation_tab_layout_owner() -> None:
