@@ -33,6 +33,22 @@ def _bundle_ids(seed: int = 1):
     return sections, sides, moment, bundle
 
 
+def _diagram_runtime(session, parameters):
+    noop = lambda *args, **kwargs: None
+    return bundle_renderer.BendingDiagramRuntime(
+        st=SimpleNamespace(session_state=session),
+        get_param=lambda name, default=None: parameters.get(name, default),
+        render_timing_mark=noop,
+        plot_stress_strain_profiles=noop,
+        plot_material_stress_strain_curves=noop,
+        figure_bmd_from_state=noop,
+        render_plotly_diagram=noop,
+        render_section_title=noop,
+        render_stable_tabs=noop,
+        render_lazy_expander=noop,
+    )
+
+
 def test_fingerprints_are_deterministic_and_dependency_sensitive() -> None:
     a = section_stress_strain_fingerprint({"b": 250.0, "D": 300.0})
     b = section_stress_strain_fingerprint({"D": 300.0, "b": 250.0})
@@ -182,18 +198,7 @@ def test_side_view_identity_ignores_unrelated_results_publication(
         "shear_M_uls_kNm": [0.0, 200.0],
         "delta_total": 2.5,
     }
-    monkeypatch.setattr(
-        bundle_renderer,
-        "st",
-        SimpleNamespace(session_state=session),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        bundle_renderer,
-        "get_param",
-        lambda name, default=None: parameters.get(name, default),
-        raising=False,
-    )
+    runtime = _diagram_runtime(session, parameters)
 
     import shear_visuals
     from ui.diagrams import crack_side_view_diagram
@@ -220,6 +225,7 @@ def test_side_view_identity_ignores_unrelated_results_publication(
     )
 
     before = bundle_renderer._side_view_identity_payload(
+        runtime,
         section_fingerprint="section-a",
         state_option="ULS",
         projected_state={"dn": 26.6},
@@ -229,6 +235,7 @@ def test_side_view_identity_ignores_unrelated_results_publication(
         "unrelated_deflection_page_value": "changed",
     }
     after = bundle_renderer._side_view_identity_payload(
+        runtime,
         section_fingerprint="section-a",
         state_option="ULS",
         projected_state={"dn": 26.6},
@@ -251,18 +258,7 @@ def test_side_view_identity_tracks_relevant_authoritative_inputs(
         "delta_total": 2.5,
     }
     model = {"span_m": 3.0, "support_condition": "simply_supported"}
-    monkeypatch.setattr(
-        bundle_renderer,
-        "st",
-        SimpleNamespace(session_state=session),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        bundle_renderer,
-        "get_param",
-        lambda name, default=None: parameters.get(name, default),
-        raising=False,
-    )
+    runtime = _diagram_runtime(session, parameters)
 
     import shear_visuals
     from ui.diagrams import crack_side_view_diagram
@@ -287,6 +283,7 @@ def test_side_view_identity_tracks_relevant_authoritative_inputs(
     def fingerprint() -> str:
         return side_view_fingerprint(
             bundle_renderer._side_view_identity_payload(
+                runtime,
                 section_fingerprint="section-a",
                 state_option="ULS",
                 projected_state={"dn": 26.6},

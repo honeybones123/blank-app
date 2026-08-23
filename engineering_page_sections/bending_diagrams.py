@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-def bind_runtime(namespace: dict) -> None:
-    globals().update({key: value for key, value in namespace.items() if not key.startswith("__")})
+import streamlit as st
+
+from bending_core import _stress_strain_state
+from state_and_helpers import get_param
+from ui.diagrams.bending_3d_diagram import (
+    build_beam_3d_figure_pure as _shared_build_beam_3d_figure_pure,
+)
 
 
 def _bending_state_label(option: str, *, stress_model: str) -> str:

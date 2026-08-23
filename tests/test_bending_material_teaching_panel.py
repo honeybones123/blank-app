@@ -8,11 +8,11 @@ def test_bending_material_lesson_is_an_explicit_non_empty_expander_body() -> Non
         ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
     ).read_text(encoding="utf-8")
 
-    assert "def _render_material_teaching_lesson()" in source
+    assert "def _render_material_teaching_lesson(runtime:" in source
     assert "render_bending_material_teaching_panel(" in source
-    assert "plot_material_curves=_plot_material_stress_strain_curves" in source
-    assert "render_plotly_diagram=render_plotly_diagram" in source
-    assert "_render_material_teaching_lesson," in source
+    assert "plot_material_curves=runtime.plot_material_stress_strain_curves" in source
+    assert "render_plotly_diagram=runtime.render_plotly_diagram" in source
+    assert "lambda: _render_material_teaching_lesson(runtime)" in source
     assert "lambda: None" not in source
     assert "_install_material_teaching_override" not in source
 

@@ -13,7 +13,10 @@ def _bundle_source() -> str:
 def test_bending_views_are_one_native_tab_bundle() -> None:
     source = _bundle_source()
 
-    assert "section_tab, side_view_tab, moment_tab = render_stable_tabs(" in source
+    assert (
+        "section_tab, side_view_tab, moment_tab = runtime.render_stable_tabs("
+        in source
+    )
     assert 'scope_id="bending-section-diagrams"' in source
     assert "with section_tab:" in source
     assert "with side_view_tab:" in source
@@ -81,11 +84,28 @@ def test_bending_state_switch_owns_only_diagram_fragment() -> None:
 def test_material_lesson_has_an_explicit_real_body() -> None:
     source = _bundle_source()
 
-    assert "def _render_material_teaching_lesson()" in source
+    assert "def _render_material_teaching_lesson(runtime:" in source
     assert "render_bending_material_teaching_panel(" in source
-    assert "plot_material_curves=_plot_material_stress_strain_curves" in source
-    assert "render_lazy_expander(" in source
+    assert "plot_material_curves=runtime.plot_material_stress_strain_curves" in source
+    assert "runtime.render_lazy_expander(" in source
     assert "lambda: None" not in source
+
+
+def test_diagram_modules_use_explicit_dependencies_not_runtime_global_binding() -> None:
+    source = _bundle_source()
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+
+    assert "class BendingDiagramRuntime:" in source
+    assert "runtime: BendingDiagramRuntime" in source
+    assert "bind_runtime" not in source
+    assert "globals().update" not in source
+    assert "bind_runtime" not in diagrams
+    assert "_bending_diagram_runtime =" in runtime
+    assert "_bending_diagram_bundle.bind_runtime" not in runtime
+    assert "_bending_diagrams_section.bind_runtime" not in runtime
 
 
 def test_stable_tabs_do_not_install_a_prolonged_scroll_lock() -> None:

@@ -23,6 +23,7 @@ from widgets_helpers import (
     page_divider,
     render_lazy_expander,
     render_page_explainer_expander,
+    render_section_title,
     render_result_page_title,
     render_plotly_diagram,
     render_pyplot_diagram,
@@ -79,12 +80,6 @@ def _plot_material_stress_strain_curves(*args, **kwargs):
     from bending_diagrams import _plot_material_stress_strain_curves as renderer
 
     return renderer(*args, **kwargs)
-
-
-def _shared_build_beam_3d_figure_pure(*args, **kwargs):
-    from ui.diagrams.bending_3d_diagram import build_beam_3d_figure_pure as builder
-
-    return builder(*args, **kwargs)
 
 
 def figure_bmd_from_state(*args, **kwargs):
@@ -148,16 +143,31 @@ def _overlay_authoritative_bending_result(target, bending, ductility, default_de
 
 
 from engineering_page_sections import bending_diagrams as _bending_diagrams_section
-_coalesce_num = _bending_diagrams_section._coalesce_num
-_get_build_beam_3d_figure_pure = _bending_diagrams_section._get_build_beam_3d_figure_pure
-_build_beam_3d_figure_pure_impl = _bending_diagrams_section._build_beam_3d_figure_pure_impl
-_build_beam_3d_figure = _bending_diagrams_section._build_beam_3d_figure
-_bending_diagrams_section.bind_runtime(globals())
 from engineering_page_sections import bending_diagram_bundle as _bending_diagram_bundle
 
-_bending_diagram_bundle.bind_runtime(globals())
+_bending_diagram_runtime = _bending_diagram_bundle.BendingDiagramRuntime(
+    st=st,
+    get_param=get_param,
+    render_timing_mark=render_timing_mark,
+    plot_stress_strain_profiles=_plot_stress_strain_profiles,
+    plot_material_stress_strain_curves=_plot_material_stress_strain_curves,
+    figure_bmd_from_state=figure_bmd_from_state,
+    render_plotly_diagram=render_plotly_diagram,
+    render_section_title=render_section_title,
+    render_stable_tabs=render_stable_tabs,
+    render_lazy_expander=render_lazy_expander,
+)
+
+
+def _render_bending_diagram_bundle_panel_impl(**kwargs):
+    return _bending_diagram_bundle.render_bending_diagram_bundle_panel(
+        runtime=_bending_diagram_runtime,
+        **kwargs,
+    )
+
+
 _render_bending_diagram_bundle_panel = st.fragment(
-    _bending_diagram_bundle.render_bending_diagram_bundle_panel
+    _render_bending_diagram_bundle_panel_impl
 )
 
 

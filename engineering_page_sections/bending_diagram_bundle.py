@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any, Callable
+
 
 STATE_OPTIONS = ("ULS", "SLS (cracked)", "Uncracked")
 STATE_KEYS = {
@@ -11,17 +14,33 @@ STATE_KEYS = {
 }
 
 
-def bind_runtime(namespace: dict) -> None:
-    globals().update(
-        {key: value for key, value in namespace.items() if not key.startswith("__")}
-    )
+@dataclass(frozen=True)
+class BendingDiagramRuntime:
+    """Explicit presentation dependencies for the Bending diagram fragment."""
+
+    st: Any
+    get_param: Callable[..., Any]
+    render_timing_mark: Callable[[str], None]
+    plot_stress_strain_profiles: Callable[..., Any]
+    plot_material_stress_strain_curves: Callable[..., Any]
+    figure_bmd_from_state: Callable[..., Any]
+    render_plotly_diagram: Callable[..., Any]
+    render_section_title: Callable[..., Any]
+    render_stable_tabs: Callable[..., Any]
+    render_lazy_expander: Callable[..., Any]
 
 
-def _build_bending_moment_state(*, mu_uls_active: float) -> dict:
+def _build_bending_moment_state(
+    runtime: BendingDiagramRuntime,
+    *,
+    mu_uls_active: float,
+) -> dict:
     """Return the existing BMD presentation inputs without changing authority."""
 
     import numpy as np
 
+    st = runtime.st
+    get_param = runtime.get_param
     mode = str(
         st.session_state.get("actions_mode", "manual") or "manual"
     ).strip().lower()
@@ -70,6 +89,7 @@ def _build_bending_moment_state(*, mu_uls_active: float) -> dict:
 
 
 def _side_view_identity_payload(
+    runtime: BendingDiagramRuntime,
     *,
     section_fingerprint: str,
     state_option: str,
@@ -81,6 +101,9 @@ def _side_view_identity_payload(
     calculation pages legitimately publish into that mapping and must not
     invalidate an unchanged Bending presentation bundle.
     """
+
+    st = runtime.st
+    get_param = runtime.get_param
 
     from shear_visuals import _beam_model
     from ui.diagrams.crack_side_view_diagram import (
@@ -139,11 +162,14 @@ def _side_view_identity_payload(
 
 
 def _prepare_identity(
+    runtime: BendingDiagramRuntime,
     *,
     cached_layout: dict,
     mu_uls_active: float,
 ) -> dict:
     """Resolve authoritative state and deterministic presentation fingerprints."""
+
+    st = runtime.st
 
     from engineering_page_sections.bending_diagram_bundle_cache import (
         bending_diagram_bundle_fingerprint,
@@ -210,13 +236,17 @@ def _prepare_identity(
         )
         side_fingerprints[option] = side_view_fingerprint(
             _side_view_identity_payload(
+                runtime,
                 section_fingerprint=section_fingerprints[option],
                 state_option=option,
                 projected_state=projected_state,
             )
         )
 
-    bmd_state = _build_bending_moment_state(mu_uls_active=mu_uls_active)
+    bmd_state = _build_bending_moment_state(
+        runtime,
+        mu_uls_active=mu_uls_active,
+    )
     moment_fingerprint = bending_moment_fingerprint(bmd_state)
     bundle_fingerprint = bending_diagram_bundle_fingerprint(
         section_fingerprints=section_fingerprints,
@@ -261,8 +291,14 @@ def _figure_from_json(figure_json: str | None):
     return pio.from_json(figure_json)
 
 
-def _load_cached_bundle(identity: dict, manifest: dict):
+def _load_cached_bundle(
+    runtime: BendingDiagramRuntime,
+    identity: dict,
+    manifest: dict,
+):
     """Load a validated bundle manifest into independent Plotly figures."""
+
+    st = runtime.st
 
     from engineering_page_sections.bending_diagram_bundle_cache import (
         get_figure_json,
@@ -306,8 +342,11 @@ def _load_cached_bundle(identity: dict, manifest: dict):
     }
 
 
-def _build_or_load_bundle(identity: dict):
+def _build_or_load_bundle(runtime: BendingDiagramRuntime, identity: dict):
     """Build missing pure presentation figures and store a bounded JSON bundle."""
+
+    st = runtime.st
+    render_timing_mark = runtime.render_timing_mark
 
     from bending_side_view_diagram import build_bending_side_view_figure
     from engineering_page_sections.bending_diagram_bundle_cache import (
@@ -330,7 +369,7 @@ def _build_or_load_bundle(identity: dict):
         )
         if figure is None:
             projection = identity["projections"][option]
-            figure = _plot_stress_strain_profiles(
+            figure = runtime.plot_stress_strain_profiles(
                 projection["projected_state"],
                 state_label=projection["state_label"],
                 layout=identity["cached_layout"],
@@ -394,7 +433,7 @@ def _build_or_load_bundle(identity: dict):
         )
     )
     if moment_figure is None:
-        moment_figure = figure_bmd_from_state(
+        moment_figure = runtime.figure_bmd_from_state(
             identity["bmd_state"],
             show_m_peak=True,
         )
@@ -429,11 +468,12 @@ def _build_or_load_bundle(identity: dict):
     }
 
 
-def _render_material_teaching_lesson() -> None:
+def _render_material_teaching_lesson(runtime: BendingDiagramRuntime) -> None:
     from engineering_page_sections.bending_material_teaching import (
         render_bending_material_teaching_panel,
     )
 
+    st = runtime.st
     selected_state = str(
         st.session_state.get(
             "bending_state_main",
@@ -443,18 +483,22 @@ def _render_material_teaching_lesson() -> None:
     )
     render_bending_material_teaching_panel(
         selected_state=selected_state,
-        plot_material_curves=_plot_material_stress_strain_curves,
-        render_plotly_diagram=render_plotly_diagram,
+        plot_material_curves=runtime.plot_material_stress_strain_curves,
+        render_plotly_diagram=runtime.render_plotly_diagram,
     )
 
 
 def render_bending_diagram_bundle_panel(
     *,
+    runtime: BendingDiagramRuntime,
     cached_layout: dict,
     mu_uls_active: float,
     diagram_shell_generation: int,
 ) -> None:
     """Render one light-to-ready Bending diagram bundle lifecycle."""
+
+    st = runtime.st
+    render_timing_mark = runtime.render_timing_mark
 
     from bending_side_view_diagram import (
         render_bending_side_view_controls,
@@ -480,6 +524,7 @@ def render_bending_diagram_bundle_panel(
     st.session_state["bending_state"] = main_state
 
     identity = _prepare_identity(
+        runtime,
         cached_layout=cached_layout,
         mu_uls_active=mu_uls_active,
     )
@@ -491,7 +536,7 @@ def render_bending_diagram_bundle_panel(
     bundle = None
     cache_hit = manifest is not None
     if manifest is not None:
-        bundle = _load_cached_bundle(identity, manifest)
+        bundle = _load_cached_bundle(runtime, identity, manifest)
         cache_hit = bundle is not None
     render_timing_mark(
         "bending.diagram.bundle.cache_hit"
@@ -513,7 +558,7 @@ def render_bending_diagram_bundle_panel(
         start_v2_runtime_warmup()
         start_visualization_runtime_warmup()
         wait_for_visualization_runtime_warmup()
-        bundle = _build_or_load_bundle(identity)
+        bundle = _build_or_load_bundle(runtime, identity)
 
     selected_label = identity["projections"][main_state]["state_label"]
     st.session_state["bending_strain_state_local"] = selected_label
@@ -524,8 +569,8 @@ def render_bending_diagram_bundle_panel(
         'aria-hidden="true" style="height:0;line-height:0">&#8203;</div>',
         unsafe_allow_html=True,
     )
-    render_section_title("Bending Diagrams")
-    section_tab, side_view_tab, moment_tab = render_stable_tabs(
+    runtime.render_section_title("Bending Diagrams")
+    section_tab, side_view_tab, moment_tab = runtime.render_stable_tabs(
         st,
         labels=("Section & stress-strain models", "Side view", "Bending moment"),
         scope_id="bending-section-diagrams",
@@ -572,7 +617,7 @@ def render_bending_diagram_bundle_panel(
             )
             with st.container(key="bending_moment_diagram_live"):
                 if bundle is not None:
-                    render_plotly_diagram(
+                    runtime.render_plotly_diagram(
                         bundle["moment"],
                         key="bending_moment_diagram",
                         title="Bending moment diagram",
@@ -592,9 +637,9 @@ def render_bending_diagram_bundle_panel(
     st.session_state["bending_state"] = st.session_state.get(
         "bending_state_main", main_state
     )
-    render_lazy_expander(
+    runtime.render_lazy_expander(
         "\u2139\ufe0f From strain to stress to internal force",
-        _render_material_teaching_lesson,
+        lambda: _render_material_teaching_lesson(runtime),
         key="bending_material_model_expander",
     )
     st.markdown(
@@ -747,4 +792,4 @@ def render_bending_diagram_bundle_panel(
     render_timing_mark("bending_page.runtime.material_model.end")
 
 
-__all__ = ["bind_runtime", "render_bending_diagram_bundle_panel"]
+__all__ = ["BendingDiagramRuntime", "render_bending_diagram_bundle_panel"]
