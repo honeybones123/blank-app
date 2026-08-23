@@ -135,8 +135,11 @@ def test_runtime_routes_shared_case_selection_through_page_snapshot() -> None:
         "initial_mu_uls = bending_page_snapshot.active_case.uls_demand_kNm"
         in source
     )
-    assert "detail_view = bending_page_snapshot.view.selected_detail_view" in source
-    assert (
-        "Mu_sls_active = bending_page_snapshot.negative_case.sls_demand_kNm"
-        in source
-    )
+    assert "page_snapshot=bending_page_snapshot" in source
+
+    checks_context = (
+        ROOT / "engineering_page_sections" / "bending_checks_context.py"
+    ).read_text(encoding="utf-8")
+    assert "moment_sign = page_snapshot.view.selected_detail_view" in checks_context
+    assert "case = page_snapshot.negative_case" in checks_context
+    assert "demand_kNm=float(case.sls_demand_kNm)" in checks_context

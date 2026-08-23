@@ -18,9 +18,7 @@ from state_and_helpers import (
 from widgets_helpers import (
     apply_result_page_css,
     apply_step_expander_css,
-    apply_step_summary_expander_css,
     info_i_button,
-    page_divider,
     render_lazy_expander,
     render_page_explainer_expander,
     render_section_title,
@@ -41,7 +39,6 @@ from inputs_application.authoritative_check_packs import current_authoritative_f
 from calculations.bending import (
     bar_area_mm2,
     bottom_tension_effective_depth_fallback_mm,
-    compression_block_lever_arm_values,
     minimum_moment_capacity_kNm,
     nominal_capacity_from_phi_capacity_kNm,
     sls_report_display_values,
@@ -68,6 +65,10 @@ from engineering_page_sections.bending_summary import (
 from engineering_page_sections.bending_inputs import (
     render_bending_inputs,
 )
+from engineering_page_sections.bending_checks_context import (
+    build_bending_checks_snapshot,
+)
+from engineering_page_sections.bending_checks import render_bending_checks
 
 
 def _plot_stress_strain_profiles(*args, **kwargs):
@@ -1330,166 +1331,20 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     with st.container(key="bending_post_inputs_calculation_stage"):
         with st.container():
-            # Resolve the active bending case before either presentation block
-            # renders.  Both the diagrams and the cards consume this same
-            # revision-matched publication; neither presentation owns it.
-            detail_view = bending_page_snapshot.view.selected_detail_view
-            showing_negative = bending_page_snapshot.view.showing_negative
-            top_results_active = dict(top_results)
-            Ast_active = bending_page_snapshot.positive_case.reinforcement_area_mm2
-            d_active = d_eff
-            Mu_uls_active = bending_page_snapshot.positive_case.uls_demand_kNm
-            Mu_sls_active = bending_page_snapshot.positive_case.sls_demand_kNm
-            if showing_negative:
-                dn = float(top_results_neg.get("dn_mm", 0.0) or 0.0)
-                gamma_active = float(
-                    top_results_neg.get("gamma", top_results.get("gamma", 0.0))
-                    or 0.0
-                )
-                d_calc = float(top_results_neg.get("d_mm", d_neg_val) or d_neg_val)
-                active_lever_arm = compression_block_lever_arm_values(
-                    dn_mm=dn,
-                    gamma=gamma_active,
-                    d_mm=d_calc,
-                )
-                a_active = active_lever_arm["a"]
-                z_active = active_lever_arm["z"]
-                top_results_active.update({
-                    "phi_Mu_cap": float(top_results_neg.get("phi_Mu_kNm", 0.0) or 0.0),
-                    "Mu_util": float(top_results_neg.get("util", 0.0) or 0.0),
-                    "ku": float(top_results_neg.get("ku", 0.0) or 0.0),
-                    "c": dn,
-                    "a": a_active,
-                    "z": z_active,
-                    "d": d_calc,
-                })
-                Ast_active = bending_page_snapshot.negative_case.reinforcement_area_mm2
-                d_active = d_calc
-                Mu_uls_active = bending_page_snapshot.negative_case.uls_demand_kNm
-                Mu_sls_active = bending_page_snapshot.negative_case.sls_demand_kNm
-            else:
-                top_results_active.update(top_results_pos)
-                top_results_active.update({
-                    "phi_Mu_cap": float(top_results_pos.get("phi_Mu_kNm", top_results.get("phi_Mu_cap", 0.0)) or 0.0),
-                    "Mu_util": float(top_results_pos.get("util", top_results.get("Mu_util", 0.0)) or 0.0),
-                    "ku": float(top_results_pos.get("ku", top_results.get("ku", 0.0)) or 0.0),
-                    "c": float(top_results_pos.get("dn_mm", top_results.get("c", 0.0)) or 0.0),
-                    "d": float(top_results_pos.get("d_mm", d_eff) or d_eff),
-                })
+            checks_snapshot = build_bending_checks_snapshot(
+                page_snapshot=bending_page_snapshot,
+                base_results=top_results,
+                width_mm=b,
+                overall_depth_mm=D,
+                concrete_strength_mpa=fc,
+                steel_yield_strength_mpa=fsy,
+                concrete_modulus_mpa=Ec,
+                steel_modulus_mpa=Es,
+                positive_effective_depth_mm=d_eff,
+            )
 
             with calc_blocks_container:
-                render_timing_mark("bending_page.runtime.checks.start")
-                from bending_tabs import (
-                    render_min_strength_tab,
-                    render_sls_tab,
-                    render_uls_tab,
-                )
-
-                # ---------------- Step-by-step tabs ----------------
-                apply_step_summary_expander_css()
-                page_divider()
-                # Put all extra rhythm above the heading; keep no subheading
-                # or additional gap between the title and calculation tabs.
-                st.markdown(
-                    f"""
-                    <div class="bending-checks-heading-block" style="padding-top:28px;margin:0 0 0.75rem;">
-                      <div style="color:#10234a;font-size:17.6px;font-weight:600;line-height:1.35;margin:0;">
-                        Bending design checks
-                      </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                # Bending calculation tabs are client-side Streamlit tabs.
-                # Unlike a radio selector, changing one does not rerun this
-                # result-page fragment or reset the main page scroller.
-                uls_checks_tab, sls_checks_tab, minimum_checks_tab = render_stable_tabs(
-                    st,
-                    labels=("ULS Checks", "SLS Checks", "Minimum strength checks"),
-                    scope_id="bending-calculation-checks",
-                )
-                with uls_checks_tab:
-                    render_uls_tab(
-                        top_results_active,
-                        b,
-                        D,
-                        fc,
-                        fsy,
-                        Ast_active,
-                        d_active,
-                        summary_mode=False,
-                        Mu_star_override=Mu_uls_active,
-                        moment_sign=detail_view,
-                    )
-                with sls_checks_tab:
-                    render_sls_tab(
-                        top_results_active,
-                        b,
-                        D,
-                        d_active,
-                        Ast_active,
-                        Ec,
-                        Es,
-                        Mu_sls_active,
-                        summary_mode=False,
-                        moment_sign=detail_view,
-                    )
-                with minimum_checks_tab:
-                    render_min_strength_tab(
-                        top_results_active, b, D, fc, fsy, Ast_active,
-                        summary_mode=False,
-                    )
-
-                # Keep the authoritative calculation sequence pedagogical:
-                # neutral-axis solution must precede strain compatibility.
-                # Reorder the complete rendered cards, including their mounted
-                # bodies, rather than duplicating either calculation.
-                import streamlit.components.v1 as components
-                components.html(
-                    """
-                    <script>
-                    (() => {
-                      const doc = window.parent.document;
-                      const cards = [...doc.querySelectorAll('[data-testid="stExpander"]')];
-                      const find = (prefix) => cards.find((card) => {
-                        const text = (card.innerText || '').replace(/\\s+/g, ' ').trim();
-                        return text.startsWith(prefix);
-                      });
-                      const strain = find('Check 2 — Strain compatibility') || find('Check 2 - Strain compatibility');
-                      const neutral = find('Check 3 — Neutral-axis') || find('Check 3 - Neutral-axis');
-                      if (!strain || !neutral) return;
-                      const strainBlock = strain.closest('[data-testid="stLayoutWrapper"]') || strain.parentElement;
-                      const neutralBlock = neutral.closest('[data-testid="stLayoutWrapper"]') || neutral.parentElement;
-                      if (strainBlock && neutralBlock && strainBlock.parentElement === neutralBlock.parentElement) {
-                        neutralBlock.parentElement.insertBefore(neutralBlock, strainBlock);
-                      }
-                    })();
-                    </script>
-                    """,
-                    height=0,
-                )
-
-                # Handle pending scroll after content has rendered
-                pending_scroll_uid = st.session_state.get("bending_pending_scroll_uid")
-                if pending_scroll_uid:
-                    # Import jump_nav functions
-                    from jump_nav import scroll_to_jump_after_render
-
-                    # Set jump_to for scroll function
-                    st.session_state["jump_to"] = pending_scroll_uid
-
-                    # Scroll after content has rendered
-                    scroll_to_jump_after_render()
-
-                    # Clear pending scroll
-                    del st.session_state["bending_pending_scroll_uid"]
-                st.markdown(
-                    '<span data-testid="bending-calculation-ready" '
-                    'aria-hidden="true" style="display:none"></span>',
-                    unsafe_allow_html=True,
-                )
-                render_timing_mark("bending_page.runtime.checks.end")
+                render_bending_checks(st_module=st, checks=checks_snapshot)
 
             # --------------------------------------------------
             # Material stress–strain curves (concrete + steel), rendered below

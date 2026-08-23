@@ -89,7 +89,10 @@ def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:
 
 def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:
     for filename, scope in (
-        ("bending_page_runtime.py", "bending-calculation-checks"),
+        (
+            "engineering_page_sections/bending_checks.py",
+            "bending-calculation-checks",
+        ),
         ("shear_page_runtime.py", "shear-calculation-checks"),
         ("creep.py", "creep-calculation-checks"),
     ):
@@ -119,11 +122,15 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
 
 def test_bending_owns_one_stable_interaction_runtime() -> None:
     runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+    checks = (
+        ROOT / "engineering_page_sections" / "bending_checks.py"
+    ).read_text(encoding="utf-8")
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
     ).read_text(encoding="utf-8")
 
-    assert 'scope_id="bending-calculation-checks"' in runtime
+    assert "render_bending_checks(st_module=st, checks=checks_snapshot)" in runtime
+    assert 'scope_id="bending-calculation-checks"' in checks
     assert 'scope_id="bending-section-diagrams"' in diagrams
     assert "install_runtime=False" in diagrams
 

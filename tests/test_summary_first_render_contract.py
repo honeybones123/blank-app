@@ -28,7 +28,7 @@ def test_bending_summary_renders_before_explainer_inputs_diagram_and_checks():
     explainer = text.index("render_page_explainer_expander(_render_bending_explainer)")
     inputs = text.index("with inputs_placeholder.container():")
     diagram = text.index("_render_bending_diagram_bundle_panel(")
-    checks = text.index("bending_page.runtime.checks.start")
+    checks = text.index("render_bending_checks(st_module=st, checks=checks_snapshot)")
     authority = text.index("build_bending_check_rows_from_state(st.session_state)")
 
     assert authority < summary < summary_mark < explainer

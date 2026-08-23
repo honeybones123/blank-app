@@ -6,13 +6,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 PAGE_CONTRACTS = {
-    "bending_page_runtime.py": {
+    "engineering_page_sections/bending_inputs.py": {
         "categories": (
             "design_actions",
             "section_material",
             "reinforcement",
         ),
-        "widgets": ("bending_b", "bending_D", "bending_fc", "bending_cover_bot"),
+        "widgets": (
+            "bending_b",
+            "bending_D",
+            "bending_fc",
+            "bending_cover_{face}",
+        ),
     },
     "shear_page_runtime.py": {
         "categories": (
@@ -74,11 +79,14 @@ def test_shared_panel_enforces_two_column_widget_grid():
 
 
 def test_bending_combines_top_and_bottom_reinforcement_in_one_card():
-    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
-    assert '"reinforcement", "Reinforcement"' in source
+    source = (
+        ROOT / "engineering_page_sections" / "bending_inputs.py"
+    ).read_text(encoding="utf-8")
+    assert '"reinforcement",' in source
+    assert '"Reinforcement",' in source
     assert '"bottom_reinforcement", "Bottom reinforcement"' not in source
     assert '"top_reinforcement", "Top reinforcement"' not in source
-    assert "col_bend_bot, col_bend_top = st.columns(2" in source
+    assert "col_bottom, col_top = st.columns(2" in source
 
 
 def test_migrated_pages_retain_their_established_widget_keys():

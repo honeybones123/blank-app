@@ -14,7 +14,9 @@ def test_bending_publishes_fixed_diagram_shell_before_calculation_cards() -> Non
         "_render_bending_diagram_bundle_panel(", containers
     )
     inputs = source.index("with inputs_placeholder.container():", lightweight_panel)
-    checks = source.index('render_timing_mark("bending_page.runtime.checks.start")')
+    checks = source.index(
+        "render_bending_checks(st_module=st, checks=checks_snapshot)"
+    )
 
     assert containers < lightweight_panel < inputs < checks
     assert "diagram_rendered_early" not in source
@@ -121,6 +123,9 @@ def test_bending_browser_regression_measures_live_geometry_and_blank_hosts() -> 
 
 def test_bending_calculation_shell_reserves_the_measured_collapsed_region() -> None:
     runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
+    checks = (
+        ROOT / "engineering_page_sections" / "bending_checks.py"
+    ).read_text(encoding="utf-8")
     source = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
@@ -129,7 +134,7 @@ def test_bending_calculation_shell_reserves_the_measured_collapsed_region() -> N
     assert 'data-testid="bending-calculation-loading-region"' in source
     assert "height: 869.21875px" in source
     assert source.count('class="bending-calculation-loading-card"') == 8
-    assert 'data-testid="bending-calculation-ready"' in runtime
+    assert 'data-testid="bending-calculation-ready"' in checks
 
 
 def test_bending_defers_visualisation_wait_until_diagram_boundary() -> None:
