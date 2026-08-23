@@ -1,4 +1,4 @@
-import os
+import os, sys
 
 from runtime_source_bootstrap import RUNTIME_ROOT, prefer_runtime_checkout_sources
 
