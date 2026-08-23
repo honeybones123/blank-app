@@ -64,13 +64,7 @@ from ui_seamless_steps import (
     step_card,
 )
 from engineering_page_sections.compact_check_inputs import (
-    CheckInputCategory,
-    CheckInputPanelConfig,
-    InputSource,
     compact_check_input_regions,
-    format_dimensions,
-    format_number,
-    join_summary,
 )
 from engineering_page_sections.stable_tabs import (
     render_stable_tabs,
@@ -83,6 +77,9 @@ from engineering_page_sections.bending_page_shell import BendingPageShell
 from engineering_page_sections.bending_summary import (
     apply_bending_summary_navigation,
     render_bending_summary,
+)
+from engineering_page_sections.bending_inputs import (
+    build_bending_input_panel_config,
 )
 from inputs_application.action_source_control import uses_load_analysis_actions
 
@@ -1336,58 +1333,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with inputs_placeholder.container():
         page_divider()
 
-        _bend_shape_summary = str(page_engineering_state.get("sec_shape", "RECT") or "RECT")
-        _bend_b_summary = float(page_engineering_state.get("b", 0.0) or 0.0)
-        _bend_D_summary = float(page_engineering_state.get("D", 0.0) or 0.0)
-        _bend_fc_summary = float(page_engineering_state.get("fc", 0.0) or 0.0)
-        _bend_m_summary = max(abs(Mu_pos_star), abs(Mu_neg_star))
-        _bend_n_summary = float(page_engineering_state.get("P_star", 0.0) or 0.0)
-        from application.bottom_reinforcement_policy import (
-            format_longitudinal_reinforcement_rows,
-        )
-
-        _bend_bottom_summary = format_longitudinal_reinforcement_rows(
-            page_engineering_state, face="bottom"
-        )
-        _bend_top_summary = format_longitudinal_reinforcement_rows(
-            page_engineering_state, face="top"
-        )
-        _bending_input_config = CheckInputPanelConfig(
-            page_slug="bending",
-            mount_closed_bodies=True,
-            categories=(
-                CheckInputCategory(
-                    "design_actions", "Design actions",
-                    join_summary(
-                        f"M* {format_number(_bend_m_summary, 'kNm', decimals=1)}",
-                        f"N* {format_number(_bend_n_summary, 'kN', decimals=1)}",
-                    ),
-                    lambda: None,
-                    source=(
-                        InputSource.LOAD_ANALYSIS
-                        if uses_load_analysis_actions(st.session_state)
-                        else InputSource.BEAM_INPUTS
-                    ),
-                    icon="↧",
-                ),
-                CheckInputCategory(
-                    "section_material", "Section & material",
-                    join_summary(
-                        format_dimensions(_bend_b_summary, _bend_D_summary),
-                        _bend_shape_summary,
-                        f"f'c {format_number(_bend_fc_summary, 'MPa')}",
-                    ),
-                    lambda: None, icon="▣",
-                ),
-                CheckInputCategory(
-                    "reinforcement", "Reinforcement",
-                    join_summary(
-                        f"Bottom {_bend_bottom_summary}",
-                        f"Top {_bend_top_summary}",
-                    ),
-                    lambda: None, icon="●",
-                ),
-            ),
+        _bending_input_config = build_bending_input_panel_config(
+            engineering_state=page_engineering_state,
+            mu_pos_star_kNm=Mu_pos_star,
+            mu_neg_star_kNm=Mu_neg_star,
+            load_analysis_actions=uses_load_analysis_actions(st.session_state),
         )
         render_timing_mark("bending_page.runtime.summary_table.end")
         with compact_check_input_regions(st, _bending_input_config) as (
