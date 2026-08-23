@@ -74,11 +74,39 @@ def test_bending_state_switch_owns_only_diagram_fragment() -> None:
     source = _bundle_source()
 
     assert "_render_bending_diagram_bundle_panel = st.fragment(" in runtime
+    assert "_render_bending_state_controls = st.fragment(" in runtime
+    assert "_render_bending_state_controls()" in runtime
     assert "def render_bending_diagram_bundle_panel(" in source
+    assert "def render_bending_state_controls(" in source
     assert "render_uls_tab(" not in source
     assert "render_sls_tab(" not in source
     assert "scrollTop" not in source
     assert "event.preventDefault()" not in source
+
+
+def test_bending_state_switch_is_plotly_owned_progressive_enhancement() -> None:
+    source = _bundle_source()
+
+    assert 'data-bending-requested-state="' in source
+    assert "const applyRequestedState = () =>" in source
+    assert "Plotly.react(" in source
+    assert "Plotly.relayout(" in source
+    assert "update the hidden diagram first" in source.lower()
+    assert "keep the last complete" in source.lower()
+    assert "node.style.opacity" not in source
+    assert "dataset.sbPlotlyState" not in source
+    assert "data-sb-preloaded-plotly-state" not in source
+
+
+def test_default_side_view_updates_only_state_dependent_layout() -> None:
+    source = _bundle_source()
+
+    assert "const sideHasOverlay =" in source
+    assert "annotations: spec.layout.annotations || []" in source
+    assert "shapes: spec.layout.shapes || []" in source
+    assert "sideHasOverlay" in source
+    assert "|| visible" in source
+    assert "Plotly.restyle(" in source
 
 
 def test_material_lesson_has_an_explicit_real_body() -> None:

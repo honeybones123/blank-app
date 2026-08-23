@@ -153,6 +153,18 @@ _bending_diagram_runtime = _bending_diagram_bundle.BendingDiagramRuntime(
 )
 
 
+def _render_bending_state_controls_impl(**kwargs):
+    return _bending_diagram_bundle.render_bending_state_controls(
+        runtime=_bending_diagram_runtime,
+        **kwargs,
+    )
+
+
+_render_bending_state_controls = st.fragment(
+    _render_bending_state_controls_impl
+)
+
+
 def _render_bending_diagram_bundle_panel_impl(**kwargs):
     return _bending_diagram_bundle.render_bending_diagram_bundle_panel(
         runtime=_bending_diagram_runtime,
@@ -681,6 +693,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 mu_uls_active=initial_mu_uls,
                 diagram_shell_generation=diagram_shell_generation,
             )
+            _render_bending_state_controls()
         with explainer_placeholder:
             render_timing_mark("bending_page.runtime.explainer.start")
             render_page_explainer_expander(_render_bending_explainer)
