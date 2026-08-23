@@ -123,7 +123,7 @@ def test_summary_first_migration_keeps_existing_input_card_and_lazy_boundaries()
     creep = _top_level_function("creep.py", "render_creep")
     shrinkage = _top_level_function("shrinkage.py", "render_shrinkage")
 
-    assert "compact_check_input_regions(st, _shear_input_config)" in shear
+    assert "render_shear_inputs(" in shear
     assert "compact_check_input_columns(" in crack
     assert "compact_check_input_columns(" in deflection
     assert "render_compact_check_inputs(" in creep
