@@ -8,9 +8,11 @@ from engineering_page_sections.bending_checks_context import BendingUlsChecksInp
 def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
     """Render the existing authoritative ULS teaching sequence."""
 
-    from bending_tabs import render_uls_tab
+    from engineering_page_sections.bending_uls_checks import (
+        render_authoritative_uls_checks,
+    )
 
-    render_uls_tab(
+    render_authoritative_uls_checks(
         view.mutable_results(),
         view.width_mm,
         view.overall_depth_mm,

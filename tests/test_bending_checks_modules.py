@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
+import engineering_page_sections.bending_minimum_strength_checks as minimum_checks
 import engineering_page_sections.bending_sls_checks as authoritative_sls_checks
+import engineering_page_sections.bending_uls_checks as authoritative_uls_checks
 
 from engineering_page_sections.bending_checks_context import (
     BendingChecksSnapshot,
@@ -143,11 +143,10 @@ def test_all_check_tabs_share_one_detached_active_result_revision() -> None:
     assert checks.uls.results["phi_Mu_cap"] == pytest.approx(150.0)
 
 
-def test_check_view_boundaries_forward_typed_inputs_to_legacy_renderers(
+def test_check_view_boundaries_forward_typed_inputs_to_check_renderers(
     monkeypatch,
 ) -> None:
     calls: dict[str, tuple[tuple, dict]] = {}
-    legacy = ModuleType("bending_tabs")
 
     def record(name):
         def _inner(*args, **kwargs):
@@ -155,9 +154,16 @@ def test_check_view_boundaries_forward_typed_inputs_to_legacy_renderers(
 
         return _inner
 
-    legacy.render_uls_tab = record("uls")
-    legacy.render_min_strength_tab = record("minimum")
-    monkeypatch.setitem(sys.modules, "bending_tabs", legacy)
+    monkeypatch.setattr(
+        authoritative_uls_checks,
+        "render_authoritative_uls_checks",
+        record("uls"),
+    )
+    monkeypatch.setattr(
+        minimum_checks,
+        "render_minimum_strength_checks",
+        record("minimum"),
+    )
     monkeypatch.setattr(
         authoritative_sls_checks,
         "render_authoritative_sls_checks",
@@ -207,14 +213,20 @@ def test_runtime_uses_one_checks_snapshot_and_no_legacy_dom_reorder() -> None:
 
 def test_each_check_boundary_has_one_legacy_renderer_owner() -> None:
     files = {
-        "bending_uls_checks_view.py": "render_uls_tab",
-        "bending_minimum_strength_checks_view.py": "render_min_strength_tab",
+        "bending_uls_checks_view.py": (
+            "engineering_page_sections.bending_uls_checks",
+            "render_authoritative_uls_checks",
+        ),
+        "bending_minimum_strength_checks_view.py": (
+            "engineering_page_sections.bending_minimum_strength_checks",
+            "render_minimum_strength_checks",
+        ),
     }
-    for filename, renderer in files.items():
+    for filename, (module, renderer) in files.items():
         source = (
             ROOT / "engineering_page_sections" / filename
         ).read_text(encoding="utf-8")
-        assert source.count(f"from bending_tabs import {renderer}") == 1
+        assert source.count(f"from {module} import") == 1
         assert source.count(f"{renderer}(") == 1
 
     sls_source = (
@@ -222,9 +234,7 @@ def test_each_check_boundary_has_one_legacy_renderer_owner() -> None:
     ).read_text(encoding="utf-8")
     assert "from bending_tabs import" not in sls_source
     assert sls_source.count("render_authoritative_sls_checks(") == 1
-    assert "def render_sls_tab(" not in (
-        ROOT / "bending_tabs.py"
-    ).read_text(encoding="utf-8")
+    assert not (ROOT / "bending_tabs.py").exists()
 
 
 def test_checks_coordinator_is_the_only_calculation_tab_layout_owner() -> None:
@@ -238,3 +248,20 @@ def test_checks_coordinator_is_the_only_calculation_tab_layout_owner() -> None:
     assert "Bending design checks" not in runtime
     assert "Bending design checks" in coordinator
     assert 'data-testid="bending-calculation-ready"' in coordinator
+
+
+def test_check_implementations_and_reference_sources_are_explicit() -> None:
+    implementation_files = (
+        "bending_uls_checks.py",
+        "bending_sls_checks.py",
+        "bending_minimum_strength_checks.py",
+    )
+    assert not (ROOT / "bending_tabs.py").exists()
+    for filename in implementation_files:
+        assert (ROOT / "engineering_page_sections" / filename).is_file()
+
+    registry = (
+        ROOT / "application" / "reference_registry.py"
+    ).read_text(encoding="utf-8")
+    for filename in implementation_files:
+        assert f'"engineering_page_sections/{filename}"' in registry

@@ -221,7 +221,7 @@ def build_bending_report(top_results: dict, params: dict) -> dict:
         ("Outcome", outcome),
     ]
 
-    # ULS tab calculations (matching render_uls_tab logic)
+    # ULS check calculations matching the authoritative presentation.
     uls_boxes = []
     if phi_Mu_cap > 0 and d and Ast:
         uls_report_values = uls_bending_report_values(
@@ -431,7 +431,7 @@ def build_bending_report(top_results: dict, params: dict) -> dict:
             ],
         ))
 
-    # Minimum strength tab (matching render_min_strength_tab logic)
+    # Minimum-strength calculations matching the authoritative presentation.
     min_boxes = []
     if phi_Mu_cap > 0:
         fctf = top_results.get("fctf", 0.0)

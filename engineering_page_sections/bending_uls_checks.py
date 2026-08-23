@@ -1,7 +1,10 @@
+"""ULS Bending teaching checks backed by authoritative publications."""
+
+from __future__ import annotations
+
 import math
 from contextlib import contextmanager
-import pandas as pd
-import matplotlib.pyplot as plt
+
 import streamlit as st
 
 from bending_neutral_axis_teaching import neutral_axis_hand_solution
@@ -10,16 +13,16 @@ from bending_diagrams import (
     _plot_strain_profile,
     _make_uls_stress_block_figure,
     _make_uls_force_model_figure,
-    _make_sls_stress_block_figure,  # still used elsewhere, untouched
-    make_sls_transformed_section_figure,
 )
-from bending_core import _fmt, _layout_bars_in_rows, _stress_strain_state
-from state_and_helpers import get_param, update_results, render_timing_mark
-from ui.diagrams.stress_strain_diagram import (
-    make_sls_32_stress_block_figure as _shared_make_sls_32_stress_block_figure,
-    make_sls_strain_distribution_figure as _shared_make_sls_strain_distribution_figure,
+from bending_core import _stress_strain_state
+from state_and_helpers import get_param, render_timing_mark
+from widgets_helpers import (
+    apply_step_expander_css,
+    info_i_button,
+    render_calculation_display_control,
+    render_plotly_diagram,
+    step_expander_calcbox,
 )
-from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button, render_plotly_diagram, render_pyplot_diagram, render_calculation_display_control
 
 
 @contextmanager
@@ -29,40 +32,6 @@ def _bending_check_info_row(help_text: str):
     with col_info_button:
         with info_i_button(help_text=help_text, use_container_width=True):
             yield
-
-
-# ============================================================
-#  LOCAL HELPER â€“ CALCBOX WITH LATEX SUPPORT
-# ============================================================
-# Keeping _inject_calcbox_css for backward compatibility if needed elsewhere
-def _inject_calcbox_css():
-    """Inject CSS for blue blockquote styling."""
-    st.markdown(
-        """
-<style>
-blockquote {
-  border-left: 4px solid #1f77b4 !important;
-  background-color: rgba(31, 119, 180, 0.08) !important;
-  padding: 0.75rem 1rem !important;
-  margin: 0.5rem 0 0.75rem 0 !important;
-  border-radius: 0 6px 6px 0 !important;
-  color: #1a1a1a !important;
-}
-blockquote p, blockquote * { color: #1a1a1a !important; }
-</style>
-""",
-        unsafe_allow_html=True,
-    )
-
-
-
-
-# ============================================================
-#  LOCAL HELPER â€“ SLS STRESS FIGURE FOR 3.2 ONLY
-# ============================================================
-def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
-    """Compatibility wrapper for the shared SLS 3.2 stress-block figure."""
-    return _shared_make_sls_32_stress_block_figure(D_mm, d_mm, dn_mm, layers_tension)
 
 
 def _teaching_steel_response_state(
@@ -1382,7 +1351,7 @@ ductility assessment recorded in Check 1.6.
 # ============================================================
 #  TAB 1 â€“ ULS (UNCHANGED LOGIC, TIDIED CALC BOXES)
 # ============================================================
-def render_uls_tab(
+def render_authoritative_uls_checks(
     top_results,
     b,
     D,
@@ -2577,243 +2546,3 @@ This is the governing acceptance check for flexural strength. Regardless of the 
 
     else:
         st.info("Capacity cannot be evaluated â€“ check geometry / reo inputs.")
-
-
-# ============================================================
-#  TAB 2 â€“ Minimum Strength (UNCHANGED LOGIC, TIDIED TEXT)
-# ============================================================
-def render_min_strength_tab(top_results, b, D, fc, fsy, Ast, summary_mode: bool = False, jump_uid: str | None = None):
-    """Minimum strength requirements (summary_mode parameter ignored, kept for compatibility)."""
-    """
-    Tab 2 â€“ Minimum strength requirements.
-    
-    Args:
-        summary_mode: If True, all steps are collapsed (expanded=False)
-        jump_uid: Deprecated - kept for compatibility, not used anymore
-    """
-    fctf = top_results["fctf"]
-    Z_gross = top_results["Z_gross"]
-    Mcr = top_results["Mcr"]
-    As_min = top_results["As_min"]
-
-    fctf_as = fctf
-    Zg = Z_gross
-    Mcr_as = Mcr
-    Mu_min_as = (
-        1.2 * Mcr_as
-        if Mcr_as is not None and not math.isnan(Mcr_as)
-        else float("nan")
-    )
-    Ast_min_as = As_min
-
-    # Apply CSS for compact collapsed steps
-    apply_step_expander_css()
-
-    # 2.1 f_ct,f
-    section21_details = f"""
-*Purpose: Estimate the concrete flexural tensile strength $f_{{ct,f}}$.*  
-
-**Inputs:**  
-
-- $f'_c = {fc:.1f}$ MPa  
-
----
-
-**Formula (AS 3600 style):**
-
-$$
-f_{{ct,f}} \\approx 0.6 \\sqrt{{f'_c}}
-$$
-
-**Substitution:**
-
-$$
-f_{{ct,f}} \\approx 0.6 \\sqrt{{{fc:.1f}}}
-          = {fctf_as:.3f}\\ \\text{{MPa}}
-$$
-
----
-
-**Result:**  
-$f_{{ct,f}} \\approx {fctf_as:.3f}$ MPa.
-"""
-    
-    step_expander_calcbox(
-        uid="bending_min_2_1",
-        summary_line=f"Check 1 — Concrete flexural tensile strength $f_{{ct,f}}$ | Result: f_{{ct,f}} = {fctf_as:.3f} MPa",
-        details_md=section21_details,
-        status=None,
-        render_policy="mounted",
-    )
-
-    # 2.2 Z_g
-    section22_details = f"""
-*Purpose: Calculate the gross section modulus $Z_g$ of the rectangular section.*  
-
-**Inputs:**  
-
-- Width $b = {b:.1f}$ mm  
-- Overall depth $D = {D:.1f}$ mm  
-
----
-
-**Formula:**
-
-$$
-Z_g = \\frac{{b D^2}}{{6}}
-$$
-
-**Substitution:**
-
-$$
-Z_g = \\frac{{{b:.1f} \\times {D:.1f}^2}}{{6}}
-    = {Zg:,.3e}\\ \\text{{mm}}^3
-$$
-
----
-
-**Result:**  
-$Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
-"""
-    
-    step_expander_calcbox(
-        uid="bending_min_2_2",
-        summary_line=f"Check 2 — Gross section modulus Z_g | Result: Z_g = {Zg:,.3e} mm^3",
-        details_md=section22_details,
-        status=None,
-        render_policy="mounted",
-    )
-
-    # 2.3 M_cr
-    section23_details = f"""
-*Purpose: Determine the cracking moment $M_{{cr}}$ for the section.*  
-
-**Inputs:**  
-
-- $f_{{ct,f}} = {fctf_as:.3f}$ MPa  
-- $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$  
-
----
-
-**Formula:**
-
-$$
-M_{{cr}} = \\frac{{f_{{ct,f}} Z_g}}{{10^6}}
-$$
-
-**Substitution:**
-
-$$
-M_{{cr}} = \\frac{{{fctf_as:.3f} \\times {Zg:,.3e}}}{{10^6}}
-       = {Mcr_as:.2f}\\ \\text{{kNm}}
-$$
-
----
-
-**Result:**  
-$M_{{cr}} \\approx {Mcr_as:.2f}$ kNm.
-"""
-    
-    step_expander_calcbox(
-        uid="bending_min_2_3",
-        summary_line=f"Check 3 — Cracking moment $M_{{cr}}$ | Result: M_{{cr}} = {Mcr_as:.2f} kNm",
-        details_md=section23_details,
-        status=None,
-        render_policy="mounted",
-    )
-
-    # 2.4 Minimum required capacity (1.2 Mcr) - PASS/FAIL
-    phi_Mu_cap = top_results.get("phi_Mu_cap", 0.0)
-    Mu_min_ok = phi_Mu_cap >= Mu_min_as if (phi_Mu_cap > 0 and Mu_min_as > 0) else None
-    Mu_min_status = "pass" if Mu_min_ok is True else "fail" if Mu_min_ok is False else None
-    
-    section24_details = f"""
-*Purpose: Check the minimum required design capacity relative to cracking moment.*  
-
-**Inputs:**  
-
-- $M_{{cr}} = {Mcr_as:.2f}$ kNm  
-- $\\phi M_{{u,cap}} = {phi_Mu_cap:.2f}$ kNm
-
----
-
-**Formula:**
-
-$$
-(M_{{u,cap}})_{{min}} = 1.2\\, M_{{cr}}
-$$
-
-**Substitution:**
-
-$$
-(M_{{u,cap}})_{{min}}
-= 1.2 \\times {Mcr_as:.2f}
-= {Mu_min_as:.2f}\\ \\text{{kNm}}
-$$
-
----
-
-**Check:**  
-$\\phi M_{{u,cap}} = {phi_Mu_cap:.2f} \\ge {Mu_min_as:.2f} = (M_{{u,cap}})_{{min}}$ â†’ {"âœ“ PASS" if Mu_min_ok else "âœ— FAIL" if Mu_min_ok is False else "â€”"}
-
-**Result:**  
-Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
-"""
-    
-    step_expander_calcbox(
-        uid="bending_min_2_4",
-        summary_line=f"Check 4 — Minimum required design capacity (M_u,cap)_min | Result: phi_Mu_cap = {phi_Mu_cap:.2f} kNm vs (M_u,cap)_min = {Mu_min_as:.2f} kNm -> {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else '-'}",
-        details_md=section24_details,
-        status=Mu_min_status,
-        render_policy="mounted",
-    )
-
-    # 2.5 Minimum tensile reinforcement - PASS/FAIL
-    As_ok = Ast >= Ast_min_as if (Ast is not None and Ast_min_as is not None and not math.isnan(Ast_min_as)) else None
-    As_status = "pass" if As_ok is True else "fail" if As_ok is False else None
-    
-    section25_details = f"""
-*Purpose: Calculate minimum tensile reinforcement according to AS 3600 style rules and check provided area.*  
-
-**Inputs:**  
-
-- $f_{{ct,f}} = {fctf_as:.3f}$ MPa  
-- $f_{{sy}} = {fsy:.1f}$ MPa  
-- $b = {b:.1f}$ mm  
-- Effective depth $d = {top_results['d']:.1f}$ mm  
-- Provided area: $A_{{st}} = {Ast:.1f}$ mm^2
-
----
-
-**Formula:**
-
-$$
-A_{{st,min}}
-= 0.4\\;\\frac{{f_{{ct,f}}}}{{f_{{sy}}}}\\; b d
-$$
-
-**Substitution:**
-
-$$
-A_{{st,min}}
-= 0.4 \\times \\frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
-\\times {b:.1f} \\times {top_results['d']:.1f}
-= {Ast_min_as:.1f}\\ \\text{{mm}}^2
-$$
-
----
-
-**Check:**  
-$A_{{st}} = {Ast:.1f} \\ge {Ast_min_as:.1f} = A_{{st,min}}$ â†’ {"âœ“ PASS" if As_ok else "âœ— FAIL" if As_ok is False else "â€”"}
-
-**Result:**  
-Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm^2.
-"""
-    
-    step_expander_calcbox(
-        uid="bending_min_2_5",
-        summary_line=f"Check 5 — Minimum tensile reinforcement A_st,min | Result: A_st = {Ast:.1f} mm^2 vs A_st,min = {Ast_min_as:.1f} mm^2 -> {'PASS' if As_ok else 'FAIL' if As_ok is False else '-'}",
-        details_md=section25_details,
-        status=As_status,
-        render_policy="mounted",
-    )

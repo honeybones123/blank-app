@@ -17,13 +17,11 @@ def test_active_sls_tab_delegates_to_the_authoritative_six_check_renderer() -> N
     view = (
         ROOT / "engineering_page_sections" / "bending_sls_checks_view.py"
     ).read_text(encoding="utf-8")
-    legacy_tabs = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
 
     assert "render_authoritative_sls_checks(" in view
     assert "top_results=view.mutable_results()" in view
     assert "from bending_tabs import" not in view
-    assert "def render_sls_tab(" not in legacy_tabs
-    assert "nb_bot = st.session_state.get" not in legacy_tabs
+    assert not (ROOT / "bending_tabs.py").exists()
 
 
 def test_sls_teaching_sequence_is_n_dn_icr_curvature_strain_stress() -> None:

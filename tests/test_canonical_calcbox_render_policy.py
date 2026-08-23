@@ -20,7 +20,16 @@ def test_canonical_calcbox_owns_light_and_heavy_render_policy() -> None:
 
 
 def test_bending_opts_light_cards_into_canonical_mounted_policy() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8-sig")
+    source = "\n".join(
+        (
+            ROOT / "engineering_page_sections" / filename
+        ).read_text(encoding="utf-8-sig")
+        for filename in (
+            "bending_uls_checks.py",
+            "bending_sls_checks.py",
+            "bending_minimum_strength_checks.py",
+        )
+    )
     page = (ROOT / "bending_page.py").read_text(encoding="utf-8-sig")
 
     assert 'render_policy="mounted"' in source

@@ -12,9 +12,11 @@ def render_bending_minimum_strength_checks(
 ) -> None:
     """Render the existing minimum-strength teaching sequence."""
 
-    from bending_tabs import render_min_strength_tab
+    from engineering_page_sections.bending_minimum_strength_checks import (
+        render_minimum_strength_checks,
+    )
 
-    render_min_strength_tab(
+    render_minimum_strength_checks(
         view.mutable_results(),
         view.width_mm,
         view.overall_depth_mm,

@@ -56,13 +56,22 @@ def test_bending_uses_one_canonical_calcbox_renderer() -> None:
     """Performance work cannot fork calc-card markup/CSS/state ownership."""
 
     bending_shell = (ROOT / "bending_page.py").read_text(encoding="utf-8")
-    bending_tabs = (ROOT / "bending_tabs.py").read_text(encoding="utf-8-sig")
+    bending_checks = "\n".join(
+        (
+            ROOT / "engineering_page_sections" / filename
+        ).read_text(encoding="utf-8-sig")
+        for filename in (
+            "bending_uls_checks.py",
+            "bending_sls_checks.py",
+            "bending_minimum_strength_checks.py",
+        )
+    )
     canonical = (ROOT / "widgets_helpers.py").read_text(encoding="utf-8-sig")
 
     assert "install_bending_hybrid_calcbox_runtime" not in bending_shell
     assert "_install_presentation_performance_policy" not in bending_shell
     assert not (ROOT / "engineering_page_sections" / "calcbox_performance.py").exists()
-    assert "step_expander_calcbox" in bending_tabs
+    assert "step_expander_calcbox" in bending_checks
     assert "def step_expander_calcbox(" in canonical
     assert "apply_step_summary_expander_css()" in canonical
     assert "span class='{status_class}'" in canonical

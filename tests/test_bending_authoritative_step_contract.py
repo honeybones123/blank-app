@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_authoritative_bending_uls_uses_the_eight_step_explanatory_sequence() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
 
     expected_titles = (
         "Check 1 — Concrete stress block",
@@ -36,7 +36,7 @@ def test_authoritative_bending_uls_uses_the_eight_step_explanatory_sequence() ->
 
 
 def test_authoritative_bending_diagrams_follow_the_equations_they_explain() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
 
     assert 'uid="bending_uls_authoritative_strains"' in source
     assert "bending_uls_authoritative_check4_strain_{moment_sign}" in source
@@ -46,7 +46,7 @@ def test_authoritative_bending_diagrams_follow_the_equations_they_explain() -> N
 
 
 def test_authoritative_force_resultant_explanation_uses_rectangular_stress_block() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
     force_box = source[source.index('uid="bending_uls_authoritative_4"'):source.index('uid="bending_uls_authoritative_6"')]
 
     assert r"C_c=\int_A" not in force_box
@@ -59,7 +59,7 @@ def test_authoritative_force_resultant_explanation_uses_rectangular_stress_block
 
 
 def test_authoritative_strain_explanation_identifies_and_classifies_each_layer() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
     check_4 = source[
         source.index('uid="bending_uls_authoritative_strains"'):
         source.index('uid="bending_uls_authoritative_method"')
@@ -81,7 +81,7 @@ def test_authoritative_strain_explanation_identifies_and_classifies_each_layer()
 
 
 def test_force_resultant_calculation_is_owned_by_check_5() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
     check_5 = source[
         source.index('uid="bending_uls_authoritative_4"'):
         source.index('uid="bending_uls_authoritative_6"')
@@ -95,7 +95,7 @@ def test_force_resultant_calculation_is_owned_by_check_5() -> None:
 
 
 def test_neutral_axis_checks_split_method_from_converged_equilibrium() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
     check_2 = source[
         source.index('uid="bending_uls_authoritative_method"'):
         source.index('uid="bending_uls_authoritative_equilibrium"')
@@ -122,7 +122,7 @@ def test_neutral_axis_checks_split_method_from_converged_equilibrium() -> None:
 
 
 def test_multi_layer_neutral_axis_method_uses_a_six_step_calcbox() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
     method_card = source[
         source.index("neutral_axis_method_md = rf\"\"\""):
         source.index("# These are deliberately authored display blocks")
@@ -137,7 +137,7 @@ def test_multi_layer_neutral_axis_method_uses_a_six_step_calcbox() -> None:
 
 
 def test_check_2_diagram_is_an_explicit_trial_not_the_converged_result() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
 
     assert '"Trial stress block"' in source
     assert "trial_neutral_axis=True" in source
@@ -153,7 +153,7 @@ def test_app_prefers_its_own_authoritative_inputs_package() -> None:
 
 
 def test_advanced_neutral_axis_math_uses_single_line_display_blocks() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
 
     assert "$$K_c=\\alpha_2f'_cb\\gamma=({alpha2:.3f})" in source
     assert "$$K_cd_n^2+\\left({b_symbolic}\\right)d_n-\\sum_" in source
@@ -165,7 +165,7 @@ def test_advanced_neutral_axis_math_uses_single_line_display_blocks() -> None:
 
 
 def test_authoritative_bending_info_preserves_detailed_heading_and_references() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
 
     assert 'st.markdown(f"### {heading}\\n\\n{body}")' in source
     assert "#### Why this check matters" in source
@@ -175,7 +175,7 @@ def test_authoritative_bending_info_preserves_detailed_heading_and_references() 
 
 
 def test_authoritative_bending_info_cites_each_numbered_reference_inline() -> None:
-    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
+    source = (ROOT / "engineering_page_sections" / "bending_uls_checks.py").read_text(encoding="utf-8")
     authoritative = source[source.index("def _render_authoritative_uls_steps("):]
     info_bodies = authoritative.split("content_before=info_control(")[1:9]
 
