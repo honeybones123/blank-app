@@ -83,6 +83,10 @@ from engineering_page_sections.compact_check_inputs import (
 from engineering_page_sections.stable_tabs import (
     render_stable_tabs,
 )
+from engineering_page_sections.bending_page_context import (
+    BendingCaseSnapshot,
+    build_bending_page_snapshot,
+)
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 
@@ -950,6 +954,37 @@ def render_bending():
     if _bdv not in _valid_bending_views and _valid_bending_views:
         st.session_state["bending_detail_view"] = _valid_bending_views[0]
 
+    bending_page_snapshot = build_bending_page_snapshot(
+        engineering_state=page_engineering_state,
+        check_pack=bend_pack,
+        authoritative_bending=authoritative_bending,
+        authoritative_ductility=authoritative_ductility,
+        section_layout=cached_layout,
+        positive_case=BendingCaseSnapshot(
+            moment_sign="positive",
+            has_case=has_sagging_case,
+            uls_demand_kNm=Mu_pos_star,
+            sls_demand_kNm=Ms_pos_star,
+            reinforcement_area_mm2=float(Ast or 0.0),
+            effective_depth_mm=d_pos_val,
+            results=top_results_pos,
+        ),
+        negative_case=BendingCaseSnapshot(
+            moment_sign="negative",
+            has_case=has_hogging_case,
+            uls_demand_kNm=Mu_neg_star,
+            sls_demand_kNm=Ms_neg_star,
+            reinforcement_area_mm2=float(common_bending_inputs["Ast_top"] or 0.0),
+            effective_depth_mm=d_neg_val,
+            results=top_results_neg,
+        ),
+        selected_detail_view=st.session_state.get(
+            "bending_detail_view", "positive"
+        ),
+        valid_detail_views=_valid_bending_views,
+        selected_diagram_state=canonical_state,
+    )
+
     render_timing_mark("bending_page.runtime.summary_compute.end")
 
     render_timing_mark("bending_page.runtime.presentation.start")
@@ -979,12 +1014,7 @@ def render_bending():
         elif len(_valid_bending_views) == 1:
             st.session_state["bending_detail_view"] = _valid_bending_views[0]
 
-        selected_bending_sign = st.session_state.get("bending_detail_view", "positive")
-        if (
-            selected_bending_sign not in _valid_bending_views
-            and _valid_bending_views
-        ):
-            selected_bending_sign = _valid_bending_views[0]
+        selected_bending_sign = bending_page_snapshot.view.selected_detail_view
         st.session_state["_bending_page_selected_sign"] = selected_bending_sign
 
         if has_sagging_case and has_hogging_case:
@@ -1230,15 +1260,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         """
                     )
 
-        initial_detail_view = st.session_state.get("bending_detail_view", "positive")
-        initial_showing_negative = (
-            initial_detail_view == "negative" and has_hogging_case
-        )
-        initial_mu_uls = (
-            Mu_neg_star
-            if initial_showing_negative
-            else (Mu_pos_star if has_sagging_case else 0.0)
-        )
+        initial_mu_uls = bending_page_snapshot.active_case.uls_demand_kNm
         with diagram_section_placeholder.container():
             _render_bending_diagram_bundle_panel(
                 cached_layout=cached_layout,
@@ -1814,15 +1836,13 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             # Resolve the active bending case before either presentation block
             # renders.  Both the diagrams and the cards consume this same
             # revision-matched publication; neither presentation owns it.
-            detail_view = st.session_state.get("bending_detail_view", "positive")
-            if detail_view not in _valid_bending_views and _valid_bending_views:
-                detail_view = _valid_bending_views[0]
-            showing_negative = detail_view == "negative" and has_hogging_case
+            detail_view = bending_page_snapshot.view.selected_detail_view
+            showing_negative = bending_page_snapshot.view.showing_negative
             top_results_active = dict(top_results)
-            Ast_active = Ast_bot
+            Ast_active = bending_page_snapshot.positive_case.reinforcement_area_mm2
             d_active = d_eff
-            Mu_uls_active = Mu_pos_star if has_sagging_case else 0.0
-            Mu_sls_active = Ms_pos_star if has_sagging_case else 0.0
+            Mu_uls_active = bending_page_snapshot.positive_case.uls_demand_kNm
+            Mu_sls_active = bending_page_snapshot.positive_case.sls_demand_kNm
             if showing_negative:
                 dn = float(top_results_neg.get("dn_mm", 0.0) or 0.0)
                 gamma_active = float(
@@ -1846,10 +1866,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     "z": z_active,
                     "d": d_calc,
                 })
-                Ast_active = float(get_param("Ast_top", 0.0) or 0.0)
+                Ast_active = bending_page_snapshot.negative_case.reinforcement_area_mm2
                 d_active = d_calc
-                Mu_uls_active = Mu_neg_star
-                Mu_sls_active = Ms_neg_star
+                Mu_uls_active = bending_page_snapshot.negative_case.uls_demand_kNm
+                Mu_sls_active = bending_page_snapshot.negative_case.sls_demand_kNm
             else:
                 top_results_active.update(top_results_pos)
                 top_results_active.update({
