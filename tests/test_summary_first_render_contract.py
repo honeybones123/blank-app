@@ -74,17 +74,19 @@ def test_creep_summary_renders_before_explainer_inputs_and_diagram_placeholder()
 
 
 def test_shrinkage_summary_renders_before_explainer_inputs_and_diagram_placeholder():
-    text = _top_level_function("shrinkage.py", "render_shrinkage")
+    text = _top_level_function("shrinkage_page_runtime.py", "render_shrinkage")
     authority = text.index("summary_values = compute_shrinkage_results(publish=True)")
-    summary = text.index("render_clickable_summary_table(", authority)
-    explainer = text.index("render_page_explainer_expander(_render_shrinkage_explainer)")
-    inputs = text.index("render_compact_check_inputs(")
-    diagram = text.index("side_view_placeholder = st.empty()")
+    summary = text.index("render_shrinkage_summary(", authority)
+    explainer = text.index("render_page_explainer_expander(")
+    inputs = text.index("render_shrinkage_inputs(")
+    diagram = text.index("ShrinkagePageShell.reserve_visualisation(st)")
 
     assert authority < summary < explainer
     assert summary < inputs
     assert summary < diagram
-    assert 'current_authoritative_family(st.session_state, "shrinkage")' in _read("shrinkage.py")
+    assert 'current_authoritative_family(st.session_state, "shrinkage")' in _read(
+        "shrinkage_page_runtime.py"
+    )
 
 
 def test_deflection_summary_renders_before_explainer_inputs_and_diagram_placeholder():
@@ -125,13 +127,13 @@ def test_summary_first_migration_keeps_existing_input_card_and_lazy_boundaries()
     crack = _top_level_function("crack_page_runtime.py", "render_crack")
     deflection = _top_level_function("deflection_page_runtime.py", "render_deflection")
     creep = _top_level_function("creep_page_runtime.py", "render_creep")
-    shrinkage = _top_level_function("shrinkage.py", "render_shrinkage")
+    shrinkage = _top_level_function("shrinkage_page_runtime.py", "render_shrinkage")
 
     assert "render_shear_inputs(" in shear
     assert "compact_check_input_columns(" in crack
     assert "compact_check_input_columns(" in deflection
     assert "render_creep_inputs(" in creep
-    assert "render_compact_check_inputs(" in shrinkage
+    assert "render_shrinkage_inputs(" in shrinkage
     assert "shear_page_shell = ShearPageShell.reserve_after_summary(" in shear
     assert "shear_page_shell.render_visualisation(" in shear
     assert "diagram_placeholder = st.empty()" in deflection

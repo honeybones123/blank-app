@@ -105,7 +105,7 @@ def test_result_pages_have_no_direct_app_rerun_authority() -> None:
         "bending_page_runtime.py",
         "shear_page_runtime.py",
         "creep_page_runtime.py",
-        "shrinkage.py",
+        "shrinkage_page_runtime.py",
         "crack_page_runtime.py",
         "deflection_page_runtime.py",
     )
@@ -124,7 +124,7 @@ def test_result_pages_do_not_write_debug_session_inventories_during_render() -> 
         "bending_page_runtime.py",
         "shear_page_runtime.py",
         "creep_page_runtime.py",
-        "shrinkage.py",
+        "shrinkage_page_runtime.py",
         "crack_page_runtime.py",
         "deflection_page_runtime.py",
     )
@@ -523,9 +523,9 @@ def test_authoritative_summaries_publish_before_heavy_page_content() -> None:
             "summary_values = compute_creep_results(publish=True)",
             "creep_inputs = render_creep_inputs(",
         ),
-        "shrinkage.py": (
+        "shrinkage_page_runtime.py": (
             "summary_values = compute_shrinkage_results(publish=True)",
-            "b_val = float(engineering_value(",
+            "inputs = render_shrinkage_inputs(",
         ),
         "crack_page_runtime.py": (
             "crack_pack = build_crack_check_rows_from_state(st.session_state)",
@@ -539,7 +539,7 @@ def test_authoritative_summaries_publish_before_heavy_page_content() -> None:
     entrypoints = {
         "shear_page_runtime.py": "def render_shear():",
         "creep_page_runtime.py": "def render_creep():",
-        "shrinkage.py": "def render_shrinkage():",
+        "shrinkage_page_runtime.py": "def render_shrinkage():",
         "crack_page_runtime.py": "def render_crack():",
         "deflection_page_runtime.py": "def render_deflection():",
     }

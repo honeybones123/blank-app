@@ -32,7 +32,7 @@ PAGE_CONTRACTS = {
         "categories": ("section_member", "material_environment", "time_loading"),
         "widgets": ("cr_b", "cr_D", "cr_faces", "cr_env", "inputs_t_creep", "inputs_age_at_loading"),
     },
-    "shrinkage.py": {
+    "engineering_page_sections/shrinkage_inputs.py": {
         "categories": ("method", "section_member", "material_environment", "time_drying"),
         "widgets": ("sh_method", "sh_b", "sh_D", "sh_faces", "inputs_t_shrink"),
     },
@@ -111,7 +111,7 @@ def test_all_crack_methods_are_owned_by_the_shared_panel():
 
 
 def test_shrinkage_alternate_method_keeps_its_own_complete_result_contract():
-    source = (ROOT / "shrinkage.py").read_text(encoding="utf-8")
+    source = (ROOT / "shrinkage_page_runtime.py").read_text(encoding="utf-8")
     assert "eps_csd_final = method_result.nominal_drying_shrinkage" in source
-    assert "if shrinkage_method == ShrinkageMethod.EXISTING_AS3600.value" in source
-    assert "else dict(shrinkage_fallback)" in source
+    assert "if inputs.method == ShrinkageMethod.EXISTING_AS3600.value" in source
+    assert "else dict(fallback)" in source
