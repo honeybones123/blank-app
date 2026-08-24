@@ -4,7 +4,7 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 
-from engineering_page_sections import shear_stress_field, shear_visualisation
+from engineering_page_sections import shear_visualisation
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,7 +56,7 @@ def test_bundle_prebuilds_every_mcft_toggle_projection(monkeypatch) -> None:
         lambda _runtime: go.Figure(figure),
     )
     monkeypatch.setattr(
-        shear_stress_field,
+        shear_visualisation,
         "build_mcft_stress_field_figure",
         lambda *, theta_v_deg, options: (
             go.Figure(figure),
@@ -99,7 +99,7 @@ def test_bundle_cache_is_bounded(monkeypatch) -> None:
         lambda _runtime: go.Figure(figure),
     )
     monkeypatch.setattr(
-        shear_stress_field,
+        shear_visualisation,
         "build_mcft_stress_field_figure",
         lambda *, theta_v_deg, options: (go.Figure(figure), False),
     )
@@ -134,9 +134,10 @@ def test_all_canvases_reveal_only_after_global_bundle_readiness() -> None:
     ).read_text(encoding="utf-8")
 
     assert source.count("visibility: hidden") == 1
-    assert "completePlot('.st-key-shear_side_diagram_live" in source
-    assert "completePlot('.st-key-shear_section_diagram_live" in source
-    assert "completePlot('.st-key-shear_force_diagram_live" in source
+    assert "overlapHeight < Math.min(100, plotBox.height / 2)" in source
+    assert "'.st-key-shear_side_diagram_live .js-plotly-plot'," in source
+    assert "'.st-key-shear_section_diagram_live .js-plotly-plot'," in source
+    assert "'.st-key-shear_force_diagram_live .js-plotly-plot'," in source
     assert "&& completeMcft()" in source
     assert "liveSelectors.forEach" in source
     assert "shellSelectors.forEach" in source
@@ -152,3 +153,6 @@ def test_shell_and_live_canvas_share_the_bending_height_token() -> None:
     assert 'data-shear-diagram-geometry-token="--sb-bending-diagram-plot-height"' in source
     assert source.count("var(--sb-bending-diagram-plot-height, 320px)") >= 10
     assert "pointer-events: none" in source
+    assert "Shear diagrams loading" in source
+    assert "Preparing MCFT stress field" not in source
+    assert ":has(.st-key-shear_mcft_diagram_options)" in source

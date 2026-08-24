@@ -669,7 +669,6 @@ def _render_shear_diagram_loading_shell(
     runtime: ShearVisualisationRuntime,
     *,
     view_key: str,
-    label: str,
 ) -> None:
     """Reserve the same 320 px canvas used by every live Shear diagram."""
 
@@ -680,7 +679,7 @@ def _render_shear_diagram_loading_shell(
         'role="status" aria-live="polite">'
         '<div class="shear-diagram-loading-shell">'
         '<span class="shear-diagram-loading-icon" aria-hidden="true">&#9711;</span>'
-        f'<span class="shear-diagram-loading-copy">Preparing {label}</span>'
+        '<span class="shear-diagram-loading-copy">Shear diagrams loading</span>'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -916,6 +915,27 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
     grid-template-columns: minmax(0, 1fr) !important;
     grid-template-rows: var(--sb-bending-diagram-plot-height, 320px) !important;
 }
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"] {
+    grid-area: 1 / 1 !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+}
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.st-key-shear_mcft_diagram_options) {
+    z-index: 2 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+}
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:not(:has(.st-key-shear_mcft_diagram_options)),
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:not(:has(.st-key-shear_mcft_diagram_options)) > div[data-testid="stVerticalBlock"] {
+    z-index: 1 !important;
+    box-sizing: border-box !important;
+    height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    min-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    max-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+}
 .st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {
     grid-area: 1 / 1 !important;
     min-width: 0 !important;
@@ -963,6 +983,13 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
     background: #fff;
     color: #10234a;
     pointer-events: none;
+}
+[data-testid="stTabs"][data-sb-tab-scope="shear-diagram-panels"] [role="tabpanel"],
+.st-key-shear_side_plot_frame,
+.st-key-shear_section_plot_frame,
+.st-key-shear_force_plot_frame,
+.st-key-shear_mcft_plot_frame {
+    background: #fff !important;
 }
 .shear-diagram-loading-shell {
     display: flex;
@@ -1014,7 +1041,6 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                     _render_shear_diagram_loading_shell(
                         runtime,
                         view_key="side",
-                        label="shear side view",
                     )
                 with st.container(key="shear_side_diagram_live"):
                     if bundle is not None:
@@ -1027,7 +1053,6 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                     _render_shear_diagram_loading_shell(
                         runtime,
                         view_key="section",
-                        label="shear section",
                     )
                 with st.container(key="shear_section_diagram_live"):
                     if bundle is not None:
@@ -1040,7 +1065,6 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                     _render_shear_diagram_loading_shell(
                         runtime,
                         view_key="force",
-                        label="shear force diagram",
                     )
                 with st.container(key="shear_force_diagram_live"):
                     if bundle is not None:
@@ -1053,7 +1077,6 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                     _render_shear_diagram_loading_shell(
                         runtime,
                         view_key="mcft",
-                        label="MCFT stress field",
                     )
                 with st.container(key="shear_mcft_diagram_live"):
                     if bundle is not None:
@@ -1114,20 +1137,46 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
               if (prior && prior.cleanup) prior.cleanup();
               let cancelled = false;
               let timer = 0;
-              const completePlot = (selector) => {{
+              const completePlot = (selector, containerSelector) => {{
                 const plot = doc.querySelector(selector);
                 if (!plot || !plot._fullLayout || !plot._fullData) return false;
-                return Boolean(
+                const hasContent = Boolean(
                   plot.querySelector('.scatterlayer .trace')
                   || plot.querySelector('g.shapelayer .shape-group')
                 );
+                if (!hasContent) return false;
+                const container = doc.querySelector(containerSelector);
+                if (!container) return false;
+                const plotBox = plot.getBoundingClientRect();
+                const containerBox = container.getBoundingClientRect();
+                if (containerBox.width > 0 && containerBox.height > 0) {{
+                  const overlapWidth = Math.min(plotBox.right, containerBox.right)
+                    - Math.max(plotBox.left, containerBox.left);
+                  const overlapHeight = Math.min(plotBox.bottom, containerBox.bottom)
+                    - Math.max(plotBox.top, containerBox.top);
+                  if (overlapWidth <= 0 || overlapHeight < Math.min(100, plotBox.height / 2)) {{
+                    return false;
+                  }}
+                }}
+                return true;
               }};
               const completeMcft = () => {{
-                if (completePlot('.st-key-shear_mcft_diagram_live .js-plotly-plot')) {{
+                if (completePlot(
+                  '.st-key-shear_mcft_diagram_live .js-plotly-plot',
+                  '.st-key-shear_mcft_diagram_live'
+                )) {{
                   return true;
                 }}
                 const frame = doc.querySelector('.st-key-shear_mcft_diagram_live iframe');
                 if (!frame) return false;
+                const container = doc.querySelector('.st-key-shear_mcft_diagram_live');
+                const frameBox = frame.getBoundingClientRect();
+                const containerBox = container?.getBoundingClientRect();
+                if (containerBox && containerBox.width > 0 && containerBox.height > 0) {{
+                  const overlapHeight = Math.min(frameBox.bottom, containerBox.bottom)
+                    - Math.max(frameBox.top, containerBox.top);
+                  if (overlapHeight < Math.min(100, frameBox.height / 2)) return false;
+                }}
                 try {{
                   return Boolean(frame.contentDocument?.querySelector('.plotly-graph-div'));
                 }} catch (_error) {{
@@ -1143,9 +1192,18 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
                 );
                 const complete = Boolean(
                   published
-                  && completePlot('.st-key-shear_side_diagram_live .js-plotly-plot')
-                  && completePlot('.st-key-shear_section_diagram_live .js-plotly-plot')
-                  && completePlot('.st-key-shear_force_diagram_live .js-plotly-plot')
+                  && completePlot(
+                    '.st-key-shear_side_diagram_live .js-plotly-plot',
+                    '.st-key-shear_side_diagram_live'
+                  )
+                  && completePlot(
+                    '.st-key-shear_section_diagram_live .js-plotly-plot',
+                    '.st-key-shear_section_diagram_live'
+                  )
+                  && completePlot(
+                    '.st-key-shear_force_diagram_live .js-plotly-plot',
+                    '.st-key-shear_force_diagram_live'
+                  )
                   && completeMcft()
                 );
                 if (!complete) {{
