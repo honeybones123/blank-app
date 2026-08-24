@@ -1869,6 +1869,18 @@ def render_inputs_deferred_design_brain_fragment(
     revision = workspace_store.workspace_revision()
     fragment_store = services.publications
     fragment_state = fragment_store.current()
+    authoritative_hash = workspace_store.authoritative_hash()
+    if (
+        fragment_state.status == "ready"
+        and fragment_state.active_workspace_revision == int(revision)
+        and fragment_state.active_engineering_hash == str(authoritative_hash or "")
+        and int(ss.get(_DESIGN_BRAIN_VISIBLE_REVISION_KEY, 0) or 0)
+        == int(revision)
+    ):
+        # The timer remains armed as a cheap wake mechanism, but a ready,
+        # revision-current card must not be replaced on every tick. This is
+        # what keeps the recommendation visually stable after publication.
+        return
     with design_brain_container.container():
         slot = st_module.empty()
         if fragment_state.status in {"refreshing", "empty", "ready_stale"}:

@@ -478,6 +478,9 @@ def test_deferred_design_brain_has_revision_bound_start_gate() -> None:
     assert "_inputs_design_brain_deferred_started_{revision}" in deferred_source
     assert "runtime.refresh_design_brain_result()" in deferred_source
     assert "fragment_store.fail_refresh(exc)" in deferred_source
+    assert "active_workspace_revision == int(revision)" in deferred_source
+    assert "active_engineering_hash == str(authoritative_hash or \"\")" in deferred_source
+    assert "return" in deferred_source
 
 
 def test_each_result_page_has_one_workspace_refresh_authority() -> None:
