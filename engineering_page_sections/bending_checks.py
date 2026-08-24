@@ -16,7 +16,11 @@ from engineering_page_sections.bending_uls_checks_view import (
 )
 from engineering_page_sections.stable_tabs import render_stable_tabs
 from state_and_helpers import render_timing_mark
-from widgets_helpers import apply_step_summary_expander_css, page_divider
+from widgets_helpers import (
+    apply_step_summary_expander_css,
+    page_divider,
+    reset_bending_calc_card_parent_render_state,
+)
 
 
 def render_bending_checks(
@@ -30,6 +34,18 @@ def render_bending_checks(
     """Render the established heading and three native check tabs."""
 
     render_timing_mark("bending_page.runtime.checks.start")
+    # Parent renders (cold navigation, beam/revision changes, and other page
+    # reruns) must start with header-only calculation cards.  Individual card
+    # fragment reruns do not execute this reset, allowing only cards opened on
+    # the settled page to stay mounted for instant subsequent toggles.
+    requested_open_uid = (
+        st_module.session_state.get("bending_pending_scroll_uid")
+        or st_module.session_state.get("jump_to")
+    )
+    reset_bending_calc_card_parent_render_state(
+        st_module.session_state,
+        preserve_open_uid=str(requested_open_uid) if requested_open_uid else None,
+    )
     apply_step_summary_expander_css()
     page_divider()
     st_module.markdown(

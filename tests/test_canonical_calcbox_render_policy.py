@@ -1,5 +1,11 @@
 from pathlib import Path
 
+from widgets_helpers import (
+    _bending_calc_card_is_warm,
+    _mark_bending_calc_card_warm,
+    reset_bending_calc_card_parent_render_state,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,7 +20,9 @@ def test_canonical_calcbox_owns_light_and_heavy_render_policy() -> None:
     assert 'mount_closed_body = policy in {"mounted", "eager", "client_mounted"}' in renderer
     assert 'on_change="ignore" if mount_closed_body else "rerun"' in renderer
     assert 'if not expander.open and not mount_closed_body:' in renderer
-    assert 'if str(uid).startswith("bending_"):' in renderer
+    assert 'is_bending_card = str(uid).startswith("bending_")' in renderer
+    assert "mount_closed_body = _bending_calc_card_is_warm(uid)" in renderer
+    assert "_mark_bending_calc_card_warm(uid)" in renderer
     assert '"_bending_diagram_bundle_ready_fingerprint"' not in renderer
     assert '"_bending_diagram_render_stage"' not in renderer
 
@@ -47,3 +55,48 @@ def test_open_calc_body_keeps_semantic_colour_connection() -> None:
     assert "box-shadow: inset 4px 0 0 #1f77b4" in source
     assert "box-shadow: inset 4px 0 0 #28a745" in source
     assert "box-shadow: inset 4px 0 0 #dc3545" in source
+
+
+def test_bending_warm_calc_cards_are_scoped_to_one_parent_render() -> None:
+    state: dict[str, object] = {}
+
+    reset_bending_calc_card_parent_render_state(state)
+    assert not _bending_calc_card_is_warm("bending_uls_check_1", state)
+    assert not _bending_calc_card_is_warm("bending_uls_check_2", state)
+
+    _mark_bending_calc_card_warm("bending_uls_check_1", state)
+    assert _bending_calc_card_is_warm("bending_uls_check_1", state)
+    assert not _bending_calc_card_is_warm("bending_uls_check_2", state)
+
+    reset_bending_calc_card_parent_render_state(state)
+    assert not _bending_calc_card_is_warm("bending_uls_check_1", state)
+
+
+def test_bending_parent_render_collapses_cards_but_preserves_jump_target() -> None:
+    state: dict[str, object] = {
+        "step_open_bending_uls_check_1": True,
+        "step_open_bending_sls_check_2": True,
+        "step_open_shear_uls_check_1": True,
+    }
+
+    reset_bending_calc_card_parent_render_state(
+        state,
+        preserve_open_uid="bending_sls_check_2",
+    )
+
+    assert state["step_open_bending_uls_check_1"] is False
+    assert state["step_open_bending_sls_check_2"] is True
+    assert state["step_open_shear_uls_check_1"] is True
+
+
+def test_bending_parent_resets_warm_cards_before_rendering_checks() -> None:
+    source = (
+        ROOT / "engineering_page_sections" / "bending_checks.py"
+    ).read_text(encoding="utf-8-sig")
+
+    reset = source.index(
+        "reset_bending_calc_card_parent_render_state("
+    )
+    tabs = source.index("render_stable_tabs(", reset)
+    uls = source.index("render_uls(checks.uls)", tabs)
+    assert reset < tabs < uls
