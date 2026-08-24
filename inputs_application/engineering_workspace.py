@@ -30,6 +30,11 @@ from inputs_application.session_services import InputsSessionServices
 from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
+from inputs_application.design_brain_job_runtime import (
+    enqueue_design_brain_job,
+    get_design_brain_job,
+)
+from application.design_brain_jobs import DesignBrainJobStatus
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.active_beam_engineering_state import (
     resolve_active_beam_engineering_state,
@@ -1013,6 +1018,7 @@ def render_inputs_design_guide_fragment_section(
     services: InputsSessionServices,
     region_context: InputsDesignBrainRegionContext,
     design_guide_slot=None,
+    authoritative_result_override=None,
 ) -> None:
     """Render the complete authoritative result without refresh or polling.
 
@@ -1025,7 +1031,11 @@ def render_inputs_design_guide_fragment_section(
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     identity = region_context.identity
     authoritative_revision = identity.input_revision
-    authoritative_result = services.engineering_results.current()
+    authoritative_result = (
+        authoritative_result_override
+        if authoritative_result_override is not None
+        else services.engineering_results.current()
+    )
     authoritative_is_current = bool(
         identity.matches(
             input_revision=workspace_store.workspace_revision(),
@@ -1066,7 +1076,7 @@ def render_inputs_design_guide_fragment_section(
         authoritative_revision
     )
     if selected_design_brain_adapter_name() == "v2":
-        authoritative_result = services.engineering_results.current()
+        authoritative_result = authoritative_result_override or services.engineering_results.current()
         if authoritative_result is not None:
             revisioned_apply_payload = ApplyTransactionStore(
                 st_module.session_state
@@ -1150,6 +1160,83 @@ def render_inputs_design_guide_fragment_section(
             disabled=True,
             label_visibility="collapsed",
         )
+
+
+def render_inputs_async_design_brain_fragment(
+    *,
+    st_module: Any,
+    runtime: EngineeringWorkspaceRuntime,
+    page_context: dict[str, Any],
+) -> None:
+    """Render only the revision-bound Design Brain job/card region."""
+
+    services = InputsSessionServices.from_mapping(st_module.session_state)
+    workspace_store = InputsWorkspaceStateStore(st_module.session_state)
+    revision = workspace_store.workspace_revision()
+    engineering_result = services.engineering_results.current()
+    slot = st_module.container(key="inputs_design_brain_region")
+    if engineering_result is None:
+        with slot:
+            st_module.info("Enter a design action or load to calculate.")
+        return
+
+    job = get_design_brain_job(
+        input_revision=revision,
+        engineering_hash=engineering_result.engineering_hash,
+    )
+    if job is None:
+        job = enqueue_design_brain_job(
+            st_module.session_state,
+            result=engineering_result,
+            input_revision=revision,
+        )
+    if job is None or job.status in {
+        DesignBrainJobStatus.PENDING,
+        DesignBrainJobStatus.RUNNING,
+    }:
+        with slot:
+            st_module.markdown(
+                '<div class="inputs-v2-root"><div class="inputs-v2-card-label">Design Guide</div>'
+                '<div data-testid="inputs-v2-design-brain-runtime-loading" '
+                'class="inputs-v2-brain-runtime-loading-shell" role="status" aria-live="polite" '
+                'style="display:flex">🧠 Updating Design Guide …</div></div>',
+                unsafe_allow_html=True,
+            )
+        return
+    if job.status is DesignBrainJobStatus.FAILED or job.execution is None:
+        with slot:
+            st_module.warning("Design Guide is temporarily unavailable.")
+        return
+    latest_result = services.engineering_results.current()
+    latest_revision = workspace_store.workspace_revision()
+    if (
+        latest_result is None
+        or latest_revision != revision
+        or latest_result.engineering_hash != engineering_result.engineering_hash
+        or job.input_revision != revision
+        or job.engineering_hash != engineering_result.engineering_hash
+    ):
+        return
+    region_context = build_inputs_design_brain_region_context(
+        session_state=st_module.session_state,
+        services=services,
+        inputs_detailed_mode=bool(
+            st_module.session_state.get("_inputs_detailed_mode", False)
+        ),
+    )
+    if region_context is None:
+        with slot:
+            st_module.info("Updating Design Guide…")
+        return
+    render_inputs_design_guide_fragment_section(
+        st_module=st_module,
+        runtime=runtime,
+        page_context=page_context,
+        services=services,
+        region_context=region_context,
+        design_guide_slot=slot,
+        authoritative_result_override=job.execution.result,
+    )
 
 
 def render_inputs_widget_fragment_section(
@@ -1824,6 +1911,7 @@ __all__ = [
     "render_inputs_calculation_fragment_section",
     "render_inputs_controls_fragment_section",
     "render_inputs_design_guide_fragment_section",
+    "render_inputs_async_design_brain_fragment",
     "render_inputs_summary_fragment_section",
     "render_inputs_widget_fragment_section",
 ]

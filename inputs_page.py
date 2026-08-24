@@ -18,6 +18,7 @@ from inputs_application.page_runtime import (
 )
 from inputs_application.engineering_workspace import (
     build_engineering_workspace_runtime,
+    render_inputs_async_design_brain_fragment as render_async_design_brain_region,
     render_engineering_workspace,
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
@@ -184,9 +185,17 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        include_design_brain=True,
+        include_design_brain=False,
         include_controls=True,
         include_widgets=True,
+    )
+
+
+def _render_inputs_async_design_brain_fragment(*, page_context: dict[str, Any]) -> None:
+    render_async_design_brain_region(
+        st_module=st,
+        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
+        page_context=page_context,
     )
 
 
@@ -251,6 +260,14 @@ def render_inputs_page() -> None:
         fragment_name="engineering_workspace",
         render_fn=_render_v2_workspace_fragment,
         kwargs={"page_context": page_context},
+    )
+    run_inputs_fragment(
+        st_module=st,
+        fragment_name="design_brain",
+        render_fn=_render_inputs_async_design_brain_fragment,
+        kwargs={"page_context": page_context},
+        force_fragment=True,
+        run_every=0.5,
     )
     render_timing_mark("inputs_page.shell.workspace.end")
 

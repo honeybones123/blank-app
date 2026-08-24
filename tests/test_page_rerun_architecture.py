@@ -456,19 +456,18 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
     assert "fragment_store.publish(" in renderer_source
 
 
-def test_inputs_engineering_workspace_uses_one_event_driven_transaction() -> None:
+def test_inputs_workspace_uses_async_design_brain_boundary() -> None:
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    assert "include_design_brain=True" in page_source
+    assert "include_design_brain=False" in page_source
     assert 'fragment_name="engineering_workspace"' in page_source
-    assert 'fragment_name="engineering_calculation"' not in page_source
-    assert 'fragment_name="engineering_controls"' not in page_source
-    assert 'fragment_name="design_brain"' not in page_source
-    assert "run_every=" not in page_source
+    assert 'fragment_name="design_brain"' in page_source
+    assert "render_async_design_brain_region" in page_source
+    assert "run_every=0.5" in page_source
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
         encoding="utf-8-sig"
     )
-    assert "run_every" not in fragment_source
+    assert "run_every: str | float | None = None" in fragment_source
 
 
 def test_inputs_workspace_has_revision_bound_design_brain_publication() -> None:
