@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 
 _FRAGMENT_WRAPPERS: dict[
-    tuple[str, Callable[..., Any], str | float | None],
+    tuple[str, Callable[..., Any]],
     Callable[..., Any],
 ] = {}
 def _current_fragment_id() -> str | None:
@@ -55,7 +55,6 @@ def run_inputs_fragment(
     render_fn: Callable[..., Any],
     kwargs: dict[str, Any] | None = None,
     force_fragment: bool = False,
-    run_every: str | float | None = None,
 ) -> Any:
     """Run one existing renderer in a fragment when the runtime supports it."""
 
@@ -75,7 +74,7 @@ def run_inputs_fragment(
     if callable(fragment) and not disabled:
         mode = "fragment"
         st_module.session_state[f"_inputs_{fragment_name}_fragment_mode"] = mode
-        cache_key = (str(fragment_name), render_fn, run_every)
+        cache_key = (str(fragment_name), render_fn)
         wrapped = _FRAGMENT_WRAPPERS.get(cache_key)
         if wrapped is None:
             def _fragment_entry(**fragment_payload: Any) -> Any:
@@ -86,12 +85,7 @@ def run_inputs_fragment(
                     **fragment_payload,
                 )
 
-            try:
-                wrapped = fragment(_fragment_entry, run_every=run_every)
-            except TypeError:
-                # Compatibility with the small test/runtime doubles and older
-                # Streamlit versions that only accept the callable.
-                wrapped = fragment(_fragment_entry)
+            wrapped = fragment(_fragment_entry)
             _FRAGMENT_WRAPPERS[cache_key] = wrapped
         return wrapped(**payload)
     st_module.session_state[f"_inputs_{fragment_name}_fragment_mode"] = mode
