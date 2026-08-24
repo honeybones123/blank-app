@@ -1919,6 +1919,20 @@ def render_inputs_deferred_design_brain_fragment(
                 with slot.container():
                     st_module.info("Updating design guidance...")
                 return
+            # The fragment is timer-driven, so a slow calculation can leave a
+            # second wake-up queued before the first one has published.  Do
+            # not let that queued run enter the authoritative calculation a
+            # second time: it would reset the visible card to the loading
+            # shell and make Batch/Design Brain appear to refresh forever.
+            refresh_lock_key = (
+                "_inputs_design_brain_refresh_in_flight_"
+                f"{revision}_{authoritative_hash or 'pending'}"
+            )
+            if ss.get(refresh_lock_key):
+                with slot.container():
+                    st_module.info("Updating design guidance...")
+                return
+            ss[refresh_lock_key] = True
             try:
                 runtime.refresh_design_brain_result()
             except Exception as exc:
@@ -1926,6 +1940,8 @@ def render_inputs_deferred_design_brain_fragment(
                 with slot.container():
                     st_module.warning("Design guidance is temporarily unavailable.")
                 return
+            finally:
+                ss.pop(refresh_lock_key, None)
             fragment_state = fragment_store.current()
         identity = build_inputs_design_brain_region_context(
             session_state=ss,

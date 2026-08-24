@@ -485,6 +485,8 @@ def test_deferred_design_brain_has_revision_bound_start_gate() -> None:
     assert "publication_hash = str(fragment_state.active_engineering_hash or \"\")" in deferred_source
     assert "publication_hash == str(authoritative_hash)" in deferred_source
     assert "publish_result=False" in deferred_source
+    assert "_inputs_design_brain_refresh_in_flight_" in deferred_source
+    assert "ss.pop(refresh_lock_key, None)" in deferred_source
     assert "return" in deferred_source
 
 
