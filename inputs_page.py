@@ -299,17 +299,17 @@ def render_inputs_page() -> None:
     render_timing_mark("inputs_page.shell.workspace.start")
     run_inputs_fragment(
         st_module=st,
-        fragment_name="engineering_controls",
-        render_fn=_prepare_inputs_controls_fragment,
-        kwargs={"page_context": page_context},
-    )
-    run_inputs_fragment(
-        st_module=st,
         fragment_name="engineering_calculation",
         render_fn=_render_inputs_engineering_fragment,
         kwargs={"page_context": page_context},
         force_fragment=True,
         run_every=0.5,
+    )
+    run_inputs_fragment(
+        st_module=st,
+        fragment_name="engineering_controls",
+        render_fn=_prepare_inputs_controls_fragment,
+        kwargs={"page_context": page_context},
     )
     run_inputs_fragment(
         st_module=st,
