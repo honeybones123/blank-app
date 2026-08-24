@@ -64,12 +64,12 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "ShearVisualisationRuntime(" in runtime_source
     assert "build_cross_section_figure=build_shear_cross_section_figure" in runtime_source
     assert "build_side_view_figure=build_shear_side_view_figure" in runtime_source
-    assert "build_sfd_bmd_figure=" not in runtime_source
+    assert "build_sfd_bmd_figure=plot_sfd_bmd_plotly" in runtime_source
     assert "Show detailed MCFT breakdown" not in mcft_source
     assert "lambda: render_shear_visualisation_block(" in runtime_source
 
 
-def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> None:
+def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> None:
     fake = _FakeStreamlit()
 
     def render_tabs(st_module, *, labels, scope_id, install_runtime=True):
@@ -79,18 +79,28 @@ def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> No
 
     monkeypatch.setattr(
         shear_visualisation,
-        "_render_shear_uls_view",
-        lambda _runtime: fake.events.append(("render", "ULS")),
+        "_render_shear_side_view",
+        lambda _runtime: fake.events.append(("render", "Side view")),
     )
     monkeypatch.setattr(
         shear_visualisation,
-        "_render_shear_sls_view",
-        lambda _runtime: fake.events.append(("render", "SLS")),
+        "_render_shear_cross_section",
+        lambda _runtime: fake.events.append(("render", "Section")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_shear_force_diagram",
+        lambda _runtime: fake.events.append(("render", "Shear diagram")),
     )
     monkeypatch.setattr(
         shear_visualisation,
         "_render_shear_mcft_view",
         lambda _runtime: fake.events.append(("render", "MCFT")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_mcft_display_options",
+        lambda _runtime: fake.events.append(("render", "MCFT options")),
     )
     monkeypatch.setattr(
         shear_visualisation,
@@ -106,12 +116,14 @@ def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> No
         render_centered_plotly=lambda *_args, **_kwargs: None,
         render_animated_plotly=lambda *_args, **_kwargs: None,
         render_section_title=lambda title: fake.events.append(("title", title)),
+        info_button=lambda *_args, **_kwargs: _FakeContext(fake.events, "info"),
         render_tabs=render_tabs,
         synchronize_tabs=lambda _st, **kwargs: fake.events.append(
             ("sync", kwargs)
         ),
         build_cross_section_figure=lambda **_kwargs: go.Figure(),
         build_side_view_figure=lambda **_kwargs: go.Figure(),
+        build_sfd_bmd_figure=lambda **_kwargs: (go.Figure(), go.Figure()),
         theta_v_deg=31.0,
     )
     shear_visualisation.render_shear_visualisation_block(runtime)
@@ -120,7 +132,7 @@ def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> No
     assert (
         "tabs",
         (
-            ("ULS", "SLS", "MCFT"),
+            ("Side view", "Section", "Shear diagram", "MCFT"),
             "shear-diagram-panels",
             True,
         ),
@@ -128,20 +140,79 @@ def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> No
     assert (
         "tabs",
         (
-            ("ULS", "SLS", "MCFT"),
+            ("Side view", "Section", "Shear diagram", "MCFT"),
             "shear-diagram-navigation",
             False,
         ),
     ) in fake.events
     assert [event for event in fake.events if event[0] == "render"] == [
-        ("render", "ULS"),
-        ("render", "SLS"),
+        ("render", "Side view"),
+        ("render", "Section"),
+        ("render", "Shear diagram"),
         ("render", "MCFT"),
+        ("render", "MCFT options"),
         ("render", "Stress field teaching"),
     ]
     sync = next(event[1] for event in fake.events if event[0] == "sync")
     assert sync["source_scope_id"] == "shear-diagram-navigation"
     assert sync["target_scope_id"] == "shear-diagram-panels"
+
+
+def test_shear_force_view_reuses_existing_vx_builder(monkeypatch) -> None:
+    events: list[tuple[str, object]] = []
+    state = {
+        "actions_mode": "manual",
+        "L": 6000.0,
+        "uls_Vstar": 120.0,
+        "support_type": "simply_supported",
+    }
+
+    class FakeSt:
+        session_state: dict[str, object] = {}
+
+    def get_param(name, default=None):
+        return state.get(name, default)
+
+    def build_sfd_bmd_figure(**kwargs):
+        events.append(("builder", kwargs))
+        return go.Figure(), go.Figure()
+
+    def render_plotly_diagram(_figure, **kwargs):
+        events.append(("plot", kwargs))
+
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_resolve_shear_visual_supports",
+        lambda _runtime, length_m: ([0.0, length_m], ["Pinned", "Roller"]),
+    )
+    runtime = shear_visualisation.ShearVisualisationRuntime(
+        st=FakeSt(),
+        get_param=get_param,
+        render_timing_mark=lambda *_args, **_kwargs: None,
+        render_plotly_diagram=render_plotly_diagram,
+        render_centered_plotly=lambda *_args, **_kwargs: None,
+        render_animated_plotly=lambda *_args, **_kwargs: None,
+        render_section_title=lambda *_args, **_kwargs: None,
+        info_button=lambda *_args, **_kwargs: None,
+        render_tabs=lambda *_args, **_kwargs: None,
+        synchronize_tabs=lambda *_args, **_kwargs: None,
+        build_cross_section_figure=lambda **_kwargs: go.Figure(),
+        build_side_view_figure=lambda **_kwargs: go.Figure(),
+        build_sfd_bmd_figure=build_sfd_bmd_figure,
+        theta_v_deg=31.0,
+    )
+
+    shear_visualisation._render_shear_force_diagram(runtime)
+
+    builder = next(value for name, value in events if name == "builder")
+    assert builder["L"] == 6.0
+    assert builder["support_positions"] == [0.0, 6.0]
+    assert builder["support_types"] == ["Pinned", "Roller"]
+    assert builder["V"][0] == 120.0
+    assert builder["V"][-1] == -120.0
+    plot = next(value for name, value in events if name == "plot")
+    assert plot["key"] == "shear_visual_sfd_diagram"
+    assert plot["title"] == "Shear force diagram"
 
 
 def test_static_mcft_renderer_receives_explicit_mount_dependency() -> None:

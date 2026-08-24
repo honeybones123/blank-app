@@ -25,7 +25,7 @@ MCFT_ILLUSTRATION_DISCLAIMER = (
 )
 
 
-def _display_options(st_module: Any) -> dict[str, bool]:
+def render_mcft_display_options(st_module: Any) -> dict[str, bool]:
     """Render the existing presentation-only MCFT display controls."""
 
     st_module.caption("MCFT diagram display options")
@@ -155,15 +155,6 @@ def render_stress_field_teaching(
     with st_module.expander(
         "The Stress Field: Explaining the Modified Compression Field Theory and Strut-and-Tie Model"
     ):
-        with st_module.popover(
-            "Diagram display options",
-            help=(
-                "Choose the optional strut-and-tie, load-flow, cracking and "
-                "stress-block overlays used by the MCFT diagram."
-            ),
-        ):
-            _display_options(st_module)
-
         st_module.markdown(
             r"""
 The Modified Compression Field Theory (MCFT) and the strut-and-tie model (STM) are idealisations of the same underlying stress field. In this implementation, both use the same angle $\theta_v$ from the MCFT relationships (see Check 5), ensuring consistency between calculations and the visualised field.
@@ -194,6 +185,7 @@ Beyond this, in the flexural–shear region, stresses follow the rotating princi
 __all__ = [
     "MCFT_ILLUSTRATION_DISCLAIMER",
     "build_mcft_stress_field_figure",
+    "render_mcft_display_options",
     "render_mcft_stress_field_diagram",
     "render_stress_field_teaching",
 ]
