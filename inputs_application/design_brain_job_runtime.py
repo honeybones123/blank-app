@@ -63,7 +63,10 @@ def enqueue_design_brain_job(
         dict(session_state.get(_PAYLOADS_KEY) or {}).get(str(int(input_revision)))
         or {}
     )
-    snapshot_payload = payload.get("snapshot")
+    calculations = dict(result.current_calculations or {})
+    snapshot_payload = payload.get("snapshot") or calculations.get(
+        "engineering_snapshot"
+    )
     if not isinstance(snapshot_payload, dict):
         return None
     snapshot = EngineeringInputSnapshot(**snapshot_payload)
@@ -73,8 +76,12 @@ def enqueue_design_brain_job(
         input_revision=int(input_revision),
         engineering_hash=str(result.engineering_hash),
         engineering_snapshot=snapshot,
-        resolved_inputs=dict(payload.get("resolved_inputs") or {}),
-        engineering_calculations=dict(result.current_calculations or {}),
+        resolved_inputs=dict(
+            payload.get("resolved_inputs")
+            or calculations.get("resolved_inputs")
+            or {}
+        ),
+        engineering_calculations=calculations,
         family_hint=payload.get("family_hint"),
         debug_enabled=bool(payload.get("debug_enabled", False)),
     )

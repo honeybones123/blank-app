@@ -12,6 +12,7 @@ from application.design_brain_jobs import (
     DesignBrainJobStatus,
 )
 from application.design_brain_port import DesignBrainExecution
+from inputs_application import design_brain_job_runtime
 
 
 def _job(revision: int, value: float = 1.0) -> DesignBrainJobInput:
@@ -108,5 +109,35 @@ def test_failed_job_isolated_from_streamlit_and_reported() -> None:
         result = _wait(manager, job)
         assert result.status is DesignBrainJobStatus.FAILED
         assert result.error and "brain failed" in result.error
+    finally:
+        manager.close()
+
+
+def test_fragment_edit_can_enqueue_from_authoritative_snapshot() -> None:
+    snapshot = EngineeringInputSnapshot(
+        design_actions={"Mu*": 31.0},
+        geometry={"b": 250.0, "D": 300.0},
+    )
+    manager = DesignBrainJobManager(_execution)
+    try:
+        result = AuthoritativeDesignResult(
+            engineering_hash=snapshot.engineering_hash,
+            current_calculations={
+                "engineering_snapshot": snapshot.to_dict(),
+                "resolved_inputs": {"Mu*": 31.0},
+            },
+        )
+        original_manager = design_brain_job_runtime._manager
+        design_brain_job_runtime._manager = lambda: manager
+        try:
+            queued = design_brain_job_runtime.enqueue_design_brain_job(
+                {}, result=result, input_revision=9
+            )
+        finally:
+            design_brain_job_runtime._manager = original_manager
+        settled = _wait(manager, queued)
+        assert settled.status is DesignBrainJobStatus.READY
+        assert settled.execution is not None
+        assert settled.execution.result.engineering_hash == snapshot.engineering_hash
     finally:
         manager.close()

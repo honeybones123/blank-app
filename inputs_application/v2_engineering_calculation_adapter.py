@@ -969,6 +969,10 @@ def calculate_v2_authoritative_result(
     manifest = source_manifest_hash()
     current_calculations = {
         "source": "inputs_v2",
+        # Fragment-owned engineering edits do not re-enter page setup. Keep
+        # the exact immutable snapshot beside the authoritative result so the
+        # isolated Design Brain worker receives the same input boundary.
+        "engineering_snapshot": engineering_snapshot.to_dict(),
         "calculation_contract_version": V2_ENGINEERING_CALCULATION_CONTRACT_VERSION,
         "actions_used": _actions_used_projection(current),
         "resolved_inputs": _resolved_inputs_projection(resolved_inputs, current),
