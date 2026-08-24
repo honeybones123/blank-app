@@ -37,6 +37,7 @@ from inputs_application.active_beam_engineering_state import (
 )
 from inputs_application.v2_design_guide_renderer import (
     render_v2_design_guide_card,
+    render_v2_design_guide_loading_shell,
 )
 
 
@@ -1916,8 +1917,10 @@ def render_inputs_deferred_design_brain_fragment(
             started_key = f"_inputs_design_brain_deferred_started_{revision}"
             if not ss.get(started_key):
                 ss[started_key] = True
-                with slot.container():
-                    st_module.info("Updating design guidance...")
+                render_v2_design_guide_loading_shell(
+                    st_module=st_module,
+                    design_guide_slot=slot,
+                )
                 return
             # The fragment is timer-driven, so a slow calculation can leave a
             # second wake-up queued before the first one has published.  Do
@@ -1929,8 +1932,10 @@ def render_inputs_deferred_design_brain_fragment(
                 f"{revision}_{authoritative_hash or 'pending'}"
             )
             if ss.get(refresh_lock_key):
-                with slot.container():
-                    st_module.info("Updating design guidance...")
+                render_v2_design_guide_loading_shell(
+                    st_module=st_module,
+                    design_guide_slot=slot,
+                )
                 return
             ss[refresh_lock_key] = True
             try:
@@ -1949,8 +1954,10 @@ def render_inputs_deferred_design_brain_fragment(
             inputs_detailed_mode=bool(ss.get("_inputs_detailed_mode", False)),
         )
         if identity is None:
-            with slot.container():
-                st_module.info("Updating design guidance...")
+            render_v2_design_guide_loading_shell(
+                st_module=st_module,
+                design_guide_slot=slot,
+            )
             return
         render_inputs_design_guide_fragment_section(
             st_module=st_module,

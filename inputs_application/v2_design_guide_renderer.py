@@ -82,6 +82,58 @@ def _normalise_visual_state(raw_state: Any, badge: Any) -> str:
     return "info"
 
 
+def render_v2_design_guide_loading_shell(
+    *,
+    st_module: Any,
+    design_guide_slot: Any,
+) -> None:
+    """Render the Design Brain loading boundary without global run-state CSS."""
+
+    with design_guide_slot.container():
+        st_module.markdown(
+            """
+<style>
+.inputs-v2-brain-runtime-loading-shell {
+  display:flex;
+  align-items:center;
+  gap:.7rem;
+  min-height:58px;
+  padding:.85rem 1rem;
+  margin:.7rem 0;
+  border:1px solid #cbd5e1;
+  border-left:5px solid #98a2b3;
+  border-radius:10px;
+  background:#fff;
+  color:#475569;
+}
+.inputs-v2-brain-runtime-loading-icon { font-size:1.25rem; line-height:1; }
+.inputs-v2-brain-runtime-loading-copy { font-weight:700; color:#334155; }
+.inputs-v2-brain-runtime-loading-dot {
+  display:inline-block;
+  width:.42rem;
+  height:.42rem;
+  margin-left:.18rem;
+  border-radius:999px;
+  background:#94a3b8;
+  animation:inputs-v2-runtime-pulse 1s infinite alternate;
+}
+.inputs-v2-brain-runtime-loading-dot:nth-child(2) { animation-delay:.2s; }
+.inputs-v2-brain-runtime-loading-dot:nth-child(3) { animation-delay:.4s; }
+@keyframes inputs-v2-runtime-pulse { from { opacity:.25; } to { opacity:1; } }
+</style>
+<div class="inputs-v2-brain-runtime-loading-shell" role="status" aria-live="polite">
+  <span class="inputs-v2-brain-runtime-loading-icon" aria-hidden="true">🧠</span>
+  <span class="inputs-v2-brain-runtime-loading-copy">Updating Design Guide
+    <span class="inputs-v2-brain-runtime-loading-dot"></span>
+    <span class="inputs-v2-brain-runtime-loading-dot"></span>
+    <span class="inputs-v2-brain-runtime-loading-dot"></span>
+  </span>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+
 def render_v2_design_guide_card(
     *,
     st_module: Any,
@@ -152,14 +204,6 @@ def render_v2_design_guide_card(
             ".inputs-v2-brain-runtime-loading-dot:nth-child(2){animation-delay:.2s;}"
             ".inputs-v2-brain-runtime-loading-dot:nth-child(3){animation-delay:.4s;}"
             "@keyframes inputs-v2-runtime-pulse{from{opacity:.25}to{opacity:1}}"
-            # Use the same morning transaction shell: Streamlit's status
-            # widget appears immediately when a widget command is in flight.
-            # Hide only this Design Brain publication and its CTA until the
-            # unified workspace returns a revision-matched replacement.  The
-            # summaries, diagram and controls remain visible and unchanged.
-            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) .inputs-v2-brain-runtime-loading-shell{display:flex;}"
-            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-runtime-loading-shell) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{display:none!important;}"
-            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) [class*=\"st-key-v2_design_guide_apply_scope\"]{display:none!important;}"
             "/* Mirrored from the latest V2 Design Guide presentation: a native expander is the clickable shell. */"
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy){border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;background:#f8fafc;margin:.4rem 0;}"
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy) summary{height:var(--sb-collapsed-card-height,40px)!important;min-height:var(--sb-collapsed-card-height,40px)!important;padding:0 .8rem!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;font-weight:700;color:var(--sb-heading-color,#0f172a);}"
@@ -287,4 +331,7 @@ def render_v2_design_guide_card(
                 )
 
 
-__all__ = ["render_v2_design_guide_card"]
+__all__ = [
+    "render_v2_design_guide_card",
+    "render_v2_design_guide_loading_shell",
+]

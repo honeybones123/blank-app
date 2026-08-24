@@ -46,9 +46,12 @@ def test_card_contains_scoped_morning_transaction_shell() -> None:
 
     assert "inputs-v2-design-brain-runtime-loading" in source
     assert "Updating Design Guide" in source
-    assert 'stStatusWidget' in source
+    # The ready card must not react to the global Streamlit running indicator;
+    # timer-driven sibling fragments keep that indicator alive in the
+    # background. Loading is rendered explicitly by the Design Brain fragment.
+    assert 'stStatusWidget' not in source
+    assert "def render_v2_design_guide_loading_shell" in source
     assert 'st-key-v2_design_guide_apply_scope' in source
-    assert "stAppViewContainer" in source
 
 
 def test_apply_click_commits_before_workspace_fragment_renders() -> None:
