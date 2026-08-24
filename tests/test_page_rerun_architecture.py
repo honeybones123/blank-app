@@ -461,6 +461,9 @@ def test_inputs_engineering_workspace_defers_design_brain_to_sibling_fragment() 
     assert "include_design_brain=False" in page_source
     assert 'fragment_name="design_brain"' in page_source
     assert "run_every=1.0" in page_source
+    assert page_source.index('fragment_name="design_brain"') < page_source.index(
+        'fragment_name="engineering_workspace"'
+    )
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
         encoding="utf-8-sig"
@@ -479,7 +482,9 @@ def test_deferred_design_brain_has_revision_bound_start_gate() -> None:
     assert "runtime.refresh_design_brain_result()" in deferred_source
     assert "fragment_store.fail_refresh(exc)" in deferred_source
     assert "active_workspace_revision == int(revision)" in deferred_source
-    assert "active_engineering_hash == str(authoritative_hash or \"\")" in deferred_source
+    assert "publication_hash = str(fragment_state.active_engineering_hash or \"\")" in deferred_source
+    assert "publication_hash == str(authoritative_hash)" in deferred_source
+    assert "publish_result=False" in deferred_source
     assert "return" in deferred_source
 
 

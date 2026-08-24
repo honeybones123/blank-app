@@ -1014,6 +1014,8 @@ def render_inputs_design_guide_fragment_section(
     services: InputsSessionServices,
     region_context: InputsDesignBrainRegionContext,
     design_guide_slot=None,
+    publish_result: bool = True,
+    emit_browser_probe: bool = True,
 ) -> None:
     """Render the complete authoritative result without refresh or polling.
 
@@ -1044,10 +1046,13 @@ def render_inputs_design_guide_fragment_section(
             "Design Brain render attempted before its authoritative "
             "workspace transaction completed"
         )
-    fragment_state = fragment_store.publish(
-        authoritative_result,
-        workspace_revision=authoritative_revision,
-    )
+    if publish_result:
+        fragment_state = fragment_store.publish(
+            authoritative_result,
+            workspace_revision=authoritative_revision,
+        )
+    else:
+        fragment_state = fragment_store.current()
     if design_guide_slot is None:
         design_guide_slot = st_module.empty()
     fragment_payload = fragment_state.to_dict()
@@ -1101,7 +1106,9 @@ def render_inputs_design_guide_fragment_section(
             design_guide_slot=design_guide_slot,
             fragment_state=fragment_payload,
         )
-    if str(os.environ.get("CODEX_BROWSER_TEST_MODE") or "").strip().lower() in {
+    if emit_browser_probe and str(
+        os.environ.get("CODEX_BROWSER_TEST_MODE") or ""
+    ).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -1864,26 +1871,48 @@ def render_inputs_deferred_design_brain_fragment(
 ) -> None:
     """Refresh Design Brain after engineering publication without blocking it."""
     ss = st_module.session_state
+    ss["_inputs_design_brain_deferred_invocation_count"] = int(
+        ss.get("_inputs_design_brain_deferred_invocation_count", 0) or 0
+    ) + 1
     services = InputsSessionServices.from_mapping(ss)
     workspace_store = InputsWorkspaceStateStore(ss)
     revision = workspace_store.workspace_revision()
     fragment_store = services.publications
     fragment_state = fragment_store.current()
     authoritative_hash = workspace_store.authoritative_hash()
-    if (
+    publication_hash = str(fragment_state.active_engineering_hash or "")
+    current_publication_is_ready = bool(
         fragment_state.status == "ready"
         and fragment_state.active_workspace_revision == int(revision)
-        and fragment_state.active_engineering_hash == str(authoritative_hash or "")
-        and int(ss.get(_DESIGN_BRAIN_VISIBLE_REVISION_KEY, 0) or 0)
-        == int(revision)
-    ):
-        # The timer remains armed as a cheap wake mechanism, but a ready,
-        # revision-current card must not be replaced on every tick. This is
-        # what keeps the recommendation visually stable after publication.
-        return
+        and publication_hash
+        and (
+            not authoritative_hash
+            or publication_hash == str(authoritative_hash)
+        )
+    )
     with design_brain_container.container():
         slot = st_module.empty()
-        if fragment_state.status in {"refreshing", "empty", "ready_stale"}:
+        if current_publication_is_ready:
+            identity = build_inputs_design_brain_region_context(
+                session_state=ss,
+                services=services,
+                inputs_detailed_mode=bool(ss.get("_inputs_detailed_mode", False)),
+            )
+            if identity is not None:
+                render_inputs_design_guide_fragment_section(
+                    st_module=st_module,
+                    runtime=runtime,
+                    page_context=page_context,
+                    services=services,
+                    region_context=identity,
+                    design_guide_slot=slot,
+                    publish_result=False,
+                    emit_browser_probe=False,
+                )
+                return
+        if fragment_state.status in {"refreshing", "empty", "ready_stale"} or (
+            fragment_state.status == "ready" and not current_publication_is_ready
+        ):
             started_key = f"_inputs_design_brain_deferred_started_{revision}"
             if not ss.get(started_key):
                 ss[started_key] = True

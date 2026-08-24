@@ -260,8 +260,9 @@ def render_inputs_page() -> None:
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
     # Create four sibling layout targets in the original visual order. The
     # engineering workspace fragment writes around Batch Design, while Batch
-    # owns an independent fragment in the middle. This avoids unsupported
-    # nested fragments without moving any visible section.
+    # and Design Brain retain their own outside-container fragment ownership.
+    # The atomic parent remains in place for Apply/revision safety; ordinary
+    # action edits do not arm its visual guard.
     with st.container(key=_ATOMIC_WORKSPACE_CONTAINER_KEY):
         pre_batch_container = st.container(
             key="inputs_engineering_pre_batch_region"
@@ -292,16 +293,11 @@ def render_inputs_page() -> None:
                 unsafe_allow_html=True,
             )
     render_timing_mark("inputs_page.shell.workspace.start")
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="engineering_workspace",
-        render_fn=_render_v2_workspace_fragment,
-        kwargs={
-            "page_context": page_context,
-            "pre_batch_container": pre_batch_container,
-            "post_batch_container": post_batch_container,
-        },
-    )
+    # Register the timer-driven sibling before the widget-bearing engineering
+    # fragment.  A widget callback can interrupt the first engineering
+    # fragment run; if that happens before this sibling is registered, the
+    # sibling never exists for the session and its loading shell can never be
+    # published.
     run_inputs_fragment(
         st_module=st,
         fragment_name="design_brain",
@@ -314,6 +310,16 @@ def render_inputs_page() -> None:
         },
         force_fragment=True,
         run_every=1.0,
+    )
+    run_inputs_fragment(
+        st_module=st,
+        fragment_name="engineering_workspace",
+        render_fn=_render_v2_workspace_fragment,
+        kwargs={
+            "page_context": page_context,
+            "pre_batch_container": pre_batch_container,
+            "post_batch_container": post_batch_container,
+        },
     )
     with batch_container:
         _INPUTS_PAGE_RUNTIME.render_batch_design_manager(
