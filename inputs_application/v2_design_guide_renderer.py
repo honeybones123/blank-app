@@ -121,7 +121,7 @@ def render_v2_design_guide_loading_shell(
 .inputs-v2-brain-runtime-loading-dot:nth-child(3) { animation-delay:.4s; }
 @keyframes inputs-v2-runtime-pulse { from { opacity:.25; } to { opacity:1; } }
 </style>
-<div class="inputs-v2-brain-runtime-loading-shell" role="status" aria-live="polite">
+<div data-testid="inputs-v2-design-brain-runtime-loading" class="inputs-v2-brain-runtime-loading-shell" style="display:flex" role="status" aria-live="polite">
   <span class="inputs-v2-brain-runtime-loading-icon" aria-hidden="true">🧠</span>
   <span class="inputs-v2-brain-runtime-loading-copy">Updating Design Guide
     <span class="inputs-v2-brain-runtime-loading-dot"></span>
