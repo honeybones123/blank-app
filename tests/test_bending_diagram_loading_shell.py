@@ -93,7 +93,8 @@ def test_bending_diagram_geometry_uses_shared_tokens() -> None:
     assert "BENDING_DIAGRAM_PLOT_HEIGHT_PX = 320" in tokens
     assert "BENDING_DIAGRAM_REGION_HEIGHT_PX" not in tokens
     assert "bending-diagram-region-height" not in tokens
-    assert "height=BENDING_DIAGRAM_PLOT_HEIGHT_PX" in figure
+    assert "plot_height_px: int = BENDING_DIAGRAM_PLOT_HEIGHT_PX" in figure
+    assert "height=int(geometry.plot_height_px)" in figure
 
 
 def test_bending_browser_regression_measures_live_geometry_and_blank_hosts() -> None:

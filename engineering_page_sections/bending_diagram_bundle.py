@@ -180,6 +180,7 @@ def _prepare_identity(
     from engineering_page_sections.bending_diagrams import (
         _build_bending_state_projection,
     )
+    from ui.design_tokens import BENDING_STRESS_STRAIN_LAYOUT_VERSION
     from inputs_application.active_beam_engineering_state import (
         resolve_active_beam_engineering_state,
     )
@@ -217,6 +218,7 @@ def _prepare_identity(
         }
         section_fingerprints[option] = section_stress_strain_fingerprint(
             {
+                "layout_contract": BENDING_STRESS_STRAIN_LAYOUT_VERSION,
                 "state": option,
                 "state_label": state_label,
                 "projection": projected_state,
@@ -489,12 +491,11 @@ def _render_material_teaching_lesson(runtime: BendingDiagramRuntime) -> None:
 
 
 def render_bending_state_controls(*, runtime: BendingDiagramRuntime) -> None:
-    """Render presentation-state controls without remounting the plot bundle.
+    """Render state controls owned by the diagram-bundle fragment.
 
-    The server remains the owner of the selected radio value.  The prepared
-    Plotly bundle is updated by the dedicated browser runtime only after this
-    fragment publishes the new requested state.  If that enhancement is not
-    available, the last complete Python-rendered figure remains visible.
+    A selection reruns only the diagram fragment and mounts the matching
+    already-prepared figure.  No engineering calculation or full-page rerun is
+    involved, and no browser mutation of Plotly-generated DOM is required.
     """
 
     st = runtime.st
@@ -503,10 +504,6 @@ def render_bending_state_controls(*, runtime: BendingDiagramRuntime) -> None:
     )
     if initial_state not in STATE_OPTIONS:
         initial_state = "ULS"
-    fingerprint = str(
-        st.session_state.get("_bending_diagram_bundle_fingerprint", "") or ""
-    )
-
     st.markdown("**State:**")
     st.radio(
         "State:",
@@ -533,27 +530,6 @@ def render_bending_state_controls(*, runtime: BendingDiagramRuntime) -> None:
         lambda: _render_material_teaching_lesson(runtime),
         key="bending_material_model_expander",
     )
-    st.markdown(
-        '<span data-bending-requested-state="'
-        f'{selected_state}" data-bending-requested-fingerprint="'
-        f'{fingerprint}" aria-hidden="true" style="display:none"></span>',
-        unsafe_allow_html=True,
-    )
-
-
-def _state_bundle_json(bundle: dict) -> str:
-    """Serialise prepared figures for Plotly-owned atomic state updates."""
-
-    import json
-
-    payload = {
-        option: {
-            "section": json.loads(bundle["section"][option].to_json()),
-            "side": json.loads(bundle["side"][option].to_json()),
-        }
-        for option in STATE_OPTIONS
-    }
-    return json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
 
 
 def render_bending_diagram_bundle_panel(
@@ -706,6 +682,7 @@ def render_bending_diagram_bundle_panel(
         f'{generation}" aria-hidden="true" style="display:none"></span>',
         unsafe_allow_html=True,
     )
+    render_bending_state_controls(runtime=runtime)
     if bundle is not None:
         cache_status = "hit" if cache_hit else "miss"
         fingerprint = identity["fingerprint"]
@@ -735,11 +712,6 @@ def render_bending_diagram_bundle_panel(
     import streamlit.components.v1 as components
 
     if bundle is not None:
-        state_bundle_json = _state_bundle_json(bundle)
-        side_has_overlay = bool(
-            st.session_state.get("bending_side_view_show_strain", False)
-            or st.session_state.get("bending_side_view_show_stress", False)
-        )
         components.html(
             f"""
             <script>
@@ -747,153 +719,11 @@ def render_bending_diagram_bundle_panel(
               const doc = window.parent.document;
               const generation = {generation};
               const fingerprint = {identity["fingerprint"]!r};
-              const stateBundle = {state_bundle_json};
-              const sideHasOverlay = {str(side_has_overlay).lower()};
               const runtimeKey = '__sbBendingDiagramReadyRuntime';
               const prior = window.parent[runtimeKey];
               if (prior && prior.cleanup) prior.cleanup();
               let cancelled = false;
               let timer = 0;
-              let stateTimer = 0;
-              let switching = false;
-              let queuedState = '';
-              let activeState = {main_state!r};
-              const Plotly = window.parent.Plotly || window.Plotly;
-              const matchingNode = (selector, fingerprintAttribute) =>
-                [...doc.querySelectorAll(selector)].find((node) =>
-                  node.getAttribute(fingerprintAttribute) === fingerprint
-                );
-              const publishSelectedState = (state) => {{
-                const published = matchingNode(
-                  '[data-bending-diagram-bundle-published="1"]',
-                  'data-bending-bundle-fingerprint'
-                );
-                if (published) published.setAttribute(
-                  'data-bending-selected-state', state
-                );
-              }};
-              const requestedState = () => {{
-                const marker = matchingNode(
-                  '[data-bending-requested-state]',
-                  'data-bending-requested-fingerprint'
-                );
-                return marker?.getAttribute('data-bending-requested-state') || '';
-              }};
-              const sectionPlot = () => doc.querySelector(
-                '.st-key-bending_diagram_live .js-plotly-plot'
-              );
-              const sidePlot = () => doc.querySelector(
-                '.st-key-bending_side_diagram_live .js-plotly-plot'
-              );
-              const updateSection = (plot, spec) => Plotly.react(
-                plot,
-                spec.data,
-                spec.layout,
-                plot._context || {{displayModeBar: false}}
-              );
-              const updateSide = (plot, spec, visible) => {{
-                const currentSpec = stateBundle[activeState]?.side;
-                if (
-                  sideHasOverlay
-                  || visible
-                  || !currentSpec
-                  || currentSpec.data.length !== spec.data.length
-                ) {{
-                  return Plotly.react(
-                    plot,
-                    spec.data,
-                    spec.layout,
-                    plot._context || {{displayModeBar: false}}
-                  );
-                }}
-                const layoutUpdate = Plotly.relayout(plot, {{
-                  annotations: spec.layout.annotations || [],
-                  shapes: spec.layout.shapes || [],
-                }});
-                const changedTraces = spec.data.map((trace, index) => ({{
-                  index,
-                  trace,
-                  previous: currentSpec.data[index],
-                }})).filter((item) =>
-                  JSON.stringify([item.previous.x, item.previous.y])
-                  !== JSON.stringify([item.trace.x, item.trace.y])
-                );
-                return Promise.resolve(layoutUpdate).then(() =>
-                  changedTraces.reduce(
-                    (chain, item) => chain.then(() => Plotly.restyle(
-                      plot,
-                      {{x: [item.trace.x], y: [item.trace.y]}},
-                      [item.index]
-                    )),
-                    Promise.resolve()
-                  )
-                );
-              }};
-              const applyRequestedState = () => {{
-                if (cancelled) return;
-                const requested = requestedState();
-                if (!requested || !stateBundle[requested]) return;
-                if (switching) {{
-                  queuedState = requested;
-                  return;
-                }}
-                if (requested === activeState) {{
-                  publishSelectedState(requested);
-                  return;
-                }}
-                const section = sectionPlot();
-                const side = sidePlot();
-                if (!Plotly?.react || !Plotly?.relayout || !section || !side) {{
-                  stateTimer = window.setTimeout(applyRequestedState, 25);
-                  return;
-                }}
-                switching = true;
-                const started = window.parent.performance.now();
-                const spec = stateBundle[requested];
-                // Update the hidden diagram first. The currently visible tab
-                // changes only after its complete Plotly operation resolves.
-                const sideVisible = Boolean(side.offsetParent);
-                const first = sideVisible
-                  ? () => updateSection(section, spec.section)
-                  : () => updateSide(side, spec.side, false);
-                const second = sideVisible
-                  ? () => updateSide(side, spec.side, true)
-                  : () => updateSection(section, spec.section);
-                Promise.resolve(first()).then(second).then(() => {{
-                  activeState = requested;
-                  publishSelectedState(requested);
-                  doc.documentElement.setAttribute(
-                    'data-sb-last-bending-state-switch-ms',
-                    String(window.parent.performance.now() - started)
-                  );
-                }}).catch(() => {{
-                  // Progressive enhancement only: keep the last complete
-                  // Python-rendered state visible if Plotly rejects an update.
-                  doc.documentElement.setAttribute(
-                    'data-sb-bending-state-switch-error', requested
-                  );
-                }}).finally(() => {{
-                  switching = false;
-                  const nextState = queuedState;
-                  queuedState = '';
-                  if (nextState && nextState !== activeState) {{
-                    window.parent.requestAnimationFrame(applyRequestedState);
-                  }}
-                }});
-              }};
-              const StateObserver = window.parent.MutationObserver;
-              const stateObserver = new StateObserver(() => {{
-                window.parent.requestAnimationFrame(applyRequestedState);
-              }});
-              stateObserver.observe(doc.body, {{
-                attributes: true,
-                attributeFilter: [
-                  'data-bending-requested-state',
-                  'data-bending-requested-fingerprint',
-                ],
-                childList: true,
-                subtree: true,
-              }});
               const completePlot = (selector, requireDetail) => {{
                 const plot = doc.querySelector(selector);
                 if (!plot || !plot._fullLayout || !plot._fullData) return false;
@@ -932,8 +762,6 @@ def render_bending_diagram_bundle_panel(
                 cleanup: () => {{
                   cancelled = true;
                   if (timer) window.clearTimeout(timer);
-                  if (stateTimer) window.clearTimeout(stateTimer);
-                  stateObserver.disconnect();
                 }}
               }};
             }})();

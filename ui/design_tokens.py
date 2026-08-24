@@ -23,6 +23,7 @@ SHARED_LAYOUT_TOKENS: dict[str, str] = {
 }
 
 BENDING_DIAGRAM_PLOT_HEIGHT_PX = 320
+BENDING_STRESS_STRAIN_LAYOUT_VERSION = "fixed-responsive-domains-v1"
 
 
 def shared_layout_token_css() -> str:
@@ -35,6 +36,7 @@ def shared_layout_token_css() -> str:
 
 __all__ = [
     "BENDING_DIAGRAM_PLOT_HEIGHT_PX",
+    "BENDING_STRESS_STRAIN_LAYOUT_VERSION",
     "SHARED_LAYOUT_TOKENS",
     "shared_layout_token_css",
 ]

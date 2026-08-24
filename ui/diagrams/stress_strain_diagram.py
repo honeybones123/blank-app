@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
 import logging
 import os
@@ -17,7 +18,10 @@ from plotly_section import make_sectionA_figure
 from section_props.plot import apply_section_axes
 from state_and_helpers import get_param
 import strain_display
-from ui.design_tokens import BENDING_DIAGRAM_PLOT_HEIGHT_PX
+from ui.design_tokens import (
+    BENDING_DIAGRAM_PLOT_HEIGHT_PX,
+    BENDING_STRESS_STRAIN_LAYOUT_VERSION,
+)
 
 from .diagram_styles import (
     COMPRESSION,
@@ -32,6 +36,61 @@ logger = logging.getLogger(__name__)
 
 
 COMPRESSION_BLOCK_FILL = "rgba(200,45,45,0.16)"
+
+
+@dataclass(frozen=True)
+class BendingStressStrainLayout:
+    """One presentation geometry for every bending stress/strain state.
+
+    Plotly subplot domains are stated explicitly so state-dependent arrows and
+    annotations cannot alter the physical Section / Strain / Stress positions.
+    The browser owns the responsive width; cached figures must therefore never
+    replay a state-specific fixed pixel width into Streamlit's stretched host.
+    """
+
+    section_domain: tuple[float, float] = (0.00, 0.28)
+    strain_domain: tuple[float, float] = (0.36, 0.64)
+    stress_domain: tuple[float, float] = (0.72, 1.00)
+    y_domain: tuple[float, float] = (0.00, 1.00)
+    strain_range: tuple[float, float] = (0.00, 1.00)
+    stress_range: tuple[float, float] = (0.00, 1.00)
+    margin_left_px: int = 10
+    margin_right_px: int = 10
+    margin_top_px: int = 40
+    margin_bottom_px: int = 10
+    plot_height_px: int = BENDING_DIAGRAM_PLOT_HEIGHT_PX
+
+
+BENDING_STRESS_STRAIN_LAYOUT = BendingStressStrainLayout()
+
+
+def _apply_bending_stress_strain_layout(fig: go.Figure) -> go.Figure:
+    """Apply the invariant three-panel canvas without changing plot data."""
+
+    geometry = BENDING_STRESS_STRAIN_LAYOUT
+    for axis_name, domain in (
+        ("xaxis", geometry.section_domain),
+        ("xaxis2", geometry.strain_domain),
+        ("xaxis3", geometry.stress_domain),
+    ):
+        fig.layout[axis_name].domain = list(domain)
+    for axis_name in ("yaxis", "yaxis2", "yaxis3"):
+        fig.layout[axis_name].domain = list(geometry.y_domain)
+    fig.update_xaxes(range=list(geometry.strain_range), row=1, col=2)
+    fig.update_xaxes(range=list(geometry.stress_range), row=1, col=3)
+    fig.update_layout(
+        autosize=True,
+        width=None,
+        height=int(geometry.plot_height_px),
+        margin=dict(
+            l=geometry.margin_left_px,
+            r=geometry.margin_right_px,
+            t=geometry.margin_top_px,
+            b=geometry.margin_bottom_px,
+        ),
+        showlegend=False,
+    )
+    return fig
 
 
 def _normalise_bending_section_panel_styles(fig: go.Figure) -> go.Figure:
@@ -467,7 +526,11 @@ def plot_stress_strain_profiles(
 
         inject_figure_into_subplot(fig, sec_fig, row=1, col=1, xref="x1", yref="y1")
 
-        # Enforce 1:1 aspect like your current plots
+        # Preserve the child section's fixed horizontal geometry after it is
+        # injected into the shared three-panel canvas.
+        fig.update_xaxes(range=[-0.20 * W, W + 0.20 * W], row=1, col=1)
+
+        # Enforce 1:1 aspect like your current plots.
         fig.update_yaxes(scaleanchor="x", scaleratio=1, row=1, col=1)
 
     else:
@@ -478,7 +541,7 @@ def plot_stress_strain_profiles(
         # Lock panel x-ranges so blocks/labels don't get squeezed by autorange/aspect effects
         fig.update_xaxes(range=[-0.05, b + 0.35 * b], row=1, col=1)  # section
         fig.update_xaxes(range=[0.0, 1.0], row=1, col=2)             # strain (panel coords)
-        # Stress panel x-range will be set dynamically after computing x_T, x_block_right, x_gc
+        # The stress panel uses the shared fixed 0..1 presentation range.
         cage = layout["cage"]
 
         # outer concrete
@@ -1617,15 +1680,9 @@ def plot_stress_strain_profiles(
         col=3,
     )
 
-    # Dynamic x-axis range for stress panel to prevent clipping
-    # (x_T, x_block_right, and x_gc are now all computed)
-    x_right = max(
-        1.0,  # minimum range
-        x_T + 0.18,  # steel arrow + label clearance
-        x_gc + text_dx_stress + 0.10,  # depth label clearance
-        x_block_right + 0.20  # block + comfort margin
-    )
-    fig.update_xaxes(range=[0.0, x_right], row=1, col=3)
+    # All stress geometry is normalised into the shared 0..1 panel range.
+    # Keeping that range fixed prevents short SLS arrows and long ULS arrows
+    # from changing the physical position of the stress axis.
 
     # internal compression arrows – keep them inside the block/triangle
     for frac in [0.25, 0.5, 0.75]:
@@ -1686,16 +1743,9 @@ def plot_stress_strain_profiles(
         )
 
     # -------------------------------------
-    # Final layout: no legend, tight margins
+    # Final layout: one responsive, invariant canvas for every state.
     # -------------------------------------
-    fig.update_layout(
-        showlegend=False,
-        margin=dict(l=10, r=10, t=40, b=10),
-        height=BENDING_DIAGRAM_PLOT_HEIGHT_PX,
-        width=900,
-    )
-
-    return fig
+    return _apply_bending_stress_strain_layout(fig)
 
 
 def plot_strain_profile(
