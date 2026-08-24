@@ -55,6 +55,9 @@ def test_runtime_delegates_checks_four_to_nine_to_the_module() -> None:
     module_source = (
         ROOT / "engineering_page_sections" / "shear_mcft_strength_checks.py"
     ).read_text(encoding="utf-8")
+    teaching_source = (
+        ROOT / "engineering_page_sections" / "shear_stress_field.py"
+    ).read_text(encoding="utf-8")
 
     assert "render_shear_mcft_strength_checks(" in runtime_source
     assert "ShearMcftStrengthView(" in runtime_source
@@ -66,7 +69,11 @@ def test_runtime_delegates_checks_four_to_nine_to_the_module() -> None:
     assert "def _render_shear_behaviour_diagrams" not in runtime_source
     assert "def _render_principal_stress_directions_explainer" not in runtime_source
     assert "def _render_animated_plotly_figure" in module_source
-    assert "def _render_shear_behaviour_diagrams" in module_source
-    assert "def _render_principal_stress_directions_explainer" in module_source
+    assert "def _render_shear_behaviour_diagrams" not in module_source
+    assert "def _render_principal_stress_directions_explainer" not in module_source
+    assert "def render_mcft_stress_field_diagram" in teaching_source
+    assert "def render_stress_field_teaching" in teaching_source
+    assert "Show detailed MCFT breakdown" not in module_source
+    assert "Show detailed MCFT breakdown" not in teaching_source
     assert "build_shear_calc_bundle_from_state" not in module_source
     assert "build_live_canonical_shear_state" not in module_source

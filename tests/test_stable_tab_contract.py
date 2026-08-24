@@ -120,7 +120,9 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
     ).read_text(encoding="utf-8")
 
     assert 'scope_id="bending-section-diagrams"' in bending
-    assert 'scope_id="shear-visualisation-diagrams"' in shear
+    assert 'scope_id="shear-diagram-panels"' in shear
+    assert 'scope_id="shear-diagram-navigation"' in shear
+    assert "synchronize_tabs(" in shear
     assert 'scope_id="creep-side-view-diagrams"' in creep
     assert 'scope_id="crack-method-diagrams"' in crack
     assert 'scope_id="crack-as5100-method-diagrams"' in crack

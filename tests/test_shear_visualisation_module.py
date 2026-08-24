@@ -27,12 +27,16 @@ class _FakeStreamlit:
     def __init__(self):
         self.events: list[tuple[str, object]] = []
 
-    def container(self):
-        self.events.append(("container", "visualisation"))
-        return _FakeContext(self.events, "visualisation")
+    def container(self, *, key=None):
+        name = key or "visualisation"
+        self.events.append(("container", name))
+        return _FakeContext(self.events, name)
 
     def markdown(self, body, **kwargs):
         self.events.append(("markdown", "shear-visuals-block" in body))
+
+    def caption(self, body):
+        self.events.append(("caption", body))
 
 
 def test_visualisation_module_has_no_runtime_global_binding() -> None:
@@ -49,7 +53,8 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "bind_runtime(" not in runtime_source
     assert "_shear_visualisation_section" not in runtime_source
     assert "render_centered_plotly=" in runtime_source
-    assert "render_animated_plotly=" in mcft_source
+    assert "render_animated_plotly=" in runtime_source
+    assert "synchronize_tabs=synchronize_stable_tab_scopes" in runtime_source
     assert "def _render_animated_plotly_figure" not in runtime_source
     assert "def _render_shear_visualisation_block" not in runtime_source
     assert "def _render_shear_side_view" not in runtime_source
@@ -59,32 +64,38 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "ShearVisualisationRuntime(" in runtime_source
     assert "build_cross_section_figure=build_shear_cross_section_figure" in runtime_source
     assert "build_side_view_figure=build_shear_side_view_figure" in runtime_source
-    assert "build_sfd_bmd_figure=_build_shear_sfd_bmd_figure" in runtime_source
+    assert "build_sfd_bmd_figure=" not in runtime_source
+    assert "Show detailed MCFT breakdown" not in mcft_source
     assert "lambda: render_shear_visualisation_block(" in runtime_source
 
 
 def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> None:
     fake = _FakeStreamlit()
 
-    def render_tabs(st_module, *, labels, scope_id):
+    def render_tabs(st_module, *, labels, scope_id, install_runtime=True):
         assert st_module is fake
-        fake.events.append(("tabs", (labels, scope_id)))
+        fake.events.append(("tabs", (labels, scope_id, install_runtime)))
         return tuple(_FakeContext(fake.events, label) for label in labels)
 
     monkeypatch.setattr(
         shear_visualisation,
-        "_render_shear_side_view",
-        lambda _runtime: fake.events.append(("render", "Side view")),
+        "_render_shear_uls_view",
+        lambda _runtime: fake.events.append(("render", "ULS")),
     )
     monkeypatch.setattr(
         shear_visualisation,
-        "_render_shear_cross_section",
-        lambda _runtime: fake.events.append(("render", "Section")),
+        "_render_shear_sls_view",
+        lambda _runtime: fake.events.append(("render", "SLS")),
     )
     monkeypatch.setattr(
         shear_visualisation,
-        "_render_shear_force_diagram",
-        lambda _runtime: fake.events.append(("render", "Shear diagram")),
+        "_render_shear_mcft_view",
+        lambda _runtime: fake.events.append(("render", "MCFT")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_stress_field_teaching",
+        lambda _runtime: fake.events.append(("render", "Stress field teaching")),
     )
 
     runtime = shear_visualisation.ShearVisualisationRuntime(
@@ -93,37 +104,44 @@ def test_visualisation_block_preserves_three_tab_render_order(monkeypatch) -> No
         render_timing_mark=lambda *_args, **_kwargs: None,
         render_plotly_diagram=lambda *_args, **_kwargs: None,
         render_centered_plotly=lambda *_args, **_kwargs: None,
+        render_animated_plotly=lambda *_args, **_kwargs: None,
         render_section_title=lambda title: fake.events.append(("title", title)),
         render_tabs=render_tabs,
+        synchronize_tabs=lambda _st, **kwargs: fake.events.append(
+            ("sync", kwargs)
+        ),
         build_cross_section_figure=lambda **_kwargs: go.Figure(),
         build_side_view_figure=lambda **_kwargs: go.Figure(),
-        build_sfd_bmd_figure=lambda **_kwargs: (go.Figure(), go.Figure()),
+        theta_v_deg=31.0,
     )
     shear_visualisation.render_shear_visualisation_block(runtime)
 
-    assert fake.events == [
-        ("container", "visualisation"),
-        ("enter", "visualisation"),
-        ("markdown", True),
-        ("title", "Visualisation"),
+    assert ("title", "Visualisation") in fake.events
+    assert (
+        "tabs",
         (
-            "tabs",
-            (
-                ("Side view", "Section", "Shear diagram"),
-                "shear-visualisation-diagrams",
-            ),
+            ("ULS", "SLS", "MCFT"),
+            "shear-diagram-panels",
+            True,
         ),
-        ("enter", "Side view"),
-        ("render", "Side view"),
-        ("exit", "Side view"),
-        ("enter", "Section"),
-        ("render", "Section"),
-        ("exit", "Section"),
-        ("enter", "Shear diagram"),
-        ("render", "Shear diagram"),
-        ("exit", "Shear diagram"),
-        ("exit", "visualisation"),
+    ) in fake.events
+    assert (
+        "tabs",
+        (
+            ("ULS", "SLS", "MCFT"),
+            "shear-diagram-navigation",
+            False,
+        ),
+    ) in fake.events
+    assert [event for event in fake.events if event[0] == "render"] == [
+        ("render", "ULS"),
+        ("render", "SLS"),
+        ("render", "MCFT"),
+        ("render", "Stress field teaching"),
     ]
+    sync = next(event[1] for event in fake.events if event[0] == "sync")
+    assert sync["source_scope_id"] == "shear-diagram-navigation"
+    assert sync["target_scope_id"] == "shear-diagram-panels"
 
 
 def test_static_mcft_renderer_receives_explicit_mount_dependency() -> None:
@@ -181,12 +199,11 @@ def test_behaviour_renderer_selects_exact_explicit_mount_dependency() -> None:
     assert events[1][1]["height_px"] == 301
 
 
-def test_support_pair_adapter_remains_stable() -> None:
-    adapter = shear_visualisation._support_pair_from_resolved_support_type
+def test_shear_shell_uses_the_bending_canvas_geometry_contract() -> None:
+    source = (
+        ROOT / "engineering_page_sections" / "shear_visualisation.py"
+    ).read_text(encoding="utf-8")
 
-    assert adapter("Simply supported") == ("Pinned", "Roller")
-    assert adapter("Fixed-ended") == ("Fixed", "Fixed")
-    assert adapter("Fixed-Pinned") == ("Fixed", "Pinned")
-    assert adapter("Pinned–Fixed") == ("Pinned", "Fixed")
-    assert adapter("Continuous – interior span") == ("Pinned", "Pinned")
-    assert adapter(None) is None
+    assert "SHEAR_DIAGRAM_PLOT_HEIGHT_PX = BENDING_DIAGRAM_PLOT_HEIGHT_PX" in source
+    assert 'data-shear-diagram-geometry-token="--sb-bending-diagram-plot-height"' in source
+    assert "height: var(--sb-bending-diagram-plot-height, 320px)" in source

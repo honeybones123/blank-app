@@ -21,7 +21,6 @@ from engineering_page_sections.shear_visualisation import (
     SHEAR_VISUAL_HEIGHT_PX,
     SHEAR_VISUAL_MAX_WIDTH_PX,
     _render_centered_shear_plotly,
-    _render_mcft_behaviour_chart,
     _render_plotly_in_mcft_column,
     _standardise_shear_visual_layout,
 )
@@ -31,13 +30,9 @@ from shear_diagrams import (
     make_mcft_longitudinal_strain_profile_fig,
     resolve_check6_support_transfer_context,
 )
-from shear_visuals import BEHAVIOUR_VISUAL_WIDTH, build_shear_behaviour_figure
+from shear_visuals import BEHAVIOUR_VISUAL_WIDTH
 from state_and_helpers import get_param, render_timing_mark
 from step_ui import render_expandable_step
-from ui.diagrams.principal_stress_cue_diagram import (
-    PRINCIPAL_STRESS_AXES_CUE_SCALE,
-    build_principal_stress_axes_cue,
-)
 from widgets_helpers import (
     info_i_button,
     render_html_diagram,
@@ -301,101 +296,6 @@ if (gd && !gd.__loadFlowAnimation) {
     )
 
 
-def _render_shear_behaviour_diagrams(theta_v_deg: float) -> None:
-    with info_i_button(
-        help_text=(
-            "Strut-and-tie model, strut-and-tie flow along STM members, MCFT trajectory load flow, "
-            "cracks, and stress block for this diagram."
-        )
-    ):
-        st.caption("Display options")
-        st.toggle("Show strut-and-tie model", value=False, key="shear_show_stm_overlay")
-        st.toggle("Show strut-and-tie flow", value=False, key="shear_show_stm_flow")
-        st.toggle("Show load flow", value=False, key="shear_show_load_flow")
-        st.toggle("Show cracks", value=True, key="shear_show_cracks")
-        st.toggle("Show stress block", value=False, key="shear_show_stress_block")
-
-    show_load_flow = bool(st.session_state.get("shear_show_load_flow", False))
-    show_cracks = bool(st.session_state.get("shear_show_cracks", True))
-    show_stress_block = bool(st.session_state.get("shear_show_stress_block", False))
-    show_stm_overlay = bool(st.session_state.get("shear_show_stm_overlay", False))
-    show_stm_flow = bool(st.session_state.get("shear_show_stm_flow", False))
-    # Anchor for tab2 CSS: remove excess gap between display-options popover and main stress-field chart.
-    st.markdown(
-        '<div id="mcft-before-stress-plot" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>',
-        unsafe_allow_html=True,
-    )
-    fig = build_shear_behaviour_figure(
-        visual_mode="Principal stress field",
-        theta_v_deg=theta_v_deg,
-        show_load_flow=show_load_flow,
-        show_cracks=show_cracks,
-        show_stress_block=show_stress_block,
-        show_stm_overlay=show_stm_overlay,
-        show_stm_flow=show_stm_flow,
-    )
-    _render_mcft_behaviour_chart(
-        fig,
-        chart_key="shear_behaviour_mcft_single",
-        animated=bool(show_load_flow or show_stm_flow),
-        render_centered_plotly=_render_centered_shear_plotly,
-        render_animated_plotly=_render_animated_plotly_figure,
-        height_px=300,
-    )
-    st.caption(
-        "Illustrative only — schematic principal-stress-style field with optional strut-and-tie overlay, "
-        "not a finite-element stress solution."
-    )
-
-
-# Cumulative scale for principal-stress (A)(B)(C) cue vs original base geometry (two +25% steps).
-_PRINCIPAL_STRESS_AXES_CUE_SCALE = PRINCIPAL_STRESS_AXES_CUE_SCALE
-
-
-def _build_principal_stress_axes_cue() -> go.Figure:
-    theta_v_deg = float(
-        st.session_state.get(
-            "crack_theta_deg",
-            get_param("crack_theta_deg", st.session_state.get("theta_v_deg", get_param("theta_v_deg", 45.0))),
-        )
-        or 45.0
-    )
-    return build_principal_stress_axes_cue(theta_v_deg)
-
-def _render_principal_stress_directions_explainer() -> None:
-    with st.expander("The Stress Field: Explaining the Modified Compression Field Theory and Strut-and-Tie Model"):
-        st.markdown(
-            r"""
-The Modified Compression Field Theory (MCFT) and the strut-and-tie model (STM) are idealisations of the same underlying stress field. In this implementation, both use the same angle $\theta_v$ from the MCFT relationships (see Check 5), ensuring consistency between calculations and the visualised field.
-            """
-        )
-        cue_col, note_col = st.columns([1, 1.5], gap="medium")
-        with cue_col:
-            _render_centered_shear_plotly(
-                _build_principal_stress_axes_cue(),
-                chart_key="shear_principal_stress_axes_cue",
-                max_width_px=int(540 * _PRINCIPAL_STRESS_AXES_CUE_SCALE),
-                height_px=int(190 * _PRINCIPAL_STRESS_AXES_CUE_SCALE),
-            )
-        with note_col:
-            st.markdown(
-                r"""
-The stress state resolves into principal directions where no shear acts on those planes (see [Mohr's circle](https://www.youtube.com/watch?v=_DH3546mSCM&msockid=3bf4b3e5318911f1b3cda493793b9b56)). Red trajectories show the principal compression $\sigma_1$, and blue trajectories show the principal tension $\sigma_2$.
-
-The stress block diagrams represent a small element of the beam. The shear shown in Diagram (A) is a local stress component within the element and is not the same as the applied shear force $V^*$; the global shear $V^*$ is carried through the member by the combined action of the inclined compression field and associated tensile forces. In Diagram (A), shear is shown by forces acting parallel to the faces of the element, indicating the stresses are not aligned with the principal directions. The element is then rotated (Diagram (B)) to an orientation where the shear components are eliminated, corresponding to the transformation described by Mohr’s circle. In this orientation (Diagram (C)), only the principal stresses remain, shown as $\sigma_1$ (compression) and $\sigma_2$ (tension).
-
-Within about one effective depth $d_v$ of supports, behaviour is a disturbed region (D-region), where stress flow is non-linear and idealised using a strut-and-tie model. The compression strut aligns with $\theta_v$.
-
-Beyond this, in the flexural–shear region, stresses follow the rotating principal field. Cracks form approximately perpendicular to $\sigma_2$, with tensile forces carried by shear reinforcement and longitudinal reinforcement (dowel action).
-                """
-            )
-        # Anchor for tab2 CSS: tighten vertical gap below this expander toward the main MCFT diagram.
-        st.markdown(
-            '<div id="mcft-theory-expander-tail" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>',
-            unsafe_allow_html=True,
-        )
-
-
 def render_shear_mcft_strength_checks(view: ShearMcftStrengthView) -> None:
     """Render Shear Checks 4-9 without recomputing authoritative results."""
 
@@ -463,70 +363,6 @@ def render_shear_mcft_strength_checks(view: ShearMcftStrengthView) -> None:
     st.markdown(
         """
 <style>
-.mcft-compact-block p {
-margin-bottom: 0.2rem;
-}
-.mcft-compact-block {
-margin-top: 0;
-padding-top: 0;
-}
-/* MCFT tab: theory expander → subhead + ℹ + principal-stress diagram with ~no vertical gap */
-div[data-testid="stExpander"]:has(#mcft-theory-expander-tail) {
-margin-bottom: 0 !important;
-}
-div[data-testid="stExpander"]:has(#mcft-theory-expander-tail) [data-testid="stExpanderDetails"] {
-padding-top: 0.3rem !important;
-padding-bottom: 0.08rem !important;
-}
-div[data-testid="stElementContainer"]:has(div.mcft-compact-block) {
-margin-top: 0 !important;
-margin-bottom: 0 !important;
-padding-top: 0 !important;
-padding-bottom: 0 !important;
-}
-/* Anchor-only block before MCFT diagram (spacing for following popover row) */
-div[data-testid="stElementContainer"]:has(#mcft-before-display-popover) {
-margin-top: 0 !important;
-margin-bottom: -0.35rem !important;
-padding-top: 0 !important;
-padding-bottom: 0 !important;
-}
-div[data-testid="stElementContainer"]:has(#mcft-before-display-popover)
-+ div[data-testid="stElementContainer"] {
-margin-top: -1.75rem !important;
-margin-bottom: 0 !important;
-padding-top: 0 !important;
-padding-bottom: 0 !important;
-}
-div[data-testid="stElementContainer"]:has(#mcft-before-display-popover)
-+ div[data-testid="stElementContainer"] [data-testid="stPopover"] {
-margin: 0 !important;
-padding: 0 !important;
-}
-div[data-testid="stElementContainer"]:has(#mcft-before-display-popover)
-+ div[data-testid="stElementContainer"] button {
-margin: 0 !important;
-padding-top: 0 !important;
-padding-bottom: 0 !important;
-min-height: 0 !important;
-line-height: 1 !important;
-}
-div[data-testid="stElementContainer"]:has(#mcft-before-stress-plot) {
-margin-top: -1.75rem !important;
-margin-bottom: 0 !important;
-padding-top: 0 !important;
-padding-bottom: 0 !important;
-}
-div[data-testid="stElementContainer"]:has(#mcft-before-stress-plot)
-+ div[data-testid="stElementContainer"],
-div[data-testid="stElementContainer"]:has(#mcft-before-stress-plot)
-+ div + div[data-testid="stElementContainer"] {
-margin-top: 0 !important;
-margin-bottom: 0 !important;
-padding-top: 0 !important;
-padding-bottom: 0 !important;
-}
-/* _render_centered_shear_plotly: style row + wrapper + plotly */
 /* Check 1 uses the same compact calc spacing as the other checks. */
 div[data-testid="stExpander"]:has(#inner_shear_check1) [data-testid="stExpanderDetails"] {
 padding-top: 0 !important;
@@ -538,58 +374,10 @@ margin-bottom: 0 !important;
 padding-top: 0 !important;
 padding-bottom: 0 !important;
 }
-div[data-testid="stElementContainer"]:has(#mcft-before-stress-plot)
-~ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_single) {
-margin-top: -1.75rem !important;
-padding-top: 0 !important;
-}
-div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_single) {
-margin-top: -1.75rem !important;
-padding-top: 0 !important;
-}
-div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_single) [data-testid="stPlotlyChart"] {
-margin-top: -0.35rem !important;
-padding-top: 0 !important;
-}
-#shear-plot-wrap-shear_behaviour_mcft_single {
-margin-top: -0.35rem !important;
-padding-top: 0 !important;
-}
 </style>
 """,
         unsafe_allow_html=True,
     )
-    # These explanatory/behaviour diagrams are detailed MCFT content. The
-    # existing breakdown toggle is the explicit user-controlled boundary;
-    # do not build several Plotly figures on every route render when the
-    # detailed view is hidden.
-    # The native tab controls visibility locally; this body remains
-    # mounted so its widgets and visual state cannot be discarded.
-    with st.container():
-        st.session_state.setdefault("show_mcft_breakdown", False)
-        show_mcft_breakdown = bool(st.session_state.get("show_mcft_breakdown", False))
-        st.toggle(
-            "Show detailed MCFT breakdown",
-            key="show_mcft_breakdown",
-            help="Show intermediate MCFT shear calculation rows such as strain, θ_v, k_v, Vuc and Vus.",
-        )
-        if not show_mcft_breakdown:
-            st.caption(
-                'Intermediate MCFT calculation rows hidden. Enable "Show detailed MCFT breakdown" to view.'
-            )
-        if show_mcft_breakdown:
-            _render_principal_stress_directions_explainer()
-            st.markdown('<div class="mcft-compact-block">', unsafe_allow_html=True)
-            # Popover anchor (no visible subhead; layout CSS targets #mcft-before-display-popover).
-            st.markdown(
-                """
-<div id="mcft-before-display-popover" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>
-""",
-                unsafe_allow_html=True,
-            )
-            _render_shear_behaviour_diagrams(theta_v_deg=theta_v_deg)
-            st.markdown("</div>", unsafe_allow_html=True)
-
     # =====================================================
     # Check 4 — LONGITUDINAL STRAIN εx
     # =====================================================

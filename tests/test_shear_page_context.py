@@ -20,7 +20,6 @@ def _snapshot(*, actions_mode: str = "manual"):
         published_results={"phi_Vu_cap": 180.0, "Vu_utilisation": 2.0 / 3.0},
         section_layout={"shape_name": "RECT"},
         actions_mode=actions_mode,
-        show_mcft_breakdown=True,
     )
 
 
@@ -32,7 +31,7 @@ def test_page_snapshot_preserves_revision_matched_presentation_values() -> None:
     assert snapshot.published_results["Vu_utilisation"] == pytest.approx(2.0 / 3.0)
     assert snapshot.section_layout["shape_name"] == "RECT"
     assert snapshot.view.is_design_driven is True
-    assert snapshot.view.show_mcft_breakdown is True
+    assert not hasattr(snapshot.view, "show_mcft_breakdown")
 
 
 def test_snapshot_mappings_are_detached_and_read_only() -> None:
@@ -45,7 +44,6 @@ def test_snapshot_mappings_are_detached_and_read_only() -> None:
         published_results=published,
         section_layout=None,
         actions_mode="manual",
-        show_mcft_breakdown=False,
     )
 
     engineering["b"] = 999.0

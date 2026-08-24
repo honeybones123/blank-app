@@ -162,10 +162,7 @@ def render_shear_summary(
     )
     published_rows = build_shear_clickable_summary_rows(legacy_rows)
     publish_rows(published_rows)
-    display_rows = filter_shear_summary_rows(
-        legacy_rows,
-        show_mcft_breakdown=page_snapshot.view.show_mcft_breakdown,
-    )
+    display_rows = filter_shear_summary_rows(legacy_rows)
     render_clickable_summary_table(
         build_shear_clickable_summary_rows(display_rows),
         key_prefix="shear_summary",

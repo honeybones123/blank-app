@@ -24,7 +24,6 @@ def _page_snapshot():
         published_results={"phi_Vu_cap": 180.0, "revision": "beam-7"},
         section_layout=None,
         actions_mode="manual",
-        show_mcft_breakdown=False,
     )
 
 

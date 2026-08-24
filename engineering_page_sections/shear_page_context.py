@@ -24,7 +24,6 @@ class ShearViewState:
     """Presentation-only selections owned by the Shear page."""
 
     actions_mode: str
-    show_mcft_breakdown: bool
 
     @property
     def is_design_driven(self) -> bool:
@@ -58,7 +57,6 @@ def build_shear_page_snapshot(
     published_results: Mapping[str, Any] | None,
     section_layout: Any,
     actions_mode: str | None,
-    show_mcft_breakdown: bool,
 ) -> ShearPageSnapshot:
     """Build a presentation snapshot without recalculating any result."""
 
@@ -73,7 +71,6 @@ def build_shear_page_snapshot(
         section_layout=section_layout,
         view=ShearViewState(
             actions_mode=resolved_actions_mode,
-            show_mcft_breakdown=bool(show_mcft_breakdown),
         ),
     )
 

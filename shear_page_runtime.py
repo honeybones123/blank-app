@@ -35,7 +35,10 @@ from calculations.shear import (
     torsion_section_geometry_values,
     web_crushing_fallback_values,
 )
-from engineering_page_sections.stable_tabs import render_stable_tabs
+from engineering_page_sections.stable_tabs import (
+    render_stable_tabs,
+    synchronize_stable_tab_scopes,
+)
 from engineering_page_sections.shear_page_context import (
     build_shear_page_snapshot,
 )
@@ -54,6 +57,7 @@ from engineering_page_sections.shear_torsion_dimensions_checks import (
 )
 from engineering_page_sections.shear_mcft_strength_checks import (
     ShearMcftStrengthView,
+    _render_animated_plotly_figure,
     render_shear_mcft_strength_checks,
 )
 from engineering_page_sections.shear_reinforcement_checks import (
@@ -78,16 +82,6 @@ SHEAR_CHECK_TAB_LABELS = (
     "MCFT and strength checks",
     "Shear reinforcement checks",
 )
-
-
-
-
-def _build_shear_sfd_bmd_figure(**kwargs):
-    """Resolve the existing SFD/BMD builder only when the Shear diagram mounts."""
-
-    from beam_diagram_runtime import plot_sfd_bmd_plotly
-
-    return plot_sfd_bmd_plotly(**kwargs)
 
 
 def _safe_image(path: str, caption: str | None = None, width: int | None = None, use_container_width: bool | None = None):
@@ -302,7 +296,6 @@ def render_shear():
     # see, so it must not wait for the rest of the page to finish rendering.
     render_timing_mark("shear_page.runtime.summary.start")
     shear_pack = build_shear_check_rows_from_state(st.session_state)
-    st.session_state.setdefault("show_mcft_breakdown", False)
     published_results = st.session_state.get("results", {})
     if isinstance(published_results, dict):
         published_results = published_results.get("shear", {})
@@ -314,7 +307,6 @@ def render_shear():
         published_results=published_results,
         section_layout=st.session_state.get("section_layout"),
         actions_mode=get_param("actions_mode", "manual"),
-        show_mcft_breakdown=bool(st.session_state.get("show_mcft_breakdown", False)),
     )
     render_shear_summary(
         shear_page_snapshot,
@@ -565,11 +557,13 @@ def render_shear():
                 render_timing_mark=render_timing_mark,
                 render_plotly_diagram=render_plotly_diagram,
                 render_centered_plotly=_render_centered_shear_plotly,
+                render_animated_plotly=_render_animated_plotly_figure,
                 render_section_title=render_section_title,
                 render_tabs=render_stable_tabs,
+                synchronize_tabs=synchronize_stable_tab_scopes,
                 build_cross_section_figure=build_shear_cross_section_figure,
                 build_side_view_figure=build_shear_side_view_figure,
-                build_sfd_bmd_figure=_build_shear_sfd_bmd_figure,
+                theta_v_deg=theta_v_deg,
             )
         )
     )

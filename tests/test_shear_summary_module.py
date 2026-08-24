@@ -13,7 +13,7 @@ from engineering_page_sections.shear_page_context import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _snapshot(*, show_mcft_breakdown: bool = False):
+def _snapshot():
     return build_shear_page_snapshot(
         engineering_state={},
         check_pack={
@@ -24,7 +24,6 @@ def _snapshot(*, show_mcft_breakdown: bool = False):
         published_results={},
         section_layout=None,
         actions_mode="manual",
-        show_mcft_breakdown=show_mcft_breakdown,
     )
 
 
@@ -50,9 +49,7 @@ def test_summary_preserves_publish_render_bind_explainer_order(monkeypatch) -> N
     monkeypatch.setattr(
         shear_summary,
         "filter_shear_summary_rows",
-        lambda rows, *, show_mcft_breakdown: (
-            events.append(("filter", show_mcft_breakdown)) or display_rows
-        ),
+        lambda rows: events.append(("filter", None)) or display_rows,
     )
     monkeypatch.setattr(
         shear_summary,
@@ -61,7 +58,7 @@ def test_summary_preserves_publish_render_bind_explainer_order(monkeypatch) -> N
     )
 
     result = shear_summary.render_shear_summary(
-        _snapshot(show_mcft_breakdown=True),
+        _snapshot(),
         publish_summary=lambda capacity, utilisation: events.append(
             ("publish_summary", (capacity, utilisation))
         ),
@@ -78,7 +75,7 @@ def test_summary_preserves_publish_render_bind_explainer_order(monkeypatch) -> N
         ("publish_summary", (180.0, 0.75)),
         ("clickable", ("legacy",)),
         ("publish_rows", ({"uid": "clickable"},)),
-        ("filter", True),
+        ("filter", None),
         ("clickable", ("display",)),
         ("render", "shear_summary"),
         ("bind", None),
@@ -96,7 +93,6 @@ def test_invalid_summary_utilisation_publishes_safe_zero() -> None:
         published_results={},
         section_layout=None,
         actions_mode="manual",
-        show_mcft_breakdown=False,
     )
 
     result = shear_summary.render_shear_summary(
