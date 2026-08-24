@@ -307,6 +307,7 @@ def render_inputs_page() -> None:
         fragment_name="design_brain",
         render_fn=render_inputs_deferred_design_brain_fragment,
         kwargs={
+            "st_module": st,
             "runtime": _ENGINEERING_WORKSPACE_RUNTIME,
             "page_context": page_context,
             "design_brain_container": design_brain_container,
