@@ -48,6 +48,7 @@ _DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY = (
 _DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY = (
     "_inputs_design_brain_widget_marker_state"
 )
+_DESIGN_BRAIN_RENDERED_IDENTITY_KEY = "_inputs_design_brain_rendered_identity"
 
 _ATOMIC_WORKSPACE_CONTAINER_KEY = "inputs_engineering_workspace_atomic"
 
@@ -69,7 +70,8 @@ def _render_atomic_workspace_browser_runtime() -> None:
 (function () {
   const parentWindow = window.parent;
   const doc = parentWindow && parentWindow.document;
-  if (!doc || !doc.body) return;
+  const observationRoot = doc && (doc.body || doc.documentElement);
+  if (!doc || !observationRoot || observationRoot.nodeType !== 1) return;
 
   const previousRuntime = (
     parentWindow.__inputsAtomicRevisionRuntimeV2 ||
@@ -242,7 +244,12 @@ def _render_atomic_workspace_browser_runtime() -> None:
   doc.addEventListener('pointerdown', cancelForUserIntent, true);
 
   const observer = new parentWindow.MutationObserver(inspectCompletion);
-  observer.observe(doc.body, {childList: true, subtree: true, attributes: true});
+  if (observationRoot && observationRoot.nodeType === 1) {
+    observer.observe(observationRoot, {childList: true, subtree: true, attributes: true});
+  } else {
+    observer.disconnect();
+    return;
+  }
   doc.documentElement.dataset.inputsAtomicRevisionRuntime = '3';
   parentWindow[runtimeKey] = {observer, inspectCompletion};
 })();
@@ -1147,6 +1154,99 @@ def render_inputs_design_guide_fragment_section(
         )
 
 
+def render_inputs_deferred_design_brain_fragment(
+    *,
+    st_module: Any,
+    runtime: EngineeringWorkspaceRuntime,
+    page_context: dict[str, Any],
+) -> None:
+    """Refresh and render Design Brain in its own visual fragment.
+
+    The engineering fragment publishes the authoritative packs first and
+    leaves the publication store in ``refreshing`` for the current revision.
+    This fragment is the only place allowed to run the expensive recommendation
+    pass.  Its periodic wake is deliberately a no-op once the publication is
+    current, so it cannot create a continuous recommendation refresh loop.
+    """
+
+    services = InputsSessionServices.from_mapping(st_module.session_state)
+    workspace_store = InputsWorkspaceStateStore(st_module.session_state)
+    workspace_revision = workspace_store.workspace_revision()
+    current_result = services.engineering_results.current()
+    slot = st_module.container(key="inputs_design_brain_region")
+
+    if current_result is None:
+        with slot:
+            st_module.info("Enter a design action or load to calculate.")
+        return
+
+    current_hash = str(current_result.engineering_hash or "")
+    publication_is_current = services.publications.is_current(
+        workspace_revision=workspace_revision,
+        engineering_hash=current_hash,
+    )
+    if not publication_is_current:
+        with slot:
+            st_module.info("Updating Design Guide…")
+        try:
+            refreshed = runtime.refresh_design_brain_result()
+            latest_revision = workspace_store.workspace_revision()
+            latest_result = services.engineering_results.current()
+            # A newer action may have committed while the recommendation was
+            # being evaluated.  Do not publish or render the older result.
+            if (
+                refreshed is None
+                or latest_result is None
+                or latest_revision != workspace_revision
+                or latest_result.engineering_hash != current_hash
+                or refreshed.engineering_hash != current_hash
+                or not refreshed.final_publication
+            ):
+                return
+            services.publications.publish(
+                refreshed,
+                workspace_revision=workspace_revision,
+            )
+            current_result = refreshed
+        except Exception as exc:
+            services.publications.fail_refresh(exc)
+            with slot:
+                st_module.warning("Design Guide is temporarily unavailable.")
+            return
+
+    region_context = build_inputs_design_brain_region_context(
+        session_state=st_module.session_state,
+        services=services,
+        inputs_detailed_mode=bool(
+            st_module.session_state.get("_inputs_detailed_mode", False)
+        ),
+    )
+    if region_context is None:
+        with slot:
+            st_module.info("Updating Design Guide…")
+        return
+    rendered_identity = (
+        f"{region_context.identity.input_revision}:"
+        f"{region_context.identity.engineering_hash}"
+    )
+    if (
+        st_module.session_state.get(_DESIGN_BRAIN_RENDERED_IDENTITY_KEY)
+        == rendered_identity
+    ):
+        # The fragment may wake again while its lightweight polling boundary
+        # is active. Do not repaint an unchanged recommendation.
+        return
+    render_inputs_design_guide_fragment_section(
+        st_module=st_module,
+        runtime=runtime,
+        page_context=page_context,
+        services=services,
+        region_context=region_context,
+        design_guide_slot=slot,
+    )
+    st_module.session_state[_DESIGN_BRAIN_RENDERED_IDENTITY_KEY] = rendered_identity
+
+
 def render_inputs_widget_fragment_section(
     *,
     st_module: Any,
@@ -1813,6 +1913,7 @@ __all__ = [
     "RevisionIdentity",
     "build_inputs_calculation_region_context",
     "build_inputs_design_brain_region_context",
+    "render_inputs_deferred_design_brain_fragment",
     "build_engineering_workspace_runtime",
     "prepare_engineering_workspace_transaction",
     "render_engineering_workspace",

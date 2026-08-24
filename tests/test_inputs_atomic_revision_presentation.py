@@ -86,4 +86,6 @@ def test_atomic_scroll_bridge_is_one_shot_and_user_cancellable() -> None:
     assert "beamSelector" in source
     assert "previousIdentity" in source
     assert "identity === pending.previousIdentity) return" in source
-    assert "if (!doc || !doc.body) return;" in source
+    assert "const observationRoot = doc && (doc.body || doc.documentElement);" in source
+    assert "observationRoot.nodeType !== 1" in source
+    assert "observer.observe(observationRoot" in source
