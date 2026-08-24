@@ -152,14 +152,10 @@ def render_v2_design_guide_card(
             ".inputs-v2-brain-runtime-loading-dot:nth-child(2){animation-delay:.2s;}"
             ".inputs-v2-brain-runtime-loading-dot:nth-child(3){animation-delay:.4s;}"
             "@keyframes inputs-v2-runtime-pulse{from{opacity:.25}to{opacity:1}}"
-            # Use the same morning transaction shell: Streamlit's status
-            # widget appears immediately when a widget command is in flight.
-            # Hide only this Design Brain publication and its CTA until the
-            # unified workspace returns a revision-matched replacement.  The
-            # summaries, diagram and controls remain visible and unchanged.
-            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) .inputs-v2-brain-runtime-loading-shell{display:flex;}"
-            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-runtime-loading-shell) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{display:none!important;}"
-            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) [class*=\"st-key-v2_design_guide_apply_scope\"]{display:none!important;}"
+            # Loading is an explicit job-state projection owned by the Inputs
+            # Design Brain fragment.  Do not infer it from Streamlit's global
+            # status widget: every fragment wake briefly creates that widget,
+            # and using it here makes a ready card flash back to loading.
             "/* Mirrored from the latest V2 Design Guide presentation: a native expander is the clickable shell. */"
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy){border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;background:#f8fafc;margin:.4rem 0;}"
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy) summary{height:var(--sb-collapsed-card-height,40px)!important;min-height:var(--sb-collapsed-card-height,40px)!important;padding:0 .8rem!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;font-weight:700;color:var(--sb-heading-color,#0f172a);}"
