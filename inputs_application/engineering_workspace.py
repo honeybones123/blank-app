@@ -1265,6 +1265,7 @@ def render_inputs_design_brain_workspace_section(
     slot = st_module.empty()
     engineering_result = services.engineering_results.current()
     if engineering_result is None:
+        st_module.session_state.pop("_inputs_design_brain_apply_result", None)
         with slot.container():
             st_module.info("Enter a design action or load to calculate.")
         return
@@ -1282,6 +1283,7 @@ def render_inputs_design_brain_workspace_section(
         DesignBrainJobStatus.PENDING,
         DesignBrainJobStatus.RUNNING,
     }:
+        st_module.session_state.pop("_inputs_design_brain_apply_result", None)
         with slot.container():
             st_module.markdown(
                 '<div class="inputs-v2-root">'
@@ -1295,6 +1297,7 @@ def render_inputs_design_brain_workspace_section(
             )
         return
     if job.status is DesignBrainJobStatus.FAILED or job.execution is None:
+        st_module.session_state.pop("_inputs_design_brain_apply_result", None)
         with slot.container():
             st_module.warning("Design Guide is temporarily unavailable.")
         return
@@ -1317,6 +1320,7 @@ def render_inputs_design_brain_workspace_section(
         with slot.container():
             st_module.info("Updating design guidance&hellip;")
         return
+    st_module.session_state["_inputs_design_brain_apply_result"] = job.execution.result
     render_inputs_design_guide_fragment_section(
         st_module=st_module,
         runtime=runtime,

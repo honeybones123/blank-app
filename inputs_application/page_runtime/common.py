@@ -535,7 +535,12 @@ def _execute_authoritative_apply_current_coordinator(recommendation: dict[str, A
     result_store = InputsSessionServices.from_mapping(
         st.session_state
     ).engineering_results
-    current_result = result_store.current()
+    # The visible Design Brain card is rendered from the revision-bound worker
+    # result. Prefer that exact result for Apply; the engineering-only result
+    # store intentionally does not contain the verified candidate/publication.
+    current_result = st.session_state.pop(
+        "_inputs_design_brain_apply_result", None
+    ) or result_store.current()
     typed = execute_typed_apply(
         session_state=st.session_state,
         current_result=current_result,
