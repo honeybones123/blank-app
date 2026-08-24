@@ -219,6 +219,18 @@ def _render_inputs_engineering_fragment(
     )
 
 
+def _render_inputs_design_brain_fragment(
+    *, page_context: dict[str, Any]
+) -> None:
+    """Adapt the page-owned Streamlit module into the fragment renderer."""
+
+    return render_inputs_deferred_design_brain_fragment(
+        st_module=st,
+        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
+        page_context=page_context,
+    )
+
+
 def render_inputs_page() -> None:
     page_title_placeholder = st.empty()
     """Future Inputs entry point.
@@ -296,10 +308,8 @@ def render_inputs_page() -> None:
     run_inputs_fragment(
         st_module=st,
         fragment_name="design_brain",
-        render_fn=render_inputs_deferred_design_brain_fragment,
+        render_fn=_render_inputs_design_brain_fragment,
         kwargs={
-            "st_module": st,
-            "runtime": _ENGINEERING_WORKSPACE_RUNTIME,
             "page_context": page_context,
         },
         force_fragment=True,
