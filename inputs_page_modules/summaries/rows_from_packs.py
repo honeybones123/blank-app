@@ -97,6 +97,8 @@ def render_inputs_summary_rows_from_packs(
     shear_mcft_src = shear_pack_d.get("mcft_detail_rows")
     if shear_summary_src is not None and shear_mcft_src is not None:
         shear_display_list = list(shear_summary_src)
+        if st_module.session_state.get("show_mcft_breakdown", False):
+            shear_display_list.extend(shear_mcft_src)
         SHEAR_ROWS = [_normalise_row(row, "shear") for row in shear_display_list]
     else:
         SHEAR_ROWS = [_normalise_row(row, "shear") for row in shear_pack_d.get("rows") or []]

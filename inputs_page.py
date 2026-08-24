@@ -17,7 +17,6 @@ from inputs_application.page_runtime import (
     build_inputs_page_runtime,
 )
 from inputs_application.engineering_workspace import (
-    _ATOMIC_WORKSPACE_CONTAINER_KEY,
     build_engineering_workspace_runtime,
     render_engineering_workspace,
 )
@@ -30,9 +29,6 @@ from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     hydrate_inputs_longitudinal_reo_widgets_for_revision,
 )
 from inputs_page_modules.fragments import run_inputs_fragment
-from inputs_application.engineering_workspace import (
-    render_inputs_deferred_design_brain_fragment,
-)
 from state_and_helpers import (
     _request_inputs_engineering_commit,
     render_timing_mark,
@@ -153,12 +149,7 @@ def hydrate_committed_design_action_widgets(
     )
 
 
-def _render_v2_workspace_fragment(
-    *,
-    page_context: dict[str, Any],
-    pre_batch_container: Any,
-    post_batch_container: Any,
-) -> dict[str, Any]:
+def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
     """Render the single V2 transaction inside one stable page fragment."""
 
     # Streamlit executes the Apply button callback before re-entering this
@@ -193,11 +184,9 @@ def _render_v2_workspace_fragment(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        include_design_brain=False,
-        include_controls=False,
+        include_design_brain=True,
+        include_controls=True,
         include_widgets=True,
-        pre_batch_container=pre_batch_container,
-        post_batch_container=post_batch_container,
     )
 
 
@@ -258,76 +247,13 @@ def render_inputs_page() -> None:
         "engineering_input_workspace",
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
-    # Create four sibling layout targets in the original visual order. The
-    # engineering workspace fragment writes around Batch Design, while Batch
-    # and Design Brain retain their own outside-container fragment ownership.
-    # The atomic parent remains in place for Apply/revision safety; ordinary
-    # action edits do not arm its visual guard.
-    with st.container(key=_ATOMIC_WORKSPACE_CONTAINER_KEY):
-        pre_batch_container = st.container(
-            key="inputs_engineering_pre_batch_region"
-        )
-        with pre_batch_container:
-            st.markdown(
-                "<span data-testid='inputs-pre-batch-region'></span>",
-                unsafe_allow_html=True,
-            )
-        batch_container = st.container(key="inputs_batch_design_region")
-        with batch_container:
-            st.markdown(
-                "<span data-testid='inputs-batch-design-region'></span>",
-                unsafe_allow_html=True,
-            )
-        design_brain_container = st.container(key="inputs_design_brain_region")
-        with design_brain_container:
-            st.markdown(
-                "<span data-testid='inputs-design-brain-region'></span>",
-                unsafe_allow_html=True,
-            )
-        post_batch_container = st.container(
-            key="inputs_engineering_post_batch_region"
-        )
-        with post_batch_container:
-            st.markdown(
-                "<span data-testid='inputs-post-batch-region'></span>",
-                unsafe_allow_html=True,
-            )
     render_timing_mark("inputs_page.shell.workspace.start")
-    # Register the timer-driven sibling before the widget-bearing engineering
-    # fragment.  A widget callback can interrupt the first engineering
-    # fragment run; if that happens before this sibling is registered, the
-    # sibling never exists for the session and its loading shell can never be
-    # published.
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="design_brain",
-        render_fn=render_inputs_deferred_design_brain_fragment,
-        kwargs={
-            "st_module": st,
-            "runtime": _ENGINEERING_WORKSPACE_RUNTIME,
-            "page_context": page_context,
-            "design_brain_container": design_brain_container,
-        },
-        force_fragment=True,
-        run_every=1.0,
-    )
     run_inputs_fragment(
         st_module=st,
         fragment_name="engineering_workspace",
         render_fn=_render_v2_workspace_fragment,
-        kwargs={
-            "page_context": page_context,
-            "pre_batch_container": pre_batch_container,
-            "post_batch_container": post_batch_container,
-        },
+        kwargs={"page_context": page_context},
     )
-    with batch_container:
-        _INPUTS_PAGE_RUNTIME.render_batch_design_manager(
-            ss=ss,
-            beam_labels=dict(page_context.get("beam_labels") or {}),
-            beam_order=list(page_context.get("beam_order") or []),
-            active_beam_id=str(page_context.get("active_beam_id") or ""),
-        )
     render_timing_mark("inputs_page.shell.workspace.end")
 
     render_timing_mark("inputs_page.shell.tail.start")

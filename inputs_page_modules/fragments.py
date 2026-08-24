@@ -37,14 +37,14 @@ def _current_fragment_id() -> str | None:
 
 
 def _track_fragment(
-    owner_st_module: Any,
+    st_module: Any,
     fragment_name: str,
     render_fn: Callable[..., Any],
     **payload: Any,
 ) -> Any:
     """Render inside the fragment that Streamlit already owns."""
 
-    del owner_st_module, fragment_name
+    del st_module, fragment_name
     return render_fn(**payload)
 
 
@@ -55,7 +55,6 @@ def run_inputs_fragment(
     render_fn: Callable[..., Any],
     kwargs: dict[str, Any] | None = None,
     force_fragment: bool = False,
-    run_every: str | float | None = None,
 ) -> Any:
     """Run one existing renderer in a fragment when the runtime supports it."""
 
@@ -86,10 +85,7 @@ def run_inputs_fragment(
                     **fragment_payload,
                 )
 
-            if run_every is None:
-                wrapped = fragment(_fragment_entry)
-            else:
-                wrapped = fragment(_fragment_entry, run_every=run_every)
+            wrapped = fragment(_fragment_entry)
             _FRAGMENT_WRAPPERS[cache_key] = wrapped
         return wrapped(**payload)
     st_module.session_state[f"_inputs_{fragment_name}_fragment_mode"] = mode
@@ -130,18 +126,7 @@ def rerun_inputs_current_scope(st_module: Any) -> None:
     st_module.rerun()
 
 
-def rerun_inputs_app_scope(st_module: Any) -> None:
-    """Request an intentional app-wide refresh through the shared boundary."""
-
-    try:
-        st_module.rerun(scope="app")
-    except TypeError:
-        # Compatibility with Streamlit versions predating scoped reruns.
-        st_module.rerun()
-
-
 __all__ = [
-    "rerun_inputs_app_scope",
     "rerun_inputs_current_scope",
     "run_inputs_fragment",
 ]

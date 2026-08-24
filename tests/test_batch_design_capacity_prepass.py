@@ -4,12 +4,7 @@ from batch_design.models import BatchBeamCase, BatchDesignResult
 from batch_design.runner import run_batch_design
 from batch_design.ui.results_table import design_results_frame
 from batch_design.ui.passive_capacity import apply_passive_capacity_checks
-from batch_design.store import BatchDesignWorkflowState
-from batch_design.ui.project_beam_load_table import (
-    project_beam_editor_styler,
-    project_beam_effective_frame,
-    project_beam_load_editor_frame,
-)
+from batch_design.ui.project_beam_load_table import project_beam_editor_styler
 from application.beam_summary_policy import _sanitize_beam_summary
 
 
@@ -342,73 +337,6 @@ def test_project_table_passive_capacity_cache_invalidates_with_actions() -> None
 
     assert adapter.current_calls == 2
     assert adapter.design_brain_calls == 0
-
-
-def test_multi_beam_workflow_actions_are_merged_before_passive_capacity() -> None:
-    import pandas as pd
-
-    adapter = _PassiveCapacityOnlyAdapter()
-    workflow = BatchDesignWorkflowState()
-    workflow.replace_imported_cases(
-        [
-            BatchBeamCase(member_id="beam_1", mz_star=175.0),
-            BatchBeamCase(member_id="beam_2", vy_star=90.0),
-        ]
-    )
-    stored_schedule = pd.DataFrame(
-        [
-            {"beam_id": "beam_1", "b": 300.0, "D": 600.0},
-            {"beam_id": "beam_2", "b": 250.0, "D": 500.0},
-        ]
-    )
-
-    effective = project_beam_effective_frame(stored_schedule, workflow)
-    result = apply_passive_capacity_checks(
-        effective,
-        adapter=adapter,
-        beam_records={
-            "beam_1": {"params": {"b": 300.0, "D": 600.0}},
-            "beam_2": {"params": {"b": 250.0, "D": 500.0}},
-        },
-        assumptions={},
-        cache={},
-    )
-    editor = project_beam_load_editor_frame(result, workflow)
-
-    assert adapter.current_calls == 2
-    assert adapter.design_brain_calls == 0
-    assert list(effective["mz_star"])[0] == 175.0
-    assert list(effective["vy_star"])[1] == 90.0
-    assert list(editor["capacity_status"]) == ["PASS", "PASS"]
-    assert all("NO LOADS" not in state for state in editor["design_state"])
-    assert list(editor["current_utilisation"]) == ["0.82", "0.82"]
-
-
-def test_design_state_is_computed_after_current_workflow_action_overlay() -> None:
-    import pandas as pd
-
-    workflow = BatchDesignWorkflowState()
-    workflow.replace_imported_cases(
-        [BatchBeamCase(member_id="beam_2", mz_star=200.0)]
-    )
-    checked_schedule = pd.DataFrame(
-        [
-            {
-                "beam_id": "beam_2",
-                "overall_status": "PASS",
-                "design_utilisation": 0.76,
-                "current_utilisation": 0.76,
-            }
-        ]
-    )
-
-    [row] = project_beam_load_editor_frame(
-        checked_schedule,
-        workflow,
-    ).to_dict("records")
-
-    assert row["mz_star"] == 200.0
-    assert row["design_state"].startswith("🟢 PASS")
 
 
 def test_project_table_row_styles_are_status_coordinated() -> None:

@@ -456,38 +456,24 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
     assert "fragment_store.publish(" in renderer_source
 
 
-def test_inputs_engineering_workspace_defers_design_brain_to_sibling_fragment() -> None:
+def test_inputs_engineering_workspace_keeps_design_brain_in_one_workspace_fragment() -> None:
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    assert "include_design_brain=False" in page_source
-    assert 'fragment_name="design_brain"' in page_source
-    assert "run_every=1.0" in page_source
-    assert page_source.index('fragment_name="design_brain"') < page_source.index(
-        'fragment_name="engineering_workspace"'
-    )
+    assert "include_design_brain=True" in page_source
+    assert 'fragment_name="engineering_workspace"' in page_source
+    assert 'fragment_name="design_brain"' not in page_source
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
         encoding="utf-8-sig"
     )
-    assert "run_every: str | float | None = None" in fragment_source
+    assert "run_every: str | float | None = None" not in fragment_source
 
 
-def test_deferred_design_brain_has_revision_bound_start_gate() -> None:
+def test_inputs_workspace_has_no_deferred_design_brain_fragment() -> None:
     source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
         encoding="utf-8-sig"
     )
-    start = source.index("def render_inputs_deferred_design_brain_fragment(")
-    end = source.index("\n\n__all__", start)
-    deferred_source = source[start:end]
-    assert "_inputs_design_brain_deferred_started_{revision}" in deferred_source
-    assert "runtime.refresh_design_brain_result()" in deferred_source
-    assert "fragment_store.fail_refresh(exc)" in deferred_source
-    assert "active_workspace_revision == int(revision)" in deferred_source
-    assert "publication_hash = str(fragment_state.active_engineering_hash or \"\")" in deferred_source
-    assert "publication_hash == str(authoritative_hash)" in deferred_source
-    assert "publish_result=False" in deferred_source
-    assert "_inputs_design_brain_refresh_in_flight_" in deferred_source
-    assert "ss.pop(refresh_lock_key, None)" in deferred_source
-    assert "return" in deferred_source
+    assert "def render_inputs_deferred_design_brain_fragment(" not in source
+    assert "_inputs_design_brain_refresh_in_flight_" not in source
 
 
 def test_each_result_page_has_one_workspace_refresh_authority() -> None:

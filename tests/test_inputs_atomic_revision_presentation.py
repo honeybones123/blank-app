@@ -65,10 +65,7 @@ def test_atomic_workspace_markers_bind_revision_and_expected_controls() -> None:
     assert "data-inputs-workspace-identity-complete='beam_2:17'" in rendered
     assert "data-expected-width-mm='325'" in rendered
     assert "data-expected-depth-mm='650'" in rendered
-    # Visibility is released by the server's final revision marker. Browser
-    # scroll preservation may enhance the transition, but it must never be a
-    # prerequisite for revealing an otherwise complete Inputs workspace.
-    assert ":not(:has([data-inputs-workspace-identity-complete=\"beam_2:17\"]))" in rendered
+    assert "data-inputs-workspace-browser-settled-identity" in rendered
 
 
 def test_atomic_scroll_bridge_is_one_shot_and_user_cancellable() -> None:
@@ -89,6 +86,4 @@ def test_atomic_scroll_bridge_is_one_shot_and_user_cancellable() -> None:
     assert "beamSelector" in source
     assert "previousIdentity" in source
     assert "identity === pending.previousIdentity) return" in source
-    assert "const observationRoot = doc.body || doc.documentElement" in source
-    assert "observer.observe(observationRoot" in source
-    assert "observer.observe(doc.body" not in source
+    assert "if (!doc || !doc.body) return;" in source

@@ -71,10 +71,7 @@ from batch_design.ui.project_beam_manager_adapters import (
 
 from batch_design.design_brain_adapter import BatchDesignGuidanceAdapter
 
-from batch_design.ui.page import (
-    BatchDesignPageContext,
-    render_batch_design_page,
-)
+from batch_design.ui.page import BatchDesignPageContext, render_batch_design_page
 
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
 
@@ -513,7 +510,7 @@ def render_inputs_beam_load_triggered_rerun_log_coordinator(reason: str) -> None
         meta={"reason": reason, "hydration_layer": "render_inputs"},
     )
 
-def _build_inputs_batch_design_page_context(
+def render_inputs_batch_design_manager_coordinator(
     *,
     ss: dict,
     beam_labels: dict,
@@ -545,72 +542,35 @@ def _build_inputs_batch_design_page_context(
     live_active_beam_id = str(
         ss.get("active_beam_id") or active_beam_id or ""
     ).strip()
-    return BatchDesignPageContext(
-        session_state=ss,
-        beam_order=live_order,
-        active_beam_id=live_active_beam_id,
-        beam_labels=live_labels,
-        set_active_beam=activate_batch_project_beam,
-        add_beam=add_batch_project_beam,
-        duplicate_beam=duplicate_batch_project_beam,
-        delete_beam=delete_batch_project_beam,
-        reset_workspace=reset_app_to_clean_starter_workspace,
-        force_refresh=_force_inputs_apply_refresh_cycle,
-        log_rerun=render_inputs_beam_load_triggered_rerun_log_coordinator,
-        save_active_to_table=save_active_batch_beam_to_table,
-        apply_resync=_apply_canonical_convenience_resync,
-        build_schedule_preview_df=build_batch_schedule_preview_df,
-        build_schedule_editor_df=build_batch_beam_schedule_df,
-        sync_schedule_editor_df=sync_batch_project_beam_editor_auto_save,
-        publish_batch_design_results=publish_batch_design_results,
-        build_schedule_export_df=build_batch_schedule_export_df,
-        get_active_summary=get_active_beam_summary,
-        format_status_badge=format_batch_beam_status_badge,
-        format_last_checked=format_batch_last_checked,
-        make_section_preview_figure=make_summary_cross_section_figure,
-        render_plotly_diagram=st.plotly_chart,
-        design_brain_adapter=BatchDesignGuidanceAdapter(
-            base_state_provider=_shared_state_snapshot,
-            design_guidance_runner=_compute_design_guidance_items,
-            request_kind="auto_design",
-        ),
+    render_batch_design_page(
+        BatchDesignPageContext(
+            session_state=ss,
+            beam_order=live_order,
+            active_beam_id=live_active_beam_id,
+            beam_labels=live_labels,
+            set_active_beam=activate_batch_project_beam,
+            add_beam=add_batch_project_beam,
+            duplicate_beam=duplicate_batch_project_beam,
+            delete_beam=delete_batch_project_beam,
+            reset_workspace=reset_app_to_clean_starter_workspace,
+            force_refresh=_force_inputs_apply_refresh_cycle,
+            log_rerun=render_inputs_beam_load_triggered_rerun_log_coordinator,
+            save_active_to_table=save_active_batch_beam_to_table,
+            apply_resync=_apply_canonical_convenience_resync,
+            build_schedule_preview_df=build_batch_schedule_preview_df,
+            build_schedule_editor_df=build_batch_beam_schedule_df,
+            sync_schedule_editor_df=sync_batch_project_beam_editor_auto_save,
+            publish_batch_design_results=publish_batch_design_results,
+            build_schedule_export_df=build_batch_schedule_export_df,
+            get_active_summary=get_active_beam_summary,
+            format_status_badge=format_batch_beam_status_badge,
+            format_last_checked=format_batch_last_checked,
+            make_section_preview_figure=make_summary_cross_section_figure,
+            render_plotly_diagram=st.plotly_chart,
+            design_brain_adapter=BatchDesignGuidanceAdapter(
+                base_state_provider=_shared_state_snapshot,
+                design_guidance_runner=_compute_design_guidance_items,
+                request_kind="auto_design",
+            ),
+        )
     )
-
-
-def _render_inputs_batch_design_page_fragment(
-    *,
-    ctx: BatchDesignPageContext,
-) -> None:
-    """Own the complete Batch shell and body in one sibling fragment."""
-
-    render_batch_design_page(ctx)
-
-
-def _render_inputs_batch_design_page_coordinator(
-    ctx: BatchDesignPageContext,
-) -> None:
-    return run_inputs_fragment(
-        st_module=st,
-        fragment_name="batch_design_shell",
-        render_fn=_render_inputs_batch_design_page_fragment,
-        kwargs={"ctx": ctx},
-        force_fragment=True,
-    )
-
-
-def render_inputs_batch_design_manager_coordinator(
-    *,
-    ss: dict,
-    beam_labels: dict,
-    beam_order: list,
-    active_beam_id: str,
-) -> None:
-    """Render the complete Batch shell through one fragment owner."""
-
-    ctx = _build_inputs_batch_design_page_context(
-        ss=ss,
-        beam_labels=beam_labels,
-        beam_order=beam_order,
-        active_beam_id=active_beam_id,
-    )
-    return _render_inputs_batch_design_page_coordinator(ctx)

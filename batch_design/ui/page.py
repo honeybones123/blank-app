@@ -21,7 +21,6 @@ from batch_design.ui.project_beam_load_table import (
     ACTION_LABELS,
     apply_project_beam_load_editor_rows,
     project_beam_editor_styler,
-    project_beam_effective_frame,
     project_beam_load_editor_frame,
     project_beam_templates_from_frame,
 )
@@ -69,7 +68,6 @@ PROJECT_BEAM_TABLE_FRAME_KEY = "batch_design_project_beam_table_frame"
 RUN_DESIGN_REQUEST_KEY = "_batch_design_run_requested"
 AUTO_ASSIGN_REQUEST_KEY = "_batch_design_auto_assign_requested"
 ACTIVE_BEAM_SELECTOR_KEY = "beam_manager_active_selector"
-PROJECT_BEAM_IDENTITY_REQUEST_KEY = "_batch_design_project_beam_identity_requested"
 
 
 def _request_batch_design_run() -> None:
@@ -82,12 +80,6 @@ def _request_batch_auto_assign() -> None:
     """Queue one assignment before Streamlit starts the next transaction."""
 
     st.session_state[AUTO_ASSIGN_REQUEST_KEY] = True
-
-
-def _request_project_beam_identity_action(action: str) -> None:
-    """Queue one beam identity command for the next Batch fragment pass."""
-
-    st.session_state[PROJECT_BEAM_IDENTITY_REQUEST_KEY] = str(action or "").strip()
 
 
 def _toggle_batch_design_workspace() -> None:
@@ -162,107 +154,15 @@ def _project_beam_editor_changed(before: pd.DataFrame, after: pd.DataFrame) -> b
 
 
 def _rerun_batch_design_page() -> None:
-    """Refresh only the Batch Design shell after an ordinary table edit."""
+    """Refresh the active Inputs region after a batch command."""
 
     st.session_state[WORKSPACE_OPEN_KEY] = True
-    # The complete Batch shell and body share one sibling fragment. Reusing
-    # that boundary keeps an ordinary table edit local while updating every
-    # visible Batch projection together.
+    # The Batch card lives inside the Inputs workspace fragment.  Reusing the
+    # shared boundary keeps a batch result local when Streamlit permits it and
+    # retains the supported app-level fallback for non-fragment callers.
     from inputs_page_modules.fragments import rerun_inputs_current_scope
 
     rerun_inputs_current_scope(st)
-
-
-def _rerun_inputs_page() -> None:
-    """Refresh the full app after a beam identity or explicit design change."""
-
-    st.session_state[WORKSPACE_OPEN_KEY] = True
-    from inputs_page_modules.fragments import rerun_inputs_app_scope
-
-    rerun_inputs_app_scope(st)
-
-
-def _advance_project_beam_editor_epoch() -> None:
-    """Give calculated table cells a fresh identity after committed edits."""
-
-    st.session_state["_batch_design_project_beam_editor_epoch"] = (
-        int(st.session_state.get("_batch_design_project_beam_editor_epoch", 0) or 0)
-        + 1
-    )
-
-
-def _live_project_beam_identity(
-    ctx: BatchDesignPageContext,
-) -> tuple[list[str], str | None, dict[str, str]]:
-    """Read beam identity from the live store, not the fragment's old payload.
-
-    Streamlit retains a fragment's call arguments between local reruns.  The
-    Batch page context therefore remains useful for callbacks, but its list of
-    beam ids can be older than the canonical project store after Add,
-    Duplicate or Delete.  Every visible Batch identity projection reads the
-    live store through this helper so the shell, selector and body agree.
-    """
-
-    state = ctx.session_state
-    raw_order = state.get("beam_order")
-    beam_order = (
-        [str(beam_id) for beam_id in raw_order if str(beam_id).strip()]
-        if isinstance(raw_order, (list, tuple))
-        else list(ctx.beam_order or [])
-    )
-    labels = dict(ctx.beam_labels or {})
-    records = state.get("beam_records")
-    if isinstance(records, Mapping):
-        for beam_id in beam_order:
-            record = records.get(beam_id)
-            if isinstance(record, Mapping):
-                label = str(record.get("beam_label") or "").strip()
-                if label:
-                    labels[beam_id] = label
-    active_beam_id = str(
-        state.get("active_beam_id") or ctx.active_beam_id or ""
-    ).strip() or None
-    if active_beam_id not in beam_order and beam_order:
-        active_beam_id = beam_order[0]
-    return beam_order, active_beam_id, labels
-
-
-def _consume_project_beam_identity_request(ctx: BatchDesignPageContext) -> None:
-    """Apply one queued beam command exactly once, then refresh the full app."""
-
-    action = str(
-        st.session_state.pop(PROJECT_BEAM_IDENTITY_REQUEST_KEY, "") or ""
-    ).strip()
-    if not action:
-        return
-
-    beam_order, active_beam_id, _ = _live_project_beam_identity(ctx)
-    if action == "add":
-        ctx.add_beam()
-        reason = "add_beam"
-    elif action == "duplicate":
-        ctx.duplicate_beam()
-        reason = "duplicate_beam"
-    elif action == "delete":
-        if len(beam_order) <= 1:
-            return
-        ctx.delete_beam(active_beam_id)
-        reason = "delete_beam"
-    elif action == "reset":
-        ctx.reset_workspace()
-        ctx.apply_resync(source="workspace_reset_clean_starter")
-        reason = "reset_workspace"
-    else:
-        return
-
-    st.session_state[WORKSPACE_OPEN_KEY] = True
-    # The data editor retains its own widget payload.  A beam-list mutation
-    # changes row identity, so give the rebuilt projection a fresh key rather
-    # than allowing the old row set to overwrite the canonical store.
-    _advance_project_beam_editor_epoch()
-    ctx.force_refresh(reason)
-    ctx.log_rerun(reason)
-    _rerun_inputs_page()
 
 
 def get_batch_design_workflow_state(session_state: MutableMapping[str, Any] | None = None) -> BatchDesignWorkflowState:
@@ -277,7 +177,12 @@ def get_batch_design_workflow_state(session_state: MutableMapping[str, Any] | No
 def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
     # ``active_beam_id`` is the application authority.  Do not let a retained
     # selectbox value choose a different beam for the visible UI.
-    beam_order, active_beam_id, beam_labels = _live_project_beam_identity(ctx)
+    active_beam_id = str(
+        st.session_state.get("active_beam_id") or ctx.active_beam_id or ""
+    ).strip() or None
+    beam_order = list(ctx.beam_order or [])
+    if active_beam_id not in beam_order and beam_order:
+        active_beam_id = beam_order[0]
 
     beam_selector_col, spacer_col, add_beam_col, dup_beam_col, del_beam_col, reset_workspace_col = st.columns(
         [2.1, 1.5, 0.9, 1.05, 0.95, 1.35],
@@ -300,7 +205,7 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
                 # warns (and can transiently display an unformatted raw id)
                 # when both are supplied during a project-beam switch.
                 index=None,
-                format_func=lambda beam_id: beam_labels.get(beam_id, beam_id),
+                format_func=lambda beam_id: ctx.beam_labels.get(beam_id, beam_id),
                 key=ACTIVE_BEAM_SELECTOR_KEY,
                 help="Select the project beam used as the base concrete assumptions for manual batch rows.",
                 on_change=_activate_selected_project_beam,
@@ -313,49 +218,48 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
         st.empty()
 
     with add_beam_col:
-        st.button(
-            "+ Add",
-            key="beam_manager_add_button",
-            use_container_width=True,
-            on_click=_request_project_beam_identity_action,
-            args=("add",),
-        )
+        if st.button("+ Add", key="beam_manager_add_button", use_container_width=True):
+            ctx.add_beam()
+            ctx.force_refresh("add_beam")
+            ctx.log_rerun("add_beam")
+            _rerun_batch_design_page()
 
     with dup_beam_col:
-        st.button(
-            "Duplicate",
-            key="beam_manager_duplicate_button",
-            use_container_width=True,
-            on_click=_request_project_beam_identity_action,
-            args=("duplicate",),
-        )
+        if st.button("Duplicate", key="beam_manager_duplicate_button", use_container_width=True):
+            ctx.duplicate_beam()
+            ctx.force_refresh("duplicate_beam")
+            ctx.log_rerun("duplicate_beam")
+            _rerun_batch_design_page()
 
     with del_beam_col:
-        st.button(
+        if st.button(
             "Delete",
             key="beam_manager_delete_button",
             use_container_width=True,
             disabled=len(beam_order) <= 1,
-            on_click=_request_project_beam_identity_action,
-            args=("delete",),
-        )
+        ):
+            ctx.delete_beam(active_beam_id)
+            ctx.force_refresh("delete_beam")
+            ctx.log_rerun("delete_beam")
+            _rerun_batch_design_page()
 
     with reset_workspace_col:
-        st.button(
+        if st.button(
             "Reset workspace",
             key="beam_manager_reset_workspace",
             use_container_width=True,
             help="Reset the project beam workspace. Batch imported rows are not deleted.",
-            on_click=_request_project_beam_identity_action,
-            args=("reset",),
-        )
+        ):
+            ctx.reset_workspace()
+            ctx.apply_resync(source="workspace_reset_clean_starter")
+            ctx.force_refresh("reset_workspace")
+            ctx.log_rerun("reset_workspace")
+            _rerun_batch_design_page()
 
 
-def render_project_beam_design_workspace(
-    ctx: BatchDesignPageContext,
-    workflow: BatchDesignWorkflowState,
-) -> None:
-    """Render the independently refreshable Batch table and workflow body."""
+def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: BatchDesignWorkflowState) -> None:
+    st.markdown("### Project beams")
+    _render_project_beam_controls(ctx)
 
     schedule_df = ctx.build_schedule_editor_df()
     if schedule_df is None or schedule_df.empty:
@@ -367,16 +271,12 @@ def render_project_beam_design_workspace(
         _render_workflow_mode_selector(ctx, workflow)
         return
 
-    # Merge the latest workflow/table actions before calculating. The stored
-    # schedule can lag one fragment render behind the visible workflow when
-    # several beam rows are edited in succession.
-    effective_schedule_df = project_beam_effective_frame(schedule_df, workflow)
     passive_capacity_cache = st.session_state.setdefault(
         PASSIVE_CAPACITY_CACHE_KEY,
         {},
     )
     schedule_df = apply_passive_capacity_checks(
-        effective_schedule_df,
+        schedule_df,
         adapter=ctx.design_brain_adapter,
         beam_records=st.session_state.get("beam_records"),
         assumptions=workflow.assumptions,
@@ -522,10 +422,6 @@ def render_project_beam_design_workspace(
         st.session_state["batch_design_import_warnings"] = workflow.validation.warnings
         ctx.force_refresh("batch_design_project_beam_table_auto_save")
         ctx.log_rerun("batch_design_project_beam_table_auto_save")
-        # Disabled data-editor cells are retained under a stable widget key.
-        # Re-key only after editable values are committed, so this local redraw
-        # displays the new calculated projection without losing the user's row.
-        _advance_project_beam_editor_epoch()
         _rerun_batch_design_page()
 
     if workflow.validation.errors:
@@ -602,7 +498,7 @@ def _run_batch_design_now(workflow: BatchDesignWorkflowState, ctx: BatchDesignPa
     # The editable table was rendered before the button handler.  Re-run once
     # after publishing so its live Design state changes immediately.
     if published_beam_ids:
-        _rerun_inputs_page()
+        _rerun_batch_design_page()
 
 
 def _run_auto_assign_now(workflow: BatchDesignWorkflowState, ctx: BatchDesignPageContext) -> None:
@@ -720,7 +616,7 @@ def _run_auto_assign_now(workflow: BatchDesignWorkflowState, ctx: BatchDesignPag
     st.session_state["batch_design_assignment_results"] = assignment_results
     updated_beam_ids = ctx.publish_batch_design_results(selected_results)
     if updated_beam_ids:
-        _rerun_inputs_page()
+        _rerun_batch_design_page()
 
 
 def _render_run_design(workflow: BatchDesignWorkflowState, ctx: BatchDesignPageContext) -> None:
@@ -1248,17 +1144,18 @@ def _render_workflow_mode_selector(ctx: BatchDesignPageContext, workflow: BatchD
             st.session_state[WORKFLOW_MODE_KEY] = current_mode
             _run_batch_design_now(workflow, ctx)
     with mode_cols[1]:
-        st.button(
+        auto_assign_clicked = st.button(
             WORKFLOW_MODE_AUTO_ASSIGN,
             key="batch_design_workflow_mode_auto_assign",
             type="primary" if current_mode == WORKFLOW_MODE_AUTO_ASSIGN else "secondary",
             use_container_width=True,
-            on_click=_request_batch_auto_assign,
         )
-        # Match Run design's durable one-shot command boundary.  The request
-        # is queued by the callback before Streamlit begins this fragment pass
-        # and consumed exactly once after the current editor frame is restored.
-        if st.session_state.pop(AUTO_ASSIGN_REQUEST_KEY, False):
+        # This control is a command, not a navigation control.  It must be
+        # handled in the button's own render pass: fragment callbacks can run
+        # outside the parent Inputs fragment and lose a queued request before
+        # this coordinator sees it.  The direct branch is the same dependable
+        # pattern used by the Run design command above.
+        if auto_assign_clicked:
             current_mode = WORKFLOW_MODE_AUTO_ASSIGN
             st.session_state[WORKFLOW_MODE_KEY] = current_mode
             _run_auto_assign_now(workflow, ctx)
@@ -1326,17 +1223,13 @@ def _render_results_export(workflow: BatchDesignWorkflowState) -> None:
         st.caption("Batch result export is owned by the batch_design package.")
 
 
-def render_batch_design_page(
-    ctx: BatchDesignPageContext,
-) -> None:
-    _consume_project_beam_identity_request(ctx)
+def render_batch_design_page(ctx: BatchDesignPageContext) -> None:
     workflow = get_batch_design_workflow_state(st.session_state)
-    beam_order, _, _ = _live_project_beam_identity(ctx)
     _inject_batch_design_workspace_banner_css()
     st.markdown("## Batch design")
     _render_batch_design_workspace_toggle_shell(
         workflow,
-        project_beam_count=len(beam_order),
+        project_beam_count=len(ctx.beam_order or []),
     )
     workspace_open = bool(st.session_state.get(WORKSPACE_OPEN_KEY, False))
     # The shell is made of real controls, not a decorative HTML card or
@@ -1344,10 +1237,5 @@ def render_batch_design_page(
     # clicks from the project-beam controls below.
     if workspace_open:
         with st.container(border=True):
-            st.markdown("### Project beams")
-            # Identity controls and the table/workflow are rendered by the
-            # same Batch fragment. Identity mutations intentionally widen to
-            # an app refresh after their one-shot request is committed.
-            _render_project_beam_controls(ctx)
-            render_project_beam_design_workspace(ctx, workflow)
+            _render_project_beam_design_editor(ctx, workflow)
     st.markdown("<div style='height: 0.85rem;'></div>", unsafe_allow_html=True)
