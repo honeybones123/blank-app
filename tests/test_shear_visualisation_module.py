@@ -67,6 +67,29 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "build_sfd_bmd_figure=plot_sfd_bmd_plotly" in runtime_source
     assert "Show detailed MCFT breakdown" not in mcft_source
     assert "lambda: render_shear_visualisation_block(" in runtime_source
+    assert "_render_shear_mcft_panel = st.fragment(" in module_source
+
+
+def test_mcft_display_toggles_rerun_only_the_visualisation_fragment() -> None:
+    runtime_source = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8")
+    visualisation_source = (
+        ROOT / "engineering_page_sections" / "shear_visualisation.py"
+    ).read_text(encoding="utf-8")
+    stress_field_source = (
+        ROOT / "engineering_page_sections" / "shear_stress_field.py"
+    ).read_text(encoding="utf-8")
+
+    assert runtime_source.count("render_shear_visualisation_block(") == 1
+    assert "_render_shear_mcft_panel = st.fragment(" in visualisation_source
+    assert "with mcft_panel:\n            _render_shear_mcft_panel(runtime)" in visualisation_source
+    for key in (
+        "shear_show_stm_overlay",
+        "shear_show_stm_flow",
+        "shear_show_load_flow",
+        "shear_show_cracks",
+        "shear_show_stress_block",
+    ):
+        assert f'key="{key}"' in stress_field_source
 
 
 def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> None:
@@ -101,6 +124,11 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
         shear_visualisation,
         "_render_mcft_display_options",
         lambda _runtime: fake.events.append(("render", "MCFT options")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_shear_mcft_panel",
+        lambda runtime: shear_visualisation._render_shear_mcft_panel_impl(runtime),
     )
     monkeypatch.setattr(
         shear_visualisation,

@@ -466,6 +466,32 @@ def _render_stress_field_teaching(runtime: ShearVisualisationRuntime) -> None:
     )
 
 
+def _render_shear_mcft_panel_impl(runtime: ShearVisualisationRuntime) -> None:
+    """Own the MCFT canvas and its presentation-only controls."""
+
+    st_module = runtime.st
+    with st_module.container(key="shear_mcft_plot_frame"):
+        with st_module.container(key="shear_mcft_diagram_shell"):
+            _render_shear_diagram_loading_shell(
+                runtime,
+                view_key="mcft",
+                label="MCFT stress field",
+            )
+        with st_module.container(key="shear_mcft_diagram_live"):
+            _render_shear_mcft_view(runtime)
+        with st_module.container(key="shear_mcft_diagram_options"):
+            _render_mcft_display_options(runtime)
+    with st_module.container(key="shear_mcft_diagram_caption"):
+        from engineering_page_sections.shear_stress_field import (
+            MCFT_ILLUSTRATION_DISCLAIMER,
+        )
+
+        st_module.caption(MCFT_ILLUSTRATION_DISCLAIMER)
+
+
+_render_shear_mcft_panel = st.fragment(_render_shear_mcft_panel_impl)
+
+
 def render_shear_visualisation_block(
     runtime: ShearVisualisationRuntime,
 ) -> None:
@@ -691,23 +717,7 @@ html:has(.st-key-shear_mcft_diagram_live iframe)
             with st.container(key="shear_force_diagram_caption"):
                 st.caption("\u00a0")
         with mcft_panel:
-            with st.container(key="shear_mcft_plot_frame"):
-                with st.container(key="shear_mcft_diagram_shell"):
-                    _render_shear_diagram_loading_shell(
-                        runtime,
-                        view_key="mcft",
-                        label="MCFT stress field",
-                    )
-                with st.container(key="shear_mcft_diagram_live"):
-                    _render_shear_mcft_view(runtime)
-                with st.container(key="shear_mcft_diagram_options"):
-                    _render_mcft_display_options(runtime)
-            with st.container(key="shear_mcft_diagram_caption"):
-                from engineering_page_sections.shear_stress_field import (
-                    MCFT_ILLUSTRATION_DISCLAIMER,
-                )
-
-                st.caption(MCFT_ILLUSTRATION_DISCLAIMER)
+            _render_shear_mcft_panel(runtime)
 
         # A second native tab list is the user-facing bottom selector.  It
         # controls the already-mounted panels above entirely in the browser,
@@ -744,6 +754,7 @@ __all__ = [
     "_render_shear_cross_section",
     "_render_shear_side_view",
     "_render_shear_force_diagram",
+    "_render_shear_mcft_panel_impl",
     "_render_shear_mcft_view",
     "_standardise_shear_visual_layout",
     "render_shear_visualisation_block",
