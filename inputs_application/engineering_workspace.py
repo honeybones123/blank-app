@@ -1152,76 +1152,6 @@ def render_inputs_design_guide_fragment_section(
         )
 
 
-def render_inputs_deferred_design_brain_fragment(
-    *,
-    st_module: Any,
-    runtime: EngineeringWorkspaceRuntime,
-    page_context: dict[str, Any],
-) -> None:
-    """Render the Design Brain shell and evaluate only the current revision."""
-
-    services = InputsSessionServices.from_mapping(st_module.session_state)
-    workspace_store = InputsWorkspaceStateStore(st_module.session_state)
-    workspace_revision = workspace_store.workspace_revision()
-    current_result = services.engineering_results.current()
-    slot = st_module.container(key="inputs_design_brain_region")
-    if current_result is None:
-        with slot:
-            st_module.info("Enter a design action or load to calculate.")
-        return
-
-    current_hash = str(current_result.engineering_hash or "")
-    if not services.publications.is_current(
-        workspace_revision=workspace_revision,
-        engineering_hash=current_hash,
-    ):
-        with slot:
-            st_module.info("Updating Design Guide…")
-        try:
-            refreshed = runtime.refresh_design_brain_result()
-            latest_revision = workspace_store.workspace_revision()
-            latest_result = services.engineering_results.current()
-            if (
-                refreshed is None
-                or latest_result is None
-                or latest_revision != workspace_revision
-                or latest_result.engineering_hash != current_hash
-                or refreshed.engineering_hash != current_hash
-                or not refreshed.final_publication
-            ):
-                return
-            services.publications.publish(
-                refreshed,
-                workspace_revision=workspace_revision,
-            )
-            current_result = refreshed
-        except Exception as exc:
-            services.publications.fail_refresh(exc)
-            with slot:
-                st_module.warning("Design Guide is temporarily unavailable.")
-            return
-
-    region_context = build_inputs_design_brain_region_context(
-        session_state=st_module.session_state,
-        services=services,
-        inputs_detailed_mode=bool(
-            st_module.session_state.get("_inputs_detailed_mode", False)
-        ),
-    )
-    if region_context is None:
-        with slot:
-            st_module.info("Updating Design Guide…")
-        return
-    render_inputs_design_guide_fragment_section(
-        st_module=st_module,
-        runtime=runtime,
-        page_context=page_context,
-        services=services,
-        region_context=region_context,
-        design_guide_slot=slot,
-    )
-
-
 def render_inputs_widget_fragment_section(
     *,
     st_module: Any,
@@ -1893,7 +1823,6 @@ __all__ = [
     "render_engineering_workspace",
     "render_inputs_calculation_fragment_section",
     "render_inputs_controls_fragment_section",
-    "render_inputs_deferred_design_brain_fragment",
     "render_inputs_design_guide_fragment_section",
     "render_inputs_summary_fragment_section",
     "render_inputs_widget_fragment_section",

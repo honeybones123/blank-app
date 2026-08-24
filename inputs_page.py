@@ -17,12 +17,8 @@ from inputs_application.page_runtime import (
     build_inputs_page_runtime,
 )
 from inputs_application.engineering_workspace import (
-    build_inputs_controls_region_context,
     build_engineering_workspace_runtime,
-    render_inputs_controls_fragment_section,
-    render_inputs_deferred_design_brain_fragment,
     render_engineering_workspace,
-    render_inputs_widget_fragment_section,
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
 from inputs_application.engineering_input_store import InputSnapshotStore
@@ -153,8 +149,8 @@ def hydrate_committed_design_action_widgets(
     )
 
 
-def _render_inputs_engineering_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
-    """Render only the authoritative engineering result region."""
+def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
+    """Render the Inputs transaction inside one stable workspace fragment."""
 
     # Streamlit executes the Apply button callback before re-entering this
     # fragment. Consume that immutable, revision-bound command first: no
@@ -188,57 +184,9 @@ def _render_inputs_engineering_fragment(*, page_context: dict[str, Any]) -> dict
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        include_design_brain=False,
+        include_design_brain=True,
         include_controls=False,
         include_widgets=False,
-    )
-
-
-def _prepare_inputs_controls_fragment(*, page_context: dict[str, Any]) -> None:
-    """Reconcile and render the mounted Inputs controls and diagrams."""
-
-    _INPUTS_PAGE_RUNTIME.handle_pending_apply()
-    render_inputs_action_source_transaction(
-        st_module=st,
-        runtime=_INPUTS_PAGE_RUNTIME,
-        request_commit=_request_inputs_engineering_commit,
-        hydrate_actions=hydrate_committed_design_action_widgets,
-    )
-    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip() or None
-    beam_snapshot = InputSnapshotStore(st.session_state).current_for_beam(
-        active_beam_id or ""
-    )
-    hydrate_inputs_longitudinal_reo_widgets_for_revision(
-        state=st.session_state,
-        revision=int(beam_snapshot.revision or 0),
-        active_beam_id=active_beam_id,
-        copy_deepcopy_fn=copy.deepcopy,
-    )
-    controls_context = build_inputs_controls_region_context(page_context=page_context)
-    detailed_mode = render_inputs_controls_fragment_section(
-        st_module=st,
-        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        region_context=controls_context,
-    )
-    st.session_state["_inputs_detailed_mode"] = bool(detailed_mode)
-    detailed_mode = _INPUTS_PAGE_RUNTIME.render_design_mode_selector(
-        sync_callbacks=page_context["sync_callbacks"],
-    )
-    render_inputs_widget_fragment_section(
-        st_module=st,
-        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        page_context=page_context,
-        inputs_detailed_mode=bool(detailed_mode),
-    )
-
-
-def _render_inputs_design_brain_fragment(*, page_context: dict[str, Any]) -> None:
-    """Page-owned wrapper avoids passing Streamlit twice through the fragment."""
-
-    render_inputs_deferred_design_brain_fragment(
-        st_module=st,
-        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        page_context=page_context,
     )
 
 
@@ -286,38 +234,23 @@ def render_inputs_page() -> None:
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 
-    # Keep controls/diagrams mounted independently from the authoritative
-    # engineering region. Only the engineering fragment is periodically
-    # awakened while a revision is pending; the controls fragment never polls.
+    # Keep the Inputs page as one stable transaction. Streamlit fragment
+    # reruns are event-driven from widget callbacks; there is deliberately no
+    # periodic scheduler here because periodic wakes were causing the Design
+    # Brain and diagram regions to unmount/remount while idle.
     for section_name in (
-        "engineering_calculation",
-        "engineering_controls",
+        "engineering_calculation_workspace",
+        "engineering_controls_workspace",
         "design_brain_workspace",
-        "engineering_workspace",
+        "engineering_input_workspace",
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
     render_timing_mark("inputs_page.shell.workspace.start")
     run_inputs_fragment(
         st_module=st,
-        fragment_name="engineering_calculation",
-        render_fn=_render_inputs_engineering_fragment,
+        fragment_name="engineering_workspace",
+        render_fn=_render_v2_workspace_fragment,
         kwargs={"page_context": page_context},
-        force_fragment=True,
-        run_every=0.5,
-    )
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="engineering_controls",
-        render_fn=_prepare_inputs_controls_fragment,
-        kwargs={"page_context": page_context},
-    )
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="design_brain",
-        render_fn=_render_inputs_design_brain_fragment,
-        kwargs={"page_context": page_context},
-        force_fragment=True,
-        run_every=0.5,
     )
     render_timing_mark("inputs_page.shell.workspace.end")
 
@@ -333,8 +266,8 @@ def render_inputs_page() -> None:
     )
     render_timing_mark("inputs_page.shell.tail.end")
 
-    # Design Brain is rendered in its own stable slot by the engineering
-    # publication boundary; controls and diagrams are not its children.
+    # The unified engineering workspace owns summary, diagrams, calculations,
+    # controls, widgets, and the revision-bound Design Brain publication.
 
 
 render_inputs = speed_profiled(
