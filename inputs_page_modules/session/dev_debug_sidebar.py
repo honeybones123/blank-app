@@ -8,6 +8,15 @@ from typing import Any
 
 _DEBUG_KEYS = (
     "page_slug",
+    "_inputs_workspace_revision",
+    "_inputs_last_commit_timings_ms",
+    "_inputs_workspace_section_timings_ms",
+    "_inputs_design_brain_deferred_invocation_count",
+    "_inputs_engineering_compute_count_by_revision",
+    "_inputs_engineering_input_transaction_probe",
+    "_inputs_authoritative_design_result_runtime_probe",
+    "_inputs_design_brain_job_probe",
+    "_inputs_design_guide_fragment_state_v1",
     "actions_source",
     "inputs_actions_source",
     "loads_edit_mode",
