@@ -881,6 +881,19 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
 .st-key-shear_mcft_diagram_shell {
     z-index: 2;
     height: var(--sb-bending-diagram-plot-height, 320px);
+    /* The shell is geometry only.  Make the complete overlay transparent to
+       wheel, touch and pointer input so the main page remains scrollable even
+       when the cursor is directly over the unfinished diagram canvas. */
+    pointer-events: none !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: auto !important;
+}
+.st-key-shear_side_diagram_shell *,
+.st-key-shear_section_diagram_shell *,
+.st-key-shear_force_diagram_shell *,
+.st-key-shear_mcft_diagram_shell * {
+    pointer-events: none !important;
+    touch-action: pan-y !important;
 }
 .st-key-shear_side_diagram_live,
 .st-key-shear_section_diagram_live,
@@ -982,7 +995,9 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
     overflow: hidden;
     background: #fff;
     color: #10234a;
-    pointer-events: none;
+    pointer-events: none !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: auto !important;
 }
 [data-testid="stTabs"][data-sb-tab-scope="shear-diagram-panels"] [role="tabpanel"],
 .st-key-shear_side_plot_frame,
@@ -1000,7 +1015,9 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
     padding: .85rem 1rem;
     border: 1px solid #cbd5e1;
     border-radius: 10px;
-    background: #f8fafc;
+    /* Keep the loading canvas visually continuous with the finished Plotly
+       canvas instead of greying the diagram region during preparation. */
+    background: #fff;
     color: #475569;
 }
 .shear-diagram-loading-copy {

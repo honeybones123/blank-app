@@ -123,7 +123,7 @@ def test_lightweight_page_triggers_one_bundle_only_after_page_ready() -> None:
     assert "data-shear-page-lightweight-ready" in runtime_source
     assert "requestAnimationFrame(() => window.requestAnimationFrame" in visual_source
     assert visual_source.count("button.click()") == 1
-    assert "wheel" not in visual_source
+    assert 'addEventListener("wheel"' not in visual_source
     assert "scrollTop" not in visual_source
     assert "touchmove" not in visual_source
 
@@ -152,7 +152,12 @@ def test_shell_and_live_canvas_share_the_bending_height_token() -> None:
 
     assert 'data-shear-diagram-geometry-token="--sb-bending-diagram-plot-height"' in source
     assert source.count("var(--sb-bending-diagram-plot-height, 320px)") >= 10
-    assert "pointer-events: none" in source
+    assert "pointer-events: none !important" in source
+    assert ".st-key-shear_side_diagram_shell *" in source
+    assert ".st-key-shear_mcft_diagram_shell *" in source
+    assert "touch-action: pan-y !important" in source
+    assert "overscroll-behavior-y: auto !important" in source
+    assert "background: #f8fafc" not in source
     assert "Shear diagrams loading" in source
     assert "Preparing MCFT stress field" not in source
     assert ":has(.st-key-shear_mcft_diagram_options)" in source
