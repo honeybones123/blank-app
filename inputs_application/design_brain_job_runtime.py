@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, MutableMapping
 
+import streamlit as st
+
 from application.contracts.design_brain import (
     AuthoritativeDesignResult,
     EngineeringInputSnapshot,
@@ -16,16 +18,17 @@ from application.design_brain_jobs import (
 from inputs_application.design_brain_composition import build_new_design_brain_service
 
 
-_MANAGER: DesignBrainJobManager | None = None
 _PAYLOADS_KEY = "_inputs_design_brain_job_payloads_v1"
 
 
+@st.cache_resource(show_spinner=False)
+def _cached_manager() -> DesignBrainJobManager:
+    service = build_new_design_brain_service()
+    return DesignBrainJobManager(service.run)
+
+
 def _manager() -> DesignBrainJobManager:
-    global _MANAGER
-    if _MANAGER is None:
-        service = build_new_design_brain_service()
-        _MANAGER = DesignBrainJobManager(service.run)
-    return _MANAGER
+    return _cached_manager()
 
 
 def remember_design_brain_job_input(
