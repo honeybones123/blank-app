@@ -185,8 +185,8 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
         include_design_brain=True,
-        include_controls=False,
-        include_widgets=False,
+        include_controls=True,
+        include_widgets=True,
     )
 
 
