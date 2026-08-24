@@ -48,8 +48,6 @@ _DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY = (
 _DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY = (
     "_inputs_design_brain_widget_marker_state"
 )
-_DESIGN_BRAIN_RENDERED_IDENTITY_KEY = "_inputs_design_brain_rendered_identity"
-
 _ATOMIC_WORKSPACE_CONTAINER_KEY = "inputs_engineering_workspace_atomic"
 
 
@@ -1225,17 +1223,6 @@ def render_inputs_deferred_design_brain_fragment(
         with slot:
             st_module.info("Updating Design Guide…")
         return
-    rendered_identity = (
-        f"{region_context.identity.input_revision}:"
-        f"{region_context.identity.engineering_hash}"
-    )
-    if (
-        st_module.session_state.get(_DESIGN_BRAIN_RENDERED_IDENTITY_KEY)
-        == rendered_identity
-    ):
-        # The fragment may wake again while its lightweight polling boundary
-        # is active. Do not repaint an unchanged recommendation.
-        return
     render_inputs_design_guide_fragment_section(
         st_module=st_module,
         runtime=runtime,
@@ -1244,7 +1231,6 @@ def render_inputs_deferred_design_brain_fragment(
         region_context=region_context,
         design_guide_slot=slot,
     )
-    st_module.session_state[_DESIGN_BRAIN_RENDERED_IDENTITY_KEY] = rendered_identity
 
 
 def render_inputs_widget_fragment_section(
