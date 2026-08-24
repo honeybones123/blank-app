@@ -89,7 +89,8 @@ def test_mcft_display_toggles_rerun_only_the_visualisation_fragment() -> None:
     assert "_render_shear_mcft_panel = st.fragment(" in visualisation_source
     assert "_render_shear_mcft_panel(runtime, fingerprint)" in visualisation_source
     assert "option_key = _mcft_option_key(options)" in visualisation_source
-    assert 'prepared = bundle["mcft"][option_key]' in visualisation_source
+    assert "selectedOption = () =>" in visualisation_source
+    assert "Plotly.react(" in visualisation_source
     for key in (
         "shear_show_stm_overlay",
         "shear_show_stm_flow",
@@ -110,25 +111,14 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
 
     monkeypatch.setattr(
         shear_visualisation,
-        "_render_shear_side_view",
-        lambda _runtime, _figure=None: fake.events.append(("render", "Side view")),
-    )
-    monkeypatch.setattr(
-        shear_visualisation,
-        "_render_shear_cross_section",
-        lambda _runtime, _figure=None: fake.events.append(("render", "Section")),
-    )
-    monkeypatch.setattr(
-        shear_visualisation,
-        "_render_shear_force_diagram",
-        lambda _runtime, _figure=None: fake.events.append(("render", "Shear diagram")),
+        "_render_shear_bundle_canvas",
+        lambda _runtime, **_kwargs: fake.events.append(("render", "Diagram bundle")),
     )
     monkeypatch.setattr(
         shear_visualisation,
         "_render_shear_mcft_panel",
-        lambda _runtime, _fingerprint: (
-            fake.events.append(("render", "MCFT")),
-            fake.events.append(("render", "MCFT options")),
+        lambda _runtime, _fingerprint: fake.events.append(
+            ("render", "MCFT options")
         ),
     )
     monkeypatch.setattr(
@@ -182,29 +172,16 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
         "tabs",
         (
             ("Side view", "Section", "Shear diagram", "MCFT"),
-            "shear-diagram-panels",
+            "shear-diagram-navigation",
             True,
         ),
     ) in fake.events
-    assert (
-        "tabs",
-        (
-            ("Side view", "Section", "Shear diagram", "MCFT"),
-            "shear-diagram-navigation",
-            False,
-        ),
-    ) in fake.events
     assert [event for event in fake.events if event[0] == "render"] == [
-        ("render", "Side view"),
-        ("render", "Section"),
-        ("render", "Shear diagram"),
-        ("render", "MCFT"),
+        ("render", "Diagram bundle"),
         ("render", "MCFT options"),
         ("render", "Stress field teaching"),
     ]
-    sync = next(event[1] for event in fake.events if event[0] == "sync")
-    assert sync["source_scope_id"] == "shear-diagram-navigation"
-    assert sync["target_scope_id"] == "shear-diagram-panels"
+    assert not [event for event in fake.events if event[0] == "sync"]
 
 
 def test_shear_force_view_reuses_existing_vx_builder(monkeypatch) -> None:
