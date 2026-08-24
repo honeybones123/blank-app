@@ -283,43 +283,11 @@ def _render_atomic_workspace_start(
 [class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"] {{
   position: relative;
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"]) {{
-  min-height: var(--inputs-workspace-previous-height, 640px);
-}}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
-  [data-testid="stElementContainer"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])),
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"]):not(:has([data-inputs-workspace-identity-complete="{identity_text}"]))
-  [data-testid="stLayoutWrapper"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])) {{
-  visibility: hidden !important;
-}}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]
-  [data-testid="stElementContainer"]:has([data-inputs-workspace-identity-start="{identity_text}"]) {{
-  display: block !important;
-  visibility: visible !important;
-}}
 .inputs-workspace-atomic-status {{
   display: none;
 }}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
-  .inputs-workspace-atomic-status {{
-  display: flex;
-  position: absolute;
-  inset: 0 0 auto 0;
-  z-index: 3;
-  min-height: 58px;
-  align-items: center;
-  gap: .65rem;
-  padding: .85rem 1rem;
-  border: 1px solid #cbd5e1;
-  border-left: 5px solid #4263eb;
-  border-radius: 10px;
-  background: #f8fafc;
-  color: #334155;
-  font-weight: 700;
-  box-sizing: border-box;
-}}
 </style>
-<div data-inputs-workspace-revision-start="{revision_text}" data-inputs-workspace-identity-start="{identity_text}" data-atomic-guard="{'1' if guard_required else '0'}" aria-hidden="true">
+<div data-inputs-workspace-revision-start="{revision_text}" data-inputs-workspace-identity-start="{identity_text}" data-inputs-workspace-browser-settled-identity="{identity_text}" data-atomic-guard="{'1' if guard_required else '0'}" aria-hidden="true">
   <div class="inputs-workspace-atomic-status" role="status" aria-live="polite">
     Updating beam revision&hellip;
   </div>
@@ -1172,6 +1140,10 @@ def render_inputs_async_design_brain_fragment(
 
     services = InputsSessionServices.from_mapping(st_module.session_state)
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
+    # Retained as a compatibility adapter for callers outside the page.  The
+    # live page uses the ordered workspace renderer plus the monitor below.
+    if st_module.session_state.get("_inputs_atomic_revision_guard_pending"):
+        return
     revision = workspace_store.workspace_revision()
     engineering_result = services.engineering_results.current()
     slot = st_module.container(key="inputs_design_brain_region")
@@ -1227,6 +1199,123 @@ def render_inputs_async_design_brain_fragment(
     if region_context is None:
         with slot:
             st_module.info("Updating Design Guide…")
+        return
+    render_inputs_design_guide_fragment_section(
+        st_module=st_module,
+        runtime=runtime,
+        page_context=page_context,
+        services=services,
+        region_context=region_context,
+        design_guide_slot=slot,
+        authoritative_result_override=job.execution.result,
+    )
+
+
+def monitor_inputs_design_brain_fragment(
+    *,
+    st_module: Any,
+    runtime: EngineeringWorkspaceRuntime,
+    page_context: dict[str, Any],
+) -> None:
+    """Poll the worker and wake the ordered page when its state changes."""
+
+    del runtime, page_context
+    if st_module.session_state.get("_inputs_atomic_revision_guard_pending"):
+        return
+    services = InputsSessionServices.from_mapping(st_module.session_state)
+    workspace_store = InputsWorkspaceStateStore(st_module.session_state)
+    result = services.engineering_results.current()
+    if result is None:
+        return
+    revision = workspace_store.workspace_revision()
+    job = get_design_brain_job(
+        input_revision=revision,
+        engineering_hash=result.engineering_hash,
+    )
+    if job is None:
+        return
+    if job.status in {
+        DesignBrainJobStatus.PENDING,
+        DesignBrainJobStatus.RUNNING,
+    }:
+        return
+    identity = f"{revision}:{result.engineering_hash}:{job.status}"
+    if identity == str(
+        st_module.session_state.get("_inputs_design_brain_monitor_identity") or ""
+    ):
+        return
+    st_module.session_state["_inputs_design_brain_monitor_identity"] = identity
+    try:
+        st_module.rerun(scope="app")
+    except (TypeError, RuntimeError):
+        st_module.rerun()
+
+
+def render_inputs_design_brain_workspace_section(
+    *,
+    st_module: Any,
+    runtime: EngineeringWorkspaceRuntime,
+    page_context: dict[str, Any],
+    services: InputsSessionServices,
+    workspace_revision: int,
+    inputs_detailed_mode: bool,
+) -> None:
+    """Render the Design Brain in its stable ordered workspace slot."""
+
+    slot = st_module.empty()
+    engineering_result = services.engineering_results.current()
+    if engineering_result is None:
+        with slot.container():
+            st_module.info("Enter a design action or load to calculate.")
+        return
+    job = get_design_brain_job(
+        input_revision=workspace_revision,
+        engineering_hash=engineering_result.engineering_hash,
+    )
+    if job is None:
+        job = enqueue_design_brain_job(
+            st_module.session_state,
+            result=engineering_result,
+            input_revision=workspace_revision,
+        )
+    if job is None or job.status in {
+        DesignBrainJobStatus.PENDING,
+        DesignBrainJobStatus.RUNNING,
+    }:
+        with slot.container():
+            st_module.markdown(
+                '<div class="inputs-v2-root">'
+                '<div class="inputs-v2-card-label">Design Guide</div>'
+                '<div data-testid="inputs-v2-design-brain-runtime-loading" '
+                'class="inputs-v2-brain-runtime-loading-shell" role="status" '
+                'aria-live="polite" style="display:flex">'
+                '&#129504; Updating Design Guide&hellip;'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
+        return
+    if job.status is DesignBrainJobStatus.FAILED or job.execution is None:
+        with slot.container():
+            st_module.warning("Design Guide is temporarily unavailable.")
+        return
+    current_result = services.engineering_results.current()
+    if (
+        current_result is None
+        or workspace_revision
+        != InputsWorkspaceStateStore(st_module.session_state).workspace_revision()
+        or current_result.engineering_hash != engineering_result.engineering_hash
+        or job.input_revision != workspace_revision
+        or job.engineering_hash != engineering_result.engineering_hash
+    ):
+        return
+    region_context = build_inputs_design_brain_region_context(
+        session_state=st_module.session_state,
+        services=services,
+        inputs_detailed_mode=inputs_detailed_mode,
+    )
+    if region_context is None:
+        with slot.container():
+            st_module.info("Updating design guidance&hellip;")
         return
     render_inputs_design_guide_fragment_section(
         st_module=st_module,
@@ -1372,7 +1461,11 @@ def _render_engineering_workspace_body(
     elif summary_region_state.status == "failed":
         st_module.error("Calculations could not be updated.")
     elif summary_region_state.status == "updating":
-        st_module.info("Updating calculations...")
+        st_module.markdown(
+            '<div class="inputs-engineering-result-loading" role="status" '
+            'aria-live="polite">Updating engineering results&hellip;</div>',
+            unsafe_allow_html=True,
+        )
     else:
         summary_region_context = summary_region_state.context
         if summary_region_context is None:
@@ -1418,29 +1511,18 @@ def _render_engineering_workspace_body(
     ) / 1_000_000
     section_started_ns = time.perf_counter_ns()
     if include_design_brain:
-        design_guide_slot = st_module.empty()
-        region_context = build_inputs_design_brain_region_context(
-            session_state=st_module.session_state,
+        render_inputs_design_brain_workspace_section(
+            st_module=st_module,
+            runtime=runtime,
+            page_context=page_context,
             services=services,
+            workspace_revision=workspace_revision,
             inputs_detailed_mode=inputs_detailed_mode,
         )
-        if region_context is None:
-            with design_guide_slot.container():
-                st_module.info("Updating design guidance...")
-        else:
-            render_inputs_design_guide_fragment_section(
-                st_module=st_module,
-                runtime=runtime,
-                page_context=page_context,
-                services=services,
-                region_context=region_context,
-                design_guide_slot=design_guide_slot,
-            )
         # The widget/diagram renderer still emits the shared visibility marker
         # below. In the unified workspace the Design Brain is rendered in this
-        # same fragment, so publish its ready revision before that marker is
-        # emitted; otherwise the marker's legacy pending CSS hides the fresh
-        # V2 card even though the publication is already current.
+        # Publish its ready revision before the widget/diagram compatibility
+        # marker is emitted.
         current_publication = services.publications.current()
         if (
             current_publication.status == "ready"
@@ -1912,6 +1994,8 @@ __all__ = [
     "render_inputs_controls_fragment_section",
     "render_inputs_design_guide_fragment_section",
     "render_inputs_async_design_brain_fragment",
+    "render_inputs_design_brain_workspace_section",
+    "monitor_inputs_design_brain_fragment",
     "render_inputs_summary_fragment_section",
     "render_inputs_widget_fragment_section",
 ]

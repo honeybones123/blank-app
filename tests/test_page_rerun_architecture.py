@@ -442,7 +442,7 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
         encoding="utf-8-sig"
     )
     start = source.index("def render_inputs_design_guide_fragment_section(")
-    end = source.index("\ndef render_inputs_widget_fragment_section(", start)
+    end = source.index("\ndef render_inputs_async_design_brain_fragment(", start)
     renderer_source = source[start:end]
 
     assert renderer_source.count("apply_handler=runtime.handle_pending_apply") == 1
@@ -456,13 +456,19 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
     assert "fragment_store.publish(" in renderer_source
 
 
-def test_inputs_workspace_uses_async_design_brain_boundary() -> None:
+def test_inputs_workspace_uses_stable_workspace_and_async_design_brain_monitor() -> None:
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    assert "include_design_brain=False" in page_source
+    assert "include_design_brain=True" in page_source
     assert 'fragment_name="engineering_workspace"' in page_source
     assert 'fragment_name="design_brain"' in page_source
     assert "render_async_design_brain_region" in page_source
     assert "run_every=0.5" in page_source
+
+    workspace_source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "render_inputs_design_brain_workspace_section" in workspace_source
+    assert "monitor_inputs_design_brain_fragment" in workspace_source
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
         encoding="utf-8-sig"
