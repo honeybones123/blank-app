@@ -26,8 +26,8 @@ def _runtime(fake: _FakeStreamlit) -> shear_visualisation.ShearVisualisationRunt
         render_animated_plotly=noop,
         render_section_title=noop,
         info_button=noop,
+        render_lazy_expander=noop,
         render_tabs=noop,
-        synchronize_tabs=noop,
         build_cross_section_figure=lambda **_kwargs: go.Figure(),
         build_side_view_figure=lambda **_kwargs: go.Figure(),
         build_sfd_bmd_figure=lambda **_kwargs: (go.Figure(), go.Figure()),
@@ -122,26 +122,29 @@ def test_lightweight_page_triggers_one_bundle_only_after_page_ready() -> None:
     assert "data-shear-lightweight-ready" in visual_source
     assert "data-shear-page-lightweight-ready" in runtime_source
     assert "requestAnimationFrame(() => window.requestAnimationFrame" in visual_source
-    assert "SHEAR_DIAGRAM_POST_PAINT_DELAY_MS = 400" in visual_source
-    assert "}}, {SHEAR_DIAGRAM_POST_PAINT_DELAY_MS});" in visual_source
+    assert "}}, 150);" in visual_source
     assert visual_source.count("button.click()") == 1
     assert 'addEventListener("wheel"' not in visual_source
     assert "scrollTop" not in visual_source
     assert "touchmove" not in visual_source
 
 
-def test_one_canvas_reveals_from_the_complete_prepared_bundle() -> None:
+def test_native_bending_pattern_mounts_the_complete_prepared_bundle() -> None:
     source = (
         ROOT / "engineering_page_sections" / "shear_visualisation.py"
     ).read_text(encoding="utf-8")
 
-    assert ".st-key-shear_diagram_live" in source
-    assert ".st-key-shear_side_diagram_live" not in source
-    assert "_render_shear_bundle_canvas(" in source
-    assert "Plotly.react(" in source
-    assert "selectedPrepared(view, optionKey)" in source
-    assert "plotly-basic-2.35.2.min.js" in source
-    assert "window.frameElement?.closest('.st-key-shear_diagram_live')" in source
+    for view in ("side", "section", "force", "mcft"):
+        assert f".st-key-shear_{view}_diagram_live" in source
+        assert f'key="shear_{view}_diagram_shell"' in source
+    assert "_render_shear_bundle_canvas(" not in source
+    assert "Plotly.react(" not in source
+    assert "plotly-basic-2.35.2.min.js" not in source
+    assert 'scope_id="shear-diagram-navigation"' in source
+    assert "completePlot('.st-key-shear_side_diagram_live" in source
+    assert "completePlot('.st-key-shear_section_diagram_live" in source
+    assert "completePlot('.st-key-shear_force_diagram_live" in source
+    assert "completeMcft()" in source
     assert "data-shear-mcft-projection-count" in source
     assert "data-shear-mcft-option-key" in source
 
@@ -152,14 +155,10 @@ def test_shell_and_live_canvas_share_the_bending_height_token() -> None:
     ).read_text(encoding="utf-8")
 
     assert 'data-shear-diagram-geometry-token="--sb-bending-diagram-plot-height"' in source
-    assert source.count("var(--sb-bending-diagram-plot-height, 320px)") >= 10
+    assert source.count("var(--sb-bending-diagram-plot-height, 320px)") >= 5
     assert "pointer-events: none !important" in source
-    assert ".st-key-shear_diagram_shell *" in source
-    assert "touch-action: pan-y !important" in source
-    assert "overscroll-behavior-y: auto !important" in source
-    assert "background: #f8fafc" not in source
+    assert "background: #f8fafc" in source
     assert "Shear diagrams loading" in source
     assert "Preparing MCFT stress field" not in source
-    assert "data-stale=\"true\"" in source
-    assert "section.stMain:has(#shear-visuals-block)" in source
-    assert "opacity: 1 !important" in source
+    assert "data-stale=\"true\"" not in source
+    assert "scrollTop" not in source

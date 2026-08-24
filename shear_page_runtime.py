@@ -16,7 +16,7 @@ from shear_visuals import (
 )
 from beam_diagram_runtime import plot_sfd_bmd_plotly
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_result_page_css, calcbox, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, render_plotly_diagram, render_image_diagram
+from widgets_helpers import apply_result_page_css, calcbox, apply_step_summary_expander_css, info_i_button, page_divider, render_lazy_expander, render_page_explainer_expander, render_section_title, render_plotly_diagram, render_image_diagram
 from engineering_check_ui import SHEAR_ROW_UID_TO_TAB
 from ui_seamless_steps import bind_summary_clicks
 from shear_checks_helpers import (
@@ -38,7 +38,6 @@ from calculations.shear import (
 )
 from engineering_page_sections.stable_tabs import (
     render_stable_tabs,
-    synchronize_stable_tab_scopes,
 )
 from engineering_page_sections.shear_page_context import (
     build_shear_page_snapshot,
@@ -583,8 +582,8 @@ def render_shear():
                 render_animated_plotly=_render_animated_plotly_figure,
                 render_section_title=render_section_title,
                 info_button=info_i_button,
+                render_lazy_expander=render_lazy_expander,
                 render_tabs=render_stable_tabs,
-                synchronize_tabs=synchronize_stable_tab_scopes,
                 build_cross_section_figure=build_shear_cross_section_figure,
                 build_side_view_figure=build_shear_side_view_figure,
                 build_sfd_bmd_figure=plot_sfd_bmd_plotly,

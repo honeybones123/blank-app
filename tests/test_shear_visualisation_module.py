@@ -59,7 +59,8 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "_shear_visualisation_section" not in runtime_source
     assert "render_centered_plotly=" in runtime_source
     assert "render_animated_plotly=" in runtime_source
-    assert "synchronize_tabs=synchronize_stable_tab_scopes" in runtime_source
+    assert "render_lazy_expander=render_lazy_expander" in runtime_source
+    assert "synchronize_stable_tab_scopes" not in runtime_source
     assert "def _render_animated_plotly_figure" not in runtime_source
     assert "def _render_shear_visualisation_block" not in runtime_source
     assert "def _render_shear_side_view" not in runtime_source
@@ -89,8 +90,9 @@ def test_mcft_display_toggles_rerun_only_the_visualisation_fragment() -> None:
     assert "_render_shear_mcft_panel = st.fragment(" in visualisation_source
     assert "_render_shear_mcft_panel(runtime, fingerprint)" in visualisation_source
     assert "option_key = _mcft_option_key(options)" in visualisation_source
-    assert "selectedOption = () =>" in visualisation_source
-    assert "Plotly.react(" in visualisation_source
+    assert "render_lazy_expander(" in visualisation_source
+    assert "body_only=True" in visualisation_source
+    assert "Plotly.react(" not in visualisation_source
     for key in (
         "shear_show_stm_overlay",
         "shear_show_stm_flow",
@@ -111,8 +113,18 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
 
     monkeypatch.setattr(
         shear_visualisation,
-        "_render_shear_bundle_canvas",
-        lambda _runtime, **_kwargs: fake.events.append(("render", "Diagram bundle")),
+        "_render_shear_side_view",
+        lambda _runtime, _figure: fake.events.append(("render", "Side view")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_shear_cross_section",
+        lambda _runtime, _figure: fake.events.append(("render", "Section")),
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_render_shear_force_diagram",
+        lambda _runtime, _figure: fake.events.append(("render", "Shear diagram")),
     )
     monkeypatch.setattr(
         shear_visualisation,
@@ -153,10 +165,8 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
         render_animated_plotly=lambda *_args, **_kwargs: None,
         render_section_title=lambda title: fake.events.append(("title", title)),
         info_button=lambda *_args, **_kwargs: _FakeContext(fake.events, "info"),
+        render_lazy_expander=lambda *_args, **_kwargs: None,
         render_tabs=render_tabs,
-        synchronize_tabs=lambda _st, **kwargs: fake.events.append(
-            ("sync", kwargs)
-        ),
         build_cross_section_figure=lambda **_kwargs: go.Figure(),
         build_side_view_figure=lambda **_kwargs: go.Figure(),
         build_sfd_bmd_figure=lambda **_kwargs: (go.Figure(), go.Figure()),
@@ -177,11 +187,12 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
         ),
     ) in fake.events
     assert [event for event in fake.events if event[0] == "render"] == [
-        ("render", "Diagram bundle"),
+        ("render", "Side view"),
+        ("render", "Section"),
+        ("render", "Shear diagram"),
         ("render", "MCFT options"),
         ("render", "Stress field teaching"),
     ]
-    assert not [event for event in fake.events if event[0] == "sync"]
 
 
 def test_shear_force_view_reuses_existing_vx_builder(monkeypatch) -> None:
@@ -220,8 +231,8 @@ def test_shear_force_view_reuses_existing_vx_builder(monkeypatch) -> None:
         render_animated_plotly=lambda *_args, **_kwargs: None,
         render_section_title=lambda *_args, **_kwargs: None,
         info_button=lambda *_args, **_kwargs: None,
+        render_lazy_expander=lambda *_args, **_kwargs: None,
         render_tabs=lambda *_args, **_kwargs: None,
-        synchronize_tabs=lambda *_args, **_kwargs: None,
         build_cross_section_figure=lambda **_kwargs: go.Figure(),
         build_side_view_figure=lambda **_kwargs: go.Figure(),
         build_sfd_bmd_figure=build_sfd_bmd_figure,

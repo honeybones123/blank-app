@@ -7,6 +7,7 @@ always-available teaching expander beneath it.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from collections.abc import Callable
 from typing import Any
 
@@ -158,12 +159,18 @@ def render_stress_field_teaching(
     st_module: Any,
     theta_v_deg: float,
     render_centered_plotly: Callable[..., Any],
+    body_only: bool = False,
 ) -> None:
     """Keep the established Stress Field lesson available for every view."""
 
-    with st_module.expander(
-        "The Stress Field: Explaining the Modified Compression Field Theory and Strut-and-Tie Model"
-    ):
+    teaching_container = (
+        nullcontext()
+        if body_only
+        else st_module.expander(
+            "The Stress Field: Explaining the Modified Compression Field Theory and Strut-and-Tie Model"
+        )
+    )
+    with teaching_container:
         st_module.markdown(
             r"""
 The Modified Compression Field Theory (MCFT) and the strut-and-tie model (STM) are idealisations of the same underlying stress field. In this implementation, both use the same angle $\theta_v$ from the MCFT relationships (see Check 5), ensuring consistency between calculations and the visualised field.
