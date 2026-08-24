@@ -30,6 +30,9 @@ from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     hydrate_inputs_longitudinal_reo_widgets_for_revision,
 )
 from inputs_page_modules.fragments import run_inputs_fragment
+from inputs_application.engineering_workspace import (
+    render_inputs_deferred_design_brain_fragment,
+)
 from state_and_helpers import (
     _request_inputs_engineering_commit,
     render_timing_mark,
@@ -190,7 +193,7 @@ def _render_v2_workspace_fragment(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        include_design_brain=True,
+        include_design_brain=False,
         include_controls=False,
         include_widgets=True,
         pre_batch_container=pre_batch_container,
@@ -255,7 +258,7 @@ def render_inputs_page() -> None:
         "engineering_input_workspace",
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
-    # Create three sibling layout targets in the original visual order. The
+    # Create four sibling layout targets in the original visual order. The
     # engineering workspace fragment writes around Batch Design, while Batch
     # owns an independent fragment in the middle. This avoids unsupported
     # nested fragments without moving any visible section.
@@ -272,6 +275,12 @@ def render_inputs_page() -> None:
         with batch_container:
             st.markdown(
                 "<span data-testid='inputs-batch-design-region'></span>",
+                unsafe_allow_html=True,
+            )
+        design_brain_container = st.container(key="inputs_design_brain_region")
+        with design_brain_container:
+            st.markdown(
+                "<span data-testid='inputs-design-brain-region'></span>",
                 unsafe_allow_html=True,
             )
         post_batch_container = st.container(
@@ -292,6 +301,18 @@ def render_inputs_page() -> None:
             "pre_batch_container": pre_batch_container,
             "post_batch_container": post_batch_container,
         },
+    )
+    run_inputs_fragment(
+        st_module=st,
+        fragment_name="design_brain",
+        render_fn=render_inputs_deferred_design_brain_fragment,
+        kwargs={
+            "runtime": _ENGINEERING_WORKSPACE_RUNTIME,
+            "page_context": page_context,
+            "design_brain_container": design_brain_container,
+        },
+        force_fragment=True,
+        run_every=1.0,
     )
     with batch_container:
         _INPUTS_PAGE_RUNTIME.render_batch_design_manager(

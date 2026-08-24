@@ -1855,6 +1855,56 @@ def render_engineering_workspace(
     return result
 
 
+def render_inputs_deferred_design_brain_fragment(
+    *,
+    st_module: Any,
+    runtime: EngineeringWorkspaceRuntime,
+    page_context: dict[str, Any],
+    design_brain_container: Any,
+) -> None:
+    """Refresh Design Brain after engineering publication without blocking it."""
+    ss = st_module.session_state
+    services = InputsSessionServices.from_mapping(ss)
+    workspace_store = InputsWorkspaceStateStore(ss)
+    revision = workspace_store.workspace_revision()
+    fragment_store = services.publications
+    fragment_state = fragment_store.current()
+    with design_brain_container.container():
+        slot = st_module.empty()
+        if fragment_state.status in {"refreshing", "empty", "ready_stale"}:
+            started_key = f"_inputs_design_brain_deferred_started_{revision}"
+            if not ss.get(started_key):
+                ss[started_key] = True
+                with slot.container():
+                    st_module.info("Updating design guidance...")
+                return
+            try:
+                runtime.refresh_design_brain_result()
+            except Exception as exc:
+                fragment_store.fail_refresh(exc)
+                with slot.container():
+                    st_module.warning("Design guidance is temporarily unavailable.")
+                return
+            fragment_state = fragment_store.current()
+        identity = build_inputs_design_brain_region_context(
+            session_state=ss,
+            services=services,
+            inputs_detailed_mode=bool(ss.get("_inputs_detailed_mode", False)),
+        )
+        if identity is None:
+            with slot.container():
+                st_module.info("Updating design guidance...")
+            return
+        render_inputs_design_guide_fragment_section(
+            st_module=st_module,
+            runtime=runtime,
+            page_context=page_context,
+            services=services,
+            region_context=identity,
+            design_guide_slot=slot,
+        )
+
+
 __all__ = [
     "EngineeringWorkspaceRuntime",
     "InputsCalculationRegionContext",

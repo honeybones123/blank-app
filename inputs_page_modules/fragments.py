@@ -55,6 +55,7 @@ def run_inputs_fragment(
     render_fn: Callable[..., Any],
     kwargs: dict[str, Any] | None = None,
     force_fragment: bool = False,
+    run_every: str | float | None = None,
 ) -> Any:
     """Run one existing renderer in a fragment when the runtime supports it."""
 
@@ -85,7 +86,10 @@ def run_inputs_fragment(
                     **fragment_payload,
                 )
 
-            wrapped = fragment(_fragment_entry)
+            if run_every is None:
+                wrapped = fragment(_fragment_entry)
+            else:
+                wrapped = fragment(_fragment_entry, run_every=run_every)
             _FRAGMENT_WRAPPERS[cache_key] = wrapped
         return wrapped(**payload)
     st_module.session_state[f"_inputs_{fragment_name}_fragment_mode"] = mode

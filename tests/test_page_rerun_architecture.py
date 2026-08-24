@@ -456,6 +456,30 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
     assert "fragment_store.publish(" in renderer_source
 
 
+def test_inputs_engineering_workspace_defers_design_brain_to_sibling_fragment() -> None:
+    page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
+    assert "include_design_brain=False" in page_source
+    assert 'fragment_name="design_brain"' in page_source
+    assert "run_every=1.0" in page_source
+
+    fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "run_every: str | float | None = None" in fragment_source
+
+
+def test_deferred_design_brain_has_revision_bound_start_gate() -> None:
+    source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
+        encoding="utf-8-sig"
+    )
+    start = source.index("def render_inputs_deferred_design_brain_fragment(")
+    end = source.index("\n\n__all__", start)
+    deferred_source = source[start:end]
+    assert "_inputs_design_brain_deferred_started_{revision}" in deferred_source
+    assert "runtime.refresh_design_brain_result()" in deferred_source
+    assert "fragment_store.fail_refresh(exc)" in deferred_source
+
+
 def test_each_result_page_has_one_workspace_refresh_authority() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
     pages = ("bending", "shear", "creep", "shrinkage", "crack", "deflection")
