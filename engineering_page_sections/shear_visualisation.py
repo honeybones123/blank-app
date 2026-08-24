@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import itertools
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 
+from engineering_page_sections.shear_stress_field import (
+    MCFT_STRESS_FIELD_CHART_KEY,
+    build_mcft_stress_field_figure,
+)
 from shear_visuals import (
     BEHAVIOUR_VISUAL_HEIGHT,
     BEHAVIOUR_VISUAL_WIDTH,
@@ -33,6 +41,16 @@ SHEAR_VISUAL_CONFIG = {
 MCFT_BEHAVIOUR_MARGIN = dict(l=10, r=10, t=8, b=10)
 SHEAR_DIAGRAM_VIEWS = ("Side view", "Section", "Shear diagram", "MCFT")
 SHEAR_DIAGRAM_PLOT_HEIGHT_PX = BENDING_DIAGRAM_PLOT_HEIGHT_PX
+SHEAR_DIAGRAM_BUNDLE_VERSION = 1
+SHEAR_DIAGRAM_BUNDLE_CACHE_KEY = "_shear_diagram_bundle_cache"
+SHEAR_DIAGRAM_BUNDLE_CACHE_LIMIT = 2
+MCFT_OPTION_KEYS = (
+    "show_stm_overlay",
+    "show_stm_flow",
+    "show_load_flow",
+    "show_cracks",
+    "show_stress_block",
+)
 SHEAR_SIDE_VIEW_CAPTION = (
     "Side view: required zone spacings from Check 10 when available; otherwise "
     "provided spacing (s_lig). φV_u check uses effective spacing (provided "
@@ -58,6 +76,50 @@ class ShearVisualisationRuntime:
     build_side_view_figure: Callable[..., go.Figure]
     build_sfd_bmd_figure: Callable[..., tuple[go.Figure, go.Figure]]
     theta_v_deg: float
+
+
+def _canonical_json_value(value: Any) -> Any:
+    """Return deterministic JSON-safe presentation identity data."""
+
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_json_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json_value(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return [_canonical_json_value(item) for item in value.tolist()]
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return repr(value)
+
+
+def _mcft_option_key(options: dict[str, bool]) -> str:
+    return "".join("1" if bool(options[key]) else "0" for key in MCFT_OPTION_KEYS)
+
+
+def _current_mcft_options(st_module: Any) -> dict[str, bool]:
+    defaults = {
+        "show_stm_overlay": False,
+        "show_stm_flow": False,
+        "show_load_flow": False,
+        "show_cracks": True,
+        "show_stress_block": False,
+    }
+    return {
+        key: bool(st_module.session_state.get(f"shear_{key}", default))
+        for key, default in defaults.items()
+    }
+
+
+def _all_mcft_option_states() -> tuple[dict[str, bool], ...]:
+    return tuple(
+        dict(zip(MCFT_OPTION_KEYS, bits, strict=True))
+        for bits in itertools.product((False, True), repeat=len(MCFT_OPTION_KEYS))
+    )
 
 
 def _support_pair_from_resolved_support_type(
@@ -143,7 +205,7 @@ def _render_centered_shear_plotly(
     st.markdown("</div></div>", unsafe_allow_html=True)
 
 
-def _render_shear_cross_section(runtime: ShearVisualisationRuntime) -> None:
+def _build_shear_cross_section(runtime: ShearVisualisationRuntime) -> go.Figure:
     runtime.render_timing_mark("shear.visualisation.section.build.start")
     figure = runtime.build_cross_section_figure(
         height=SHEAR_DIAGRAM_PLOT_HEIGHT_PX
@@ -153,6 +215,14 @@ def _render_shear_cross_section(runtime: ShearVisualisationRuntime) -> None:
         height_px=SHEAR_DIAGRAM_PLOT_HEIGHT_PX,
     )
     runtime.render_timing_mark("shear.visualisation.section.build.end")
+    return figure
+
+
+def _render_shear_cross_section(
+    runtime: ShearVisualisationRuntime,
+    figure: go.Figure | None = None,
+) -> None:
+    figure = figure or _build_shear_cross_section(runtime)
     runtime.render_timing_mark("shear.visualisation.section.mount.start")
     runtime.render_plotly_diagram(
         figure,
@@ -164,7 +234,7 @@ def _render_shear_cross_section(runtime: ShearVisualisationRuntime) -> None:
     runtime.render_timing_mark("shear.visualisation.section.mount.end")
 
 
-def _render_shear_side_view(runtime: ShearVisualisationRuntime) -> None:
+def _build_shear_side_view(runtime: ShearVisualisationRuntime) -> go.Figure:
     runtime.render_timing_mark("shear.visualisation.side.build.start")
     try:
         phi_vu = float(runtime.get_param("phi_Vu_cap") or 0.0)
@@ -180,6 +250,14 @@ def _render_shear_side_view(runtime: ShearVisualisationRuntime) -> None:
         height_px=SHEAR_DIAGRAM_PLOT_HEIGHT_PX,
     )
     runtime.render_timing_mark("shear.visualisation.side.build.end")
+    return figure
+
+
+def _render_shear_side_view(
+    runtime: ShearVisualisationRuntime,
+    figure: go.Figure | None = None,
+) -> None:
+    figure = figure or _build_shear_side_view(runtime)
     runtime.render_timing_mark("shear.visualisation.side.mount.start")
     runtime.render_plotly_diagram(
         figure,
@@ -277,7 +355,7 @@ def _resolve_shear_visual_supports(
     return support_positions, support_types
 
 
-def _render_shear_force_diagram(runtime: ShearVisualisationRuntime) -> None:
+def _build_shear_force_diagram(runtime: ShearVisualisationRuntime) -> go.Figure:
     """Render the established authoritative/fallback V(x) projection."""
 
     runtime.render_timing_mark("shear.visualisation.force.build.start")
@@ -341,6 +419,14 @@ def _render_shear_force_diagram(runtime: ShearVisualisationRuntime) -> None:
     )
     figure.update_layout(height=SHEAR_DIAGRAM_PLOT_HEIGHT_PX)
     runtime.render_timing_mark("shear.visualisation.force.build.end")
+    return figure
+
+
+def _render_shear_force_diagram(
+    runtime: ShearVisualisationRuntime,
+    figure: go.Figure | None = None,
+) -> None:
+    figure = figure or _build_shear_force_diagram(runtime)
     runtime.render_timing_mark("shear.visualisation.force.mount.start")
     runtime.render_plotly_diagram(
         figure,
@@ -399,6 +485,186 @@ def _render_mcft_behaviour_chart(
         )
 
 
+def _shear_diagram_bundle_fingerprint(runtime: ShearVisualisationRuntime) -> str:
+    """Fingerprint only authoritative/presentation inputs used by Shear figures."""
+
+    from inputs_application.active_beam_engineering_state import (
+        resolve_active_beam_engineering_state,
+    )
+    from inputs_application.authoritative_check_packs import (
+        current_authoritative_family,
+    )
+
+    active_inputs = resolve_active_beam_engineering_state(runtime.st.session_state)
+    parameter_names = (
+        "actions_mode",
+        "loads_edit_mode",
+        "sfd_case",
+        "load_case",
+        "L",
+        "span_L_m",
+        "sfd_L_m",
+        "a_m",
+        "load_a_point",
+        "a_udl_m",
+        "sfd_a_udl",
+        "a_cant_m",
+        "sfd_a_cant",
+        "a_overhang_m",
+        "sfd_a_overhang",
+        "w_uls_kNm_per_m",
+        "w_sls_kNm_per_m",
+        "P_uls_kN",
+        "P_sls_kN",
+        "design_actions_source",
+        "design_section_committed",
+        "design_section_x_m",
+        "section_cursor_x_m",
+        "s_lig",
+        "lig_legs",
+        "phi_Vu_cap",
+        "V_eq_kN",
+        "shear_auto_design",
+        "support_type",
+        "defl_support_type",
+        "design_beam_system_mode",
+        "sfd_span_count",
+        "uls_Vstar",
+        "active_tension_face",
+    )
+    state_names = (
+        "section_layout",
+        "shear_zone_results",
+        "shear_x",
+        "shear_V_signed",
+        "shear_V",
+    )
+    span_lengths = {
+        key: value
+        for key, value in runtime.st.session_state.items()
+        if str(key).startswith("sfd_span_len_")
+    }
+    payload = {
+        "version": SHEAR_DIAGRAM_BUNDLE_VERSION,
+        "beam_revision": active_inputs.revision,
+        "engineering_hash": active_inputs.engineering_hash,
+        "authority_hash": active_inputs.authority_hash,
+        "active_inputs": dict(active_inputs.values),
+        "authoritative_shear": current_authoritative_family(
+            runtime.st.session_state, "shear"
+        ),
+        "theta_v_deg": float(runtime.theta_v_deg),
+        "parameters": {
+            name: runtime.get_param(name, None) for name in parameter_names
+        },
+        "state": {
+            name: runtime.st.session_state.get(name) for name in state_names
+        },
+        "span_lengths": span_lengths,
+    }
+    encoded = json.dumps(
+        _canonical_json_value(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _shear_bundle_cache(st_module: Any) -> dict[str, Any]:
+    cache = st_module.session_state.get(SHEAR_DIAGRAM_BUNDLE_CACHE_KEY)
+    if not isinstance(cache, dict):
+        cache = {"entries": {}, "order": []}
+        st_module.session_state[SHEAR_DIAGRAM_BUNDLE_CACHE_KEY] = cache
+    cache.setdefault("entries", {})
+    cache.setdefault("order", [])
+    return cache
+
+
+def _touch_shear_bundle_cache(cache: dict[str, Any], fingerprint: str) -> None:
+    order = [
+        str(value)
+        for value in list(cache.get("order", []))
+        if str(value) != fingerprint
+    ]
+    order.append(fingerprint)
+    entries = cache["entries"]
+    while len(order) > SHEAR_DIAGRAM_BUNDLE_CACHE_LIMIT:
+        entries.pop(order.pop(0), None)
+    cache["order"] = order
+
+
+def _load_shear_diagram_bundle(
+    runtime: ShearVisualisationRuntime,
+    fingerprint: str,
+) -> dict[str, Any] | None:
+    cache = _shear_bundle_cache(runtime.st)
+    entry = cache["entries"].get(fingerprint)
+    if not isinstance(entry, dict):
+        return None
+    mcft = entry.get("mcft")
+    if not isinstance(mcft, dict) or len(mcft) != 2 ** len(MCFT_OPTION_KEYS):
+        cache["entries"].pop(fingerprint, None)
+        return None
+    try:
+        bundle = {
+            "fingerprint": fingerprint,
+            "side": pio.from_json(str(entry["side"])),
+            "section": pio.from_json(str(entry["section"])),
+            "force": pio.from_json(str(entry["force"])),
+            "mcft": mcft,
+        }
+    except (KeyError, TypeError, ValueError):
+        cache["entries"].pop(fingerprint, None)
+        return None
+    _touch_shear_bundle_cache(cache, fingerprint)
+    return bundle
+
+
+def _build_shear_diagram_bundle(
+    runtime: ShearVisualisationRuntime,
+    fingerprint: str,
+) -> dict[str, Any]:
+    """Prepare every Shear view and every MCFT display-option projection."""
+
+    runtime.render_timing_mark("shear.diagram.bundle.build.start")
+    side = _build_shear_side_view(runtime)
+    section = _build_shear_cross_section(runtime)
+    force = _build_shear_force_diagram(runtime)
+    mcft: dict[str, dict[str, Any]] = {}
+    for options in _all_mcft_option_states():
+        figure, animated = build_mcft_stress_field_figure(
+            theta_v_deg=float(runtime.theta_v_deg),
+            options=options,
+        )
+        plot_height_px = max(
+            1,
+            int(SHEAR_DIAGRAM_PLOT_HEIGHT_PX) - (18 if animated else 0),
+        )
+        figure.update_layout(height=plot_height_px)
+        mcft[_mcft_option_key(options)] = {
+            "figure": figure.to_json(),
+            "animated": bool(animated),
+        }
+
+    cache = _shear_bundle_cache(runtime.st)
+    cache["entries"][fingerprint] = {
+        "side": side.to_json(),
+        "section": section.to_json(),
+        "force": force.to_json(),
+        "mcft": mcft,
+    }
+    _touch_shear_bundle_cache(cache, fingerprint)
+    runtime.render_timing_mark("shear.diagram.bundle.build.end")
+    return {
+        "fingerprint": fingerprint,
+        "side": side,
+        "section": section,
+        "force": force,
+        "mcft": mcft,
+    }
+
+
 def _render_shear_diagram_loading_shell(
     runtime: ShearVisualisationRuntime,
     *,
@@ -420,8 +686,23 @@ def _render_shear_diagram_loading_shell(
     )
 
 
-def _render_shear_mcft_view(runtime: ShearVisualisationRuntime) -> None:
+def _render_shear_mcft_view(
+    runtime: ShearVisualisationRuntime,
+    prepared: dict[str, Any] | None = None,
+) -> None:
     """Render the existing MCFT projection inside the shared diagram shell."""
+
+    if prepared is not None:
+        figure = pio.from_json(str(prepared["figure"]))
+        _render_mcft_behaviour_chart(
+            figure,
+            chart_key=MCFT_STRESS_FIELD_CHART_KEY,
+            animated=bool(prepared.get("animated", False)),
+            render_centered_plotly=runtime.render_centered_plotly,
+            render_animated_plotly=runtime.render_animated_plotly,
+            height_px=int(figure.layout.height or SHEAR_DIAGRAM_PLOT_HEIGHT_PX),
+        )
+        return
 
     from engineering_page_sections.shear_stress_field import (
         render_mcft_stress_field_diagram,
@@ -466,27 +747,27 @@ def _render_stress_field_teaching(runtime: ShearVisualisationRuntime) -> None:
     )
 
 
-def _render_shear_mcft_panel_impl(runtime: ShearVisualisationRuntime) -> None:
+def _render_shear_mcft_panel_impl(
+    runtime: ShearVisualisationRuntime,
+    fingerprint: str,
+) -> None:
     """Own the MCFT canvas and its presentation-only controls."""
 
     st_module = runtime.st
-    with st_module.container(key="shear_mcft_plot_frame"):
-        with st_module.container(key="shear_mcft_diagram_shell"):
-            _render_shear_diagram_loading_shell(
-                runtime,
-                view_key="mcft",
-                label="MCFT stress field",
-            )
-        with st_module.container(key="shear_mcft_diagram_live"):
-            _render_shear_mcft_view(runtime)
-        with st_module.container(key="shear_mcft_diagram_options"):
-            _render_mcft_display_options(runtime)
-    with st_module.container(key="shear_mcft_diagram_caption"):
-        from engineering_page_sections.shear_stress_field import (
-            MCFT_ILLUSTRATION_DISCLAIMER,
-        )
-
-        st_module.caption(MCFT_ILLUSTRATION_DISCLAIMER)
+    bundle = _load_shear_diagram_bundle(runtime, fingerprint)
+    if bundle is None:
+        return
+    options = _current_mcft_options(st_module)
+    option_key = _mcft_option_key(options)
+    prepared = bundle["mcft"][option_key]
+    st_module.markdown(
+        '<span data-shear-mcft-option-key="'
+        f'{option_key}" aria-hidden="true" style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
+    _render_shear_mcft_view(runtime, prepared)
+    with st_module.container(key="shear_mcft_diagram_options"):
+        _render_mcft_display_options(runtime)
 
 
 _render_shear_mcft_panel = st.fragment(_render_shear_mcft_panel_impl)
@@ -494,15 +775,41 @@ _render_shear_mcft_panel = st.fragment(_render_shear_mcft_panel_impl)
 
 def render_shear_visualisation_block(
     runtime: ShearVisualisationRuntime,
+    *,
+    diagram_shell_generation: int,
 ) -> None:
-    """Render one stable four-view Shear diagram viewport.
+    """Render one light-to-ready four-view Shear diagram bundle.
 
-    Diagram builders and Streamlit mounting remain explicit dependencies.  The
-    orchestration module therefore owns layout only and cannot read or mutate
-    engineering state behind the caller's back.
+    The first fragment pass emits only stable shells and lightweight controls.
+    A browser-triggered second pass builds every view plus every MCFT option
+    projection, then reveals the four mounted canvases atomically.
     """
 
     st = runtime.st
+    generation = int(diagram_shell_generation)
+    fingerprint = _shear_diagram_bundle_fingerprint(runtime)
+    runtime.render_timing_mark("shear.diagram.bundle.cache_lookup.start")
+    bundle = _load_shear_diagram_bundle(runtime, fingerprint)
+    cache_hit = bundle is not None
+    runtime.render_timing_mark(
+        "shear.diagram.bundle.cache_hit"
+        if cache_hit
+        else "shear.diagram.bundle.cache_miss"
+    )
+    bundle_clicked = st.button(
+        "Prepare Shear diagram bundle",
+        key="shear_deferred_bundle_button",
+    )
+    if bundle is None and bundle_clicked:
+        from application.visualization_runtime_warmup import (
+            start_visualization_runtime_warmup,
+            wait_for_visualization_runtime_warmup,
+        )
+
+        start_visualization_runtime_warmup()
+        wait_for_visualization_runtime_warmup()
+        bundle = _build_shear_diagram_bundle(runtime, fingerprint)
+
     with st.container():
         st.markdown(
             """
@@ -555,7 +862,10 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) !important;
     width: 100%;
-    min-height: var(--sb-bending-diagram-plot-height, 320px);
+    height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    min-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    max-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    overflow: hidden !important;
 }
 .st-key-shear_side_plot_frame > div[data-testid="stLayoutWrapper"],
 .st-key-shear_section_plot_frame > div[data-testid="stLayoutWrapper"],
@@ -578,10 +888,37 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
 .st-key-shear_force_diagram_live,
 .st-key-shear_mcft_diagram_live {
     z-index: 1;
-    height: var(--sb-bending-diagram-plot-height, 320px);
-    min-height: var(--sb-bending-diagram-plot-height, 320px);
-    overflow: hidden;
+    box-sizing: border-box !important;
+    height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    min-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    max-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    overflow: hidden !important;
     gap: 0 !important;
+    visibility: hidden;
+}
+.st-key-shear_side_diagram_live > div[data-testid="stLayoutWrapper"],
+.st-key-shear_section_diagram_live > div[data-testid="stLayoutWrapper"],
+.st-key-shear_force_diagram_live > div[data-testid="stLayoutWrapper"],
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"],
+.st-key-shear_side_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"],
+.st-key-shear_section_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"],
+.st-key-shear_force_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"],
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
+    box-sizing: border-box !important;
+    height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    min-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    max-height: var(--sb-bending-diagram-plot-height, 320px) !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+}
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: var(--sb-bending-diagram-plot-height, 320px) !important;
+}
+.st-key-shear_mcft_diagram_live > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {
+    grid-area: 1 / 1 !important;
+    min-width: 0 !important;
 }
 .st-key-shear_side_diagram_live [data-testid="stPlotlyChart"],
 .st-key-shear_section_diagram_live [data-testid="stPlotlyChart"],
@@ -644,16 +981,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #
     font-weight: 600;
     line-height: 1.4;
 }
-html:has(.st-key-shear_side_diagram_live .js-plotly-plot)
-.st-key-shear_side_plot_frame > div[data-testid="stLayoutWrapper"]:has(> .st-key-shear_side_diagram_shell),
-html:has(.st-key-shear_section_diagram_live .js-plotly-plot)
-.st-key-shear_section_plot_frame > div[data-testid="stLayoutWrapper"]:has(> .st-key-shear_section_diagram_shell),
-html:has(.st-key-shear_force_diagram_live .js-plotly-plot)
-.st-key-shear_force_plot_frame > div[data-testid="stLayoutWrapper"]:has(> .st-key-shear_force_diagram_shell),
-html:has(.st-key-shear_mcft_diagram_live .js-plotly-plot)
-.st-key-shear_mcft_plot_frame > div[data-testid="stLayoutWrapper"]:has(> .st-key-shear_mcft_diagram_shell),
-html:has(.st-key-shear_mcft_diagram_live iframe)
-.st-key-shear_mcft_plot_frame > div[data-testid="stLayoutWrapper"]:has(> .st-key-shear_mcft_diagram_shell) {
+.st-key-shear_deferred_bundle_button {
     display: none !important;
     height: 0 !important;
     min-height: 0 !important;
@@ -689,7 +1017,8 @@ html:has(.st-key-shear_mcft_diagram_live iframe)
                         label="shear side view",
                     )
                 with st.container(key="shear_side_diagram_live"):
-                    _render_shear_side_view(runtime)
+                    if bundle is not None:
+                        _render_shear_side_view(runtime, bundle["side"])
             with st.container(key="shear_side_diagram_caption"):
                 st.caption(SHEAR_SIDE_VIEW_CAPTION)
         with section_panel:
@@ -701,7 +1030,8 @@ html:has(.st-key-shear_mcft_diagram_live iframe)
                         label="shear section",
                     )
                 with st.container(key="shear_section_diagram_live"):
-                    _render_shear_cross_section(runtime)
+                    if bundle is not None:
+                        _render_shear_cross_section(runtime, bundle["section"])
             with st.container(key="shear_section_diagram_caption"):
                 st.caption("\u00a0")
         with force_panel:
@@ -713,11 +1043,27 @@ html:has(.st-key-shear_mcft_diagram_live iframe)
                         label="shear force diagram",
                     )
                 with st.container(key="shear_force_diagram_live"):
-                    _render_shear_force_diagram(runtime)
+                    if bundle is not None:
+                        _render_shear_force_diagram(runtime, bundle["force"])
             with st.container(key="shear_force_diagram_caption"):
                 st.caption("\u00a0")
         with mcft_panel:
-            _render_shear_mcft_panel(runtime)
+            with st.container(key="shear_mcft_plot_frame"):
+                with st.container(key="shear_mcft_diagram_shell"):
+                    _render_shear_diagram_loading_shell(
+                        runtime,
+                        view_key="mcft",
+                        label="MCFT stress field",
+                    )
+                with st.container(key="shear_mcft_diagram_live"):
+                    if bundle is not None:
+                        _render_shear_mcft_panel(runtime, fingerprint)
+            with st.container(key="shear_mcft_diagram_caption"):
+                from engineering_page_sections.shear_stress_field import (
+                    MCFT_ILLUSTRATION_DISCLAIMER,
+                )
+
+                st.caption(MCFT_ILLUSTRATION_DISCLAIMER)
 
         # A second native tab list is the user-facing bottom selector.  It
         # controls the already-mounted panels above entirely in the browser,
@@ -736,6 +1082,170 @@ html:has(.st-key-shear_mcft_diagram_live iframe)
             storage_key="sb-tab-sync::shear-diagram-view",
         )
         _render_stress_field_teaching(runtime)
+
+        st.markdown(
+            '<span data-shear-lightweight-ready="'
+            f'{generation}" aria-hidden="true" style="display:none"></span>',
+            unsafe_allow_html=True,
+        )
+        if bundle is not None:
+            cache_status = "hit" if cache_hit else "miss"
+            st.markdown(
+                '<span data-shear-diagram-bundle-published="1" '
+                f'data-shear-bundle-fingerprint="{fingerprint}" '
+                f'data-shear-bundle-cache="{cache_status}" '
+                f'data-shear-mcft-projection-count="{len(bundle["mcft"])}" '
+                'aria-hidden="true" style="display:none"></span>',
+                unsafe_allow_html=True,
+            )
+
+    import streamlit.components.v1 as components
+
+    if bundle is not None:
+        components.html(
+            f"""
+            <script>
+            (() => {{
+              const doc = window.parent.document;
+              const generation = {generation};
+              const fingerprint = {fingerprint!r};
+              const runtimeKey = '__sbShearDiagramReadyRuntime';
+              const prior = window.parent[runtimeKey];
+              if (prior && prior.cleanup) prior.cleanup();
+              let cancelled = false;
+              let timer = 0;
+              const completePlot = (selector) => {{
+                const plot = doc.querySelector(selector);
+                if (!plot || !plot._fullLayout || !plot._fullData) return false;
+                return Boolean(
+                  plot.querySelector('.scatterlayer .trace')
+                  || plot.querySelector('g.shapelayer .shape-group')
+                );
+              }};
+              const completeMcft = () => {{
+                if (completePlot('.st-key-shear_mcft_diagram_live .js-plotly-plot')) {{
+                  return true;
+                }}
+                const frame = doc.querySelector('.st-key-shear_mcft_diagram_live iframe');
+                if (!frame) return false;
+                try {{
+                  return Boolean(frame.contentDocument?.querySelector('.plotly-graph-div'));
+                }} catch (_error) {{
+                  return Boolean(frame.contentWindow);
+                }}
+              }};
+              const revealBundle = () => {{
+                if (cancelled) return;
+                const published = [...doc.querySelectorAll(
+                  '[data-shear-diagram-bundle-published="1"]'
+                )].find((node) =>
+                  node.getAttribute('data-shear-bundle-fingerprint') === fingerprint
+                );
+                const complete = Boolean(
+                  published
+                  && completePlot('.st-key-shear_side_diagram_live .js-plotly-plot')
+                  && completePlot('.st-key-shear_section_diagram_live .js-plotly-plot')
+                  && completePlot('.st-key-shear_force_diagram_live .js-plotly-plot')
+                  && completeMcft()
+                );
+                if (!complete) {{
+                  timer = window.setTimeout(revealBundle, 25);
+                  return;
+                }}
+                window.requestAnimationFrame(() => {{
+                  const liveSelectors = [
+                    '.st-key-shear_side_diagram_live',
+                    '.st-key-shear_section_diagram_live',
+                    '.st-key-shear_force_diagram_live',
+                    '.st-key-shear_mcft_diagram_live'
+                  ];
+                  const shellSelectors = [
+                    '.st-key-shear_side_diagram_shell',
+                    '.st-key-shear_section_diagram_shell',
+                    '.st-key-shear_force_diagram_shell',
+                    '.st-key-shear_mcft_diagram_shell'
+                  ];
+                  liveSelectors.forEach((selector) => {{
+                    const node = doc.querySelector(selector);
+                    if (node) node.style.visibility = 'visible';
+                  }});
+                  shellSelectors.forEach((selector) => {{
+                    const node = doc.querySelector(selector);
+                    if (node) node.style.display = 'none';
+                  }});
+                  published.setAttribute('data-testid', 'shear-diagram-ready');
+                  published.setAttribute('data-shear-diagram-ready', String(generation));
+                  published.setAttribute(
+                    'data-shear-diagram-bundle-ready', String(generation)
+                  );
+                  window.parent.dispatchEvent(new Event('resize'));
+                }});
+              }};
+              revealBundle();
+              window.parent[runtimeKey] = {{
+                cleanup: () => {{
+                  cancelled = true;
+                  if (timer) window.clearTimeout(timer);
+                }}
+              }};
+            }})();
+            </script>
+            """,
+            height=0,
+        )
+    else:
+        components.html(
+            f"""
+            <script>
+            (() => {{
+              const doc = window.parent.document;
+              const generation = {generation};
+              const runtimeKey = '__sbShearDiagramBundleRuntime';
+              const prior = window.parent[runtimeKey];
+              if (prior && prior.cleanup) prior.cleanup();
+              let cancelled = false;
+              let timer = 0;
+              const requestBundleAfterPaint = () => {{
+                if (cancelled) return;
+                const light = doc.querySelector(
+                  `[data-shear-lightweight-ready="${{generation}}"]`
+                );
+                const page = doc.querySelector(
+                  `[data-shear-page-lightweight-ready="${{generation}}"]`
+                );
+                const ready = doc.querySelector(
+                  `[data-shear-diagram-bundle-ready="${{generation}}"]`
+                );
+                if (ready) return;
+                if (!light || !page) {{
+                  timer = window.setTimeout(requestBundleAfterPaint, 25);
+                  return;
+                }}
+                window.requestAnimationFrame(() => window.requestAnimationFrame(() => {{
+                  if (cancelled) return;
+                  doc.documentElement.setAttribute(
+                    'data-sb-shear-lightweight-painted', String(generation)
+                  );
+                  timer = window.setTimeout(() => {{
+                    const button = doc.querySelector(
+                      '.st-key-shear_deferred_bundle_button button'
+                    );
+                    if (button && !button.disabled) button.click();
+                  }}, 150);
+                }}));
+              }};
+              requestBundleAfterPaint();
+              window.parent[runtimeKey] = {{
+                cleanup: () => {{
+                  cancelled = true;
+                  if (timer) window.clearTimeout(timer);
+                }}
+              }};
+            }})();
+            </script>
+            """,
+            height=0,
+        )
 
 
 __all__ = [

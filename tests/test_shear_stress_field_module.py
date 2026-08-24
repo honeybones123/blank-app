@@ -39,19 +39,15 @@ def test_mcft_figure_reuses_existing_renderer_and_authoritative_angle(monkeypatc
         return expected
 
     monkeypatch.setattr(shear_stress_field, "build_shear_behaviour_figure", build)
-    fake = _FakeStreamlit(
-        {
-            "shear_show_stm_overlay": True,
-            "shear_show_stm_flow": False,
-            "shear_show_load_flow": False,
-            "shear_show_cracks": True,
-            "shear_show_stress_block": False,
-        }
-    )
-
     figure, animated = shear_stress_field.build_mcft_stress_field_figure(
-        st_module=fake,
         theta_v_deg=31.25,
+        options={
+            "show_stm_overlay": True,
+            "show_stm_flow": False,
+            "show_load_flow": False,
+            "show_cracks": True,
+            "show_stress_block": False,
+        },
     )
 
     assert figure is expected
@@ -160,4 +156,10 @@ def test_legacy_mcft_toggle_and_standalone_render_path_are_removed() -> None:
     assert "show_mcft_breakdown" not in combined
     assert "Show detailed MCFT breakdown" not in combined
     assert "def _render_shear_behaviour_diagrams" not in combined
-    assert combined.count('chart_key="shear_behaviour_mcft_shell"') == 1
+    assert (
+        combined.count(
+            'MCFT_STRESS_FIELD_CHART_KEY = "shear_behaviour_mcft_shell"'
+        )
+        == 1
+    )
+    assert combined.count('"shear_behaviour_mcft_shell"') == 1

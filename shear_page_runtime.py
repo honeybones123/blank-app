@@ -74,6 +74,22 @@ from engineering_page_sections.shear_visualisation import (
     render_shear_visualisation_block,
 )
 
+
+def _render_shear_diagram_bundle_panel_impl(
+    *,
+    runtime: ShearVisualisationRuntime,
+    diagram_shell_generation: int,
+) -> None:
+    render_shear_visualisation_block(
+        runtime,
+        diagram_shell_generation=diagram_shell_generation,
+    )
+
+
+_render_shear_diagram_bundle_panel = st.fragment(
+    _render_shear_diagram_bundle_panel_impl
+)
+
 # ------------------------------------------------------------
 #  Helper functions for diagrams
 # ------------------------------------------------------------
@@ -332,6 +348,12 @@ def render_shear():
         before_first_divider=lambda: render_timing_mark("shear_page.runtime.visualisation.start"),
         render_first_divider=page_divider,
     )
+    shear_diagram_shell_generation = int(
+        st.session_state.get("_shear_diagram_shell_generation", 0) or 0
+    ) + 1
+    st.session_state[
+        "_shear_diagram_shell_generation"
+    ] = shear_diagram_shell_generation
 
     # =====================================================
     # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
@@ -551,8 +573,8 @@ def render_shear():
     render_timing_mark("shear_page.runtime.inputs.end")
     render_timing_mark("shear_page.runtime.visualisation.render.start")
     shear_page_shell.render_visualisation(
-        lambda: render_shear_visualisation_block(
-            ShearVisualisationRuntime(
+        lambda: _render_shear_diagram_bundle_panel(
+            runtime=ShearVisualisationRuntime(
                 st=st,
                 get_param=get_param,
                 render_timing_mark=render_timing_mark,
@@ -567,7 +589,8 @@ def render_shear():
                 build_side_view_figure=build_shear_side_view_figure,
                 build_sfd_bmd_figure=plot_sfd_bmd_plotly,
                 theta_v_deg=theta_v_deg,
-            )
+            ),
+            diagram_shell_generation=shear_diagram_shell_generation,
         )
     )
     render_timing_mark("shear_page.runtime.visualisation.render.end")
@@ -777,6 +800,12 @@ def render_shear():
     render_timing_mark("shear_page.runtime.checks.end")
 
     render_timing_mark("shear_page.runtime.checks.tab3.end")
+    st.markdown(
+        '<span data-shear-page-lightweight-ready="'
+        f'{shear_diagram_shell_generation}" aria-hidden="true" '
+        'style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
 
     # Cross-page jump scroll (Inputs summary → shear/torsion calc anchors)
     from jump_nav import scroll_to_jump_after_render

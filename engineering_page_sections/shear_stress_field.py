@@ -23,6 +23,7 @@ MCFT_ILLUSTRATION_DISCLAIMER = (
     "Illustrative only — schematic principal-stress-style field with optional "
     "strut-and-tie overlay, not a finite-element stress solution."
 )
+MCFT_STRESS_FIELD_CHART_KEY = "shear_behaviour_mcft_shell"
 
 
 def render_mcft_display_options(st_module: Any) -> dict[str, bool]:
@@ -75,34 +76,26 @@ def render_mcft_display_options(st_module: Any) -> dict[str, bool]:
 
 def build_mcft_stress_field_figure(
     *,
-    st_module: Any,
     theta_v_deg: float,
+    options: dict[str, bool],
 ) -> tuple[go.Figure, bool]:
     """Build the existing MCFT visual from authoritative Shear evidence."""
 
-    options = {
-        "show_load_flow": bool(
-            st_module.session_state.get("shear_show_load_flow", False)
-        ),
-        "show_cracks": bool(
-            st_module.session_state.get("shear_show_cracks", True)
-        ),
-        "show_stress_block": bool(
-            st_module.session_state.get("shear_show_stress_block", False)
-        ),
-        "show_stm_overlay": bool(
-            st_module.session_state.get("shear_show_stm_overlay", False)
-        ),
-        "show_stm_flow": bool(
-            st_module.session_state.get("shear_show_stm_flow", False)
-        ),
+    resolved_options = {
+        "show_load_flow": bool(options.get("show_load_flow", False)),
+        "show_cracks": bool(options.get("show_cracks", True)),
+        "show_stress_block": bool(options.get("show_stress_block", False)),
+        "show_stm_overlay": bool(options.get("show_stm_overlay", False)),
+        "show_stm_flow": bool(options.get("show_stm_flow", False)),
     }
     figure = build_shear_behaviour_figure(
         visual_mode="Principal stress field",
         theta_v_deg=float(theta_v_deg),
-        **options,
+        **resolved_options,
     )
-    animated = bool(options["show_load_flow"] or options["show_stm_flow"])
+    animated = bool(
+        resolved_options["show_load_flow"] or resolved_options["show_stm_flow"]
+    )
     return figure, animated
 
 
@@ -117,8 +110,24 @@ def render_mcft_stress_field_diagram(
     """Render MCFT inside the shared Shear diagram canvas."""
 
     figure, animated = build_mcft_stress_field_figure(
-        st_module=st_module,
         theta_v_deg=theta_v_deg,
+        options={
+            "show_load_flow": bool(
+                st_module.session_state.get("shear_show_load_flow", False)
+            ),
+            "show_cracks": bool(
+                st_module.session_state.get("shear_show_cracks", True)
+            ),
+            "show_stress_block": bool(
+                st_module.session_state.get("shear_show_stress_block", False)
+            ),
+            "show_stm_overlay": bool(
+                st_module.session_state.get("shear_show_stm_overlay", False)
+            ),
+            "show_stm_flow": bool(
+                st_module.session_state.get("shear_show_stm_flow", False)
+            ),
+        },
     )
     # The animated renderer adds an 18 px component allowance around Plotly.
     # Keep its iframe and the static chart on the same shared canvas.
@@ -129,7 +138,7 @@ def render_mcft_stress_field_diagram(
             figure,
             height=plot_height_px,
             centered=True,
-            chart_key="shear_behaviour_mcft_shell",
+            chart_key=MCFT_STRESS_FIELD_CHART_KEY,
             compact_top=True,
             title_pad_t=8,
             max_width_px=1200,
@@ -137,7 +146,7 @@ def render_mcft_stress_field_diagram(
     else:
         render_plotly_diagram(
             figure,
-            key="shear_behaviour_mcft_shell",
+            key=MCFT_STRESS_FIELD_CHART_KEY,
             title="MCFT stress field",
             center=True,
             config={"displayModeBar": False, "responsive": True},
@@ -184,6 +193,7 @@ Beyond this, in the flexural–shear region, stresses follow the rotating princi
 
 __all__ = [
     "MCFT_ILLUSTRATION_DISCLAIMER",
+    "MCFT_STRESS_FIELD_CHART_KEY",
     "build_mcft_stress_field_figure",
     "render_mcft_display_options",
     "render_mcft_stress_field_diagram",

@@ -26,6 +26,11 @@ class _FakeContext:
 class _FakeStreamlit:
     def __init__(self):
         self.events: list[tuple[str, object]] = []
+        self.session_state: dict[str, object] = {}
+
+    def button(self, label, *, key):
+        self.events.append(("button", (label, key)))
+        return False
 
     def container(self, *, key=None):
         name = key or "visualisation"
@@ -66,7 +71,8 @@ def test_visualisation_module_has_no_runtime_global_binding() -> None:
     assert "build_side_view_figure=build_shear_side_view_figure" in runtime_source
     assert "build_sfd_bmd_figure=plot_sfd_bmd_plotly" in runtime_source
     assert "Show detailed MCFT breakdown" not in mcft_source
-    assert "lambda: render_shear_visualisation_block(" in runtime_source
+    assert "_render_shear_diagram_bundle_panel = st.fragment(" in runtime_source
+    assert "lambda: _render_shear_diagram_bundle_panel(" in runtime_source
     assert "_render_shear_mcft_panel = st.fragment(" in module_source
 
 
@@ -81,7 +87,9 @@ def test_mcft_display_toggles_rerun_only_the_visualisation_fragment() -> None:
 
     assert runtime_source.count("render_shear_visualisation_block(") == 1
     assert "_render_shear_mcft_panel = st.fragment(" in visualisation_source
-    assert "with mcft_panel:\n            _render_shear_mcft_panel(runtime)" in visualisation_source
+    assert "_render_shear_mcft_panel(runtime, fingerprint)" in visualisation_source
+    assert "option_key = _mcft_option_key(options)" in visualisation_source
+    assert 'prepared = bundle["mcft"][option_key]' in visualisation_source
     for key in (
         "shear_show_stm_overlay",
         "shear_show_stm_flow",
@@ -103,38 +111,48 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
     monkeypatch.setattr(
         shear_visualisation,
         "_render_shear_side_view",
-        lambda _runtime: fake.events.append(("render", "Side view")),
+        lambda _runtime, _figure=None: fake.events.append(("render", "Side view")),
     )
     monkeypatch.setattr(
         shear_visualisation,
         "_render_shear_cross_section",
-        lambda _runtime: fake.events.append(("render", "Section")),
+        lambda _runtime, _figure=None: fake.events.append(("render", "Section")),
     )
     monkeypatch.setattr(
         shear_visualisation,
         "_render_shear_force_diagram",
-        lambda _runtime: fake.events.append(("render", "Shear diagram")),
-    )
-    monkeypatch.setattr(
-        shear_visualisation,
-        "_render_shear_mcft_view",
-        lambda _runtime: fake.events.append(("render", "MCFT")),
-    )
-    monkeypatch.setattr(
-        shear_visualisation,
-        "_render_mcft_display_options",
-        lambda _runtime: fake.events.append(("render", "MCFT options")),
+        lambda _runtime, _figure=None: fake.events.append(("render", "Shear diagram")),
     )
     monkeypatch.setattr(
         shear_visualisation,
         "_render_shear_mcft_panel",
-        lambda runtime: shear_visualisation._render_shear_mcft_panel_impl(runtime),
+        lambda _runtime, _fingerprint: (
+            fake.events.append(("render", "MCFT")),
+            fake.events.append(("render", "MCFT options")),
+        ),
     )
     monkeypatch.setattr(
         shear_visualisation,
         "_render_stress_field_teaching",
         lambda _runtime: fake.events.append(("render", "Stress field teaching")),
     )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_shear_diagram_bundle_fingerprint",
+        lambda _runtime: "bundle-fingerprint",
+    )
+    monkeypatch.setattr(
+        shear_visualisation,
+        "_load_shear_diagram_bundle",
+        lambda _runtime, _fingerprint: {
+            "fingerprint": "bundle-fingerprint",
+            "side": go.Figure(),
+            "section": go.Figure(),
+            "force": go.Figure(),
+            "mcft": {"01000": {"figure": go.Figure().to_json(), "animated": False}},
+        },
+    )
+    monkeypatch.setattr("streamlit.components.v1.html", lambda *_args, **_kwargs: None)
 
     runtime = shear_visualisation.ShearVisualisationRuntime(
         st=fake,
@@ -154,7 +172,10 @@ def test_visualisation_block_preserves_four_view_render_order(monkeypatch) -> No
         build_sfd_bmd_figure=lambda **_kwargs: (go.Figure(), go.Figure()),
         theta_v_deg=31.0,
     )
-    shear_visualisation.render_shear_visualisation_block(runtime)
+    shear_visualisation.render_shear_visualisation_block(
+        runtime,
+        diagram_shell_generation=1,
+    )
 
     assert ("title", "Visualisation") in fake.events
     assert (

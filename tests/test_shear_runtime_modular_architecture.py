@@ -15,6 +15,7 @@ def test_runtime_is_an_orchestrator_not_a_second_check_ui() -> None:
     }
 
     assert top_level_functions == {
+        "_render_shear_diagram_bundle_panel_impl",
         "_safe_image",
         "compute_shear_results",
         "render_shear",
