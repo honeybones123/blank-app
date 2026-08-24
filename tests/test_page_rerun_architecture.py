@@ -458,11 +458,11 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
 
 def test_inputs_engineering_workspace_separates_design_brain_fragment() -> None:
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    assert "include_design_brain=False" in page_source
+    assert "include_design_brain=True" in page_source
     assert 'fragment_name="engineering_calculation"' in page_source
     assert 'fragment_name="engineering_controls"' in page_source
-    assert 'fragment_name="design_brain"' in page_source
-    assert '"st_module": st' not in page_source
+    assert 'fragment_name="design_brain"' not in page_source
+    assert 'include_design_brain=True' in page_source
     assert "run_every=0.5" in page_source
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(

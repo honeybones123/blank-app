@@ -21,7 +21,6 @@ from inputs_application.engineering_workspace import (
     build_inputs_controls_region_context,
     render_inputs_controls_fragment_section,
     render_engineering_workspace,
-    render_inputs_deferred_design_brain_fragment,
     render_inputs_widget_fragment_section,
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
@@ -213,21 +212,9 @@ def _render_inputs_engineering_fragment(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        include_design_brain=False,
+        include_design_brain=True,
         include_controls=False,
         include_widgets=False,
-    )
-
-
-def _render_inputs_design_brain_fragment(
-    *, page_context: dict[str, Any]
-) -> None:
-    """Adapt the page-owned Streamlit module into the fragment renderer."""
-
-    return render_inputs_deferred_design_brain_fragment(
-        st_module=st,
-        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        page_context=page_context,
     )
 
 
@@ -302,19 +289,6 @@ def render_inputs_page() -> None:
         render_fn=_prepare_inputs_controls_fragment,
         kwargs={"page_context": page_context},
     )
-    # Design Brain has its own fragment and loading boundary. It wakes while
-    # the current engineering revision lacks a matching publication; the
-    # engineering controls therefore remain interactive during the pass.
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="design_brain",
-        render_fn=_render_inputs_design_brain_fragment,
-        kwargs={
-            "page_context": page_context,
-        },
-        force_fragment=True,
-        run_every=0.5,
-    )
     render_timing_mark("inputs_page.shell.workspace.end")
 
     render_timing_mark("inputs_page.shell.tail.start")
@@ -329,9 +303,8 @@ def render_inputs_page() -> None:
     )
     render_timing_mark("inputs_page.shell.tail.end")
 
-    # The unified engineering workspace owns summary, diagram, calculation
-    # and Design Brain refresh. All page controls settle through this one
-    # shell transaction; no sibling fragment can publish an interim result.
+    # Engineering results and Design Brain share one authoritative result
+    # fragment; controls/widgets remain in their own fast fragment.
 
 
 render_inputs = speed_profiled(
