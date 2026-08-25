@@ -1154,7 +1154,11 @@ def render_inputs_deferred_design_brain_fragment(
     runtime: EngineeringWorkspaceRuntime,
     page_context: dict[str, Any],
 ) -> None:
-    """Render Design Brain independently from the engineering result fragment."""
+    """Render Design Brain independently from the engineering result fragment.
+
+    This renderer is intentionally fragment-owned so a recommendation failure
+    cannot replace the Inputs controls or model/diagram regions.
+    """
     services = InputsSessionServices.from_mapping(st_module.session_state)
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     workspace_revision = workspace_store.workspace_revision()
