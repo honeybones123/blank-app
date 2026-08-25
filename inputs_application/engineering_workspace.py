@@ -1283,8 +1283,11 @@ def render_inputs_deferred_design_brain_fragment(
         f"{region_context.identity.input_revision}:"
         f"{region_context.identity.engineering_hash}"
     )
-    if st_module.session_state.get(_DESIGN_BRAIN_RENDERED_IDENTITY_KEY) == rendered_identity:
-        return
+    # A fragment rerun replaces its previous output.  Returning here after a
+    # ready identity was rendered would therefore make the Design Guide card
+    # disappear on the next polling wake, even though the publication is
+    # still current.  Re-project the already-published card; the expensive
+    # refresh above remains guarded by the immutable revision/hash identity.
     render_inputs_design_guide_fragment_section(
         st_module=st_module,
         runtime=runtime,
