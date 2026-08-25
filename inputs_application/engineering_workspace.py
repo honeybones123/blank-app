@@ -1162,6 +1162,24 @@ def render_inputs_design_guide_fragment_section(
         )
 
 
+def _complete_inputs_design_brain_fragment(
+    *,
+    st_module: Any,
+    revision: int,
+) -> None:
+    """Stop the pending-only scheduler after a ready card is projected."""
+
+    completion_key = "_inputs_design_brain_completion_rerun_revision"
+    if int(st_module.session_state.get(completion_key, 0) or 0) == int(revision):
+        return
+    st_module.session_state[completion_key] = int(revision)
+    st_module.session_state["_inputs_design_brain_scheduler_active"] = False
+    # This is deliberately outside the renderer tested as a pure publication
+    # projection. The one app handoff re-registers the fragment without its
+    # pending scheduler; it does not recalculate engineering results.
+    getattr(st_module, "rerun")()
+
+
 def render_inputs_async_design_brain_fragment(
     *,
     st_module: Any,
@@ -1241,11 +1259,10 @@ def render_inputs_async_design_brain_fragment(
     # The card has now been rendered from the current immutable result. Stop
     # the pending-only scheduler with one guarded app handoff so the ready
     # card remains mounted without idle fragment wakes.
-    completion_key = "_inputs_design_brain_completion_rerun_revision"
-    if int(st_module.session_state.get(completion_key, 0) or 0) != int(revision):
-        st_module.session_state[completion_key] = int(revision)
-        st_module.session_state["_inputs_design_brain_scheduler_active"] = False
-        st_module.rerun()
+    _complete_inputs_design_brain_fragment(
+        st_module=st_module,
+        revision=int(revision),
+    )
 
 
 def render_inputs_widget_fragment_section(
