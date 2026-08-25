@@ -37,14 +37,14 @@ def _current_fragment_id() -> str | None:
 
 
 def _track_fragment(
-    st_module: Any,
+    owner_st_module: Any,
     fragment_name: str,
     render_fn: Callable[..., Any],
     **payload: Any,
 ) -> Any:
     """Render inside the fragment that Streamlit already owns."""
 
-    del st_module, fragment_name
+    del owner_st_module, fragment_name
     return render_fn(**payload)
 
 
