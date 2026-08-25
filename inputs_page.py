@@ -18,8 +18,11 @@ from inputs_application.page_runtime import (
 )
 from inputs_application.engineering_workspace import (
     build_engineering_workspace_runtime,
-    monitor_inputs_design_brain_fragment as render_async_design_brain_region,
+    render_inputs_deferred_design_brain_fragment,
+    build_inputs_controls_region_context,
+    render_inputs_controls_fragment_section,
     render_engineering_workspace,
+    render_inputs_widget_fragment_section,
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
 from inputs_application.engineering_input_store import InputSnapshotStore
@@ -150,8 +153,8 @@ def hydrate_committed_design_action_widgets(
     )
 
 
-def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
-    """Render the Inputs transaction inside one stable workspace fragment."""
+def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> None:
+    """Render controls/widgets without waiting for engineering calculations."""
 
     # Streamlit executes the Apply button callback before re-entering this
     # fragment. Consume that immutable, revision-bound command first: no
@@ -181,18 +184,41 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         copy_deepcopy_fn=copy.deepcopy,
     )
 
+    controls_context = build_inputs_controls_region_context(
+        page_context=page_context,
+    )
+    detailed_mode = render_inputs_controls_fragment_section(
+        st_module=st,
+        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
+        region_context=controls_context,
+    )
+    st.session_state["_inputs_detailed_mode"] = bool(detailed_mode)
+    detailed_mode = _INPUTS_PAGE_RUNTIME.render_design_mode_selector(
+        sync_callbacks=page_context["sync_callbacks"],
+    )
+    render_inputs_widget_fragment_section(
+        st_module=st,
+        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
+        page_context=page_context,
+        inputs_detailed_mode=bool(detailed_mode),
+    )
+
+
+def _render_inputs_engineering_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
+    """Render only the authoritative engineering result region."""
+
     return render_engineering_workspace(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        include_design_brain=True,
-        include_controls=True,
-        include_widgets=True,
+        include_design_brain=False,
+        include_controls=False,
+        include_widgets=False,
     )
 
 
 def _render_inputs_async_design_brain_fragment(*, page_context: dict[str, Any]) -> None:
-    render_async_design_brain_region(
+    render_inputs_deferred_design_brain_fragment(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
@@ -243,21 +269,27 @@ def render_inputs_page() -> None:
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 
-    # Keep the Inputs page as one stable transaction. Streamlit fragment
-    # reruns are event-driven from widget callbacks; there is deliberately no
-    # periodic scheduler here because periodic wakes were causing the Design
-    # Brain and diagram regions to unmount/remount while idle.
+    # Keep controls, authoritative engineering results, and Design Brain in
+    # separate ordered fragments so each region owns only its own refresh.
     for section_name in (
-        "engineering_calculation_workspace",
-        "engineering_controls_workspace",
+        "engineering_calculation",
+        "engineering_controls",
         "design_brain_workspace",
-        "engineering_input_workspace",
+        "engineering_workspace",
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
     render_timing_mark("inputs_page.shell.workspace.start")
     run_inputs_fragment(
         st_module=st,
-        fragment_name="engineering_workspace",
+        fragment_name="engineering_calculation",
+        render_fn=_render_inputs_engineering_fragment,
+        kwargs={"page_context": page_context},
+        force_fragment=True,
+        run_every=0.5,
+    )
+    run_inputs_fragment(
+        st_module=st,
+        fragment_name="engineering_controls",
         render_fn=_render_v2_workspace_fragment,
         kwargs={"page_context": page_context},
     )

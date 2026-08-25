@@ -456,19 +456,20 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
     assert "fragment_store.publish(" in renderer_source
 
 
-def test_inputs_workspace_uses_stable_workspace_and_async_design_brain_monitor() -> None:
+def test_inputs_workspace_uses_ordered_engineering_controls_and_brain_fragments() -> None:
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    assert "include_design_brain=True" in page_source
-    assert 'fragment_name="engineering_workspace"' in page_source
+    assert "include_design_brain=False" in page_source
+    assert 'fragment_name="engineering_calculation"' in page_source
+    assert 'fragment_name="engineering_controls"' in page_source
     assert 'fragment_name="design_brain"' in page_source
-    assert "render_async_design_brain_region" in page_source
+    assert "render_inputs_deferred_design_brain_fragment" in page_source
     assert "run_every=0.5" in page_source
 
     workspace_source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
         encoding="utf-8-sig"
     )
-    assert "render_inputs_design_brain_workspace_section" in workspace_source
-    assert "monitor_inputs_design_brain_fragment" in workspace_source
+    assert "render_inputs_deferred_design_brain_fragment" in workspace_source
+    assert "inputs-v2-design-brain-runtime-loading" in workspace_source
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
         encoding="utf-8-sig"
