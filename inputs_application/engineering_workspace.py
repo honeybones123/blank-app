@@ -30,6 +30,10 @@ from inputs_application.session_services import InputsSessionServices
 from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
+from inputs_application.design_brain_job_runtime import (
+    enqueue_design_brain_job,
+    get_design_brain_job,
+)
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.active_beam_engineering_state import (
     resolve_active_beam_engineering_state,
@@ -1189,7 +1193,24 @@ def render_inputs_deferred_design_brain_fragment(
         with slot:
             st_module.info("Updating Design Guide…")
         try:
-            refreshed = runtime.refresh_design_brain_result()
+            job = enqueue_design_brain_job(
+                st_module.session_state,
+                result=current_result,
+                input_revision=workspace_revision,
+            )
+            job = job or get_design_brain_job(
+                input_revision=workspace_revision,
+                engineering_hash=current_hash,
+            )
+            if job is None or str(job.status) in {"pending", "running"}:
+                return
+            if str(job.status) == "failed":
+                services.publications.fail_refresh(job.error or "Design Brain job failed")
+                with slot:
+                    st_module.warning("Design Guide is temporarily unavailable.")
+                return
+            execution = job.execution
+            refreshed = execution.result if execution is not None else None
             latest_revision = workspace_store.workspace_revision()
             latest_result = services.engineering_results.current()
             # A newer action may have committed while the recommendation was
@@ -1203,6 +1224,10 @@ def render_inputs_deferred_design_brain_fragment(
                 or not refreshed.final_publication
             ):
                 return
+            services.engineering_results.store(
+                refreshed,
+                source_input_revision=workspace_revision,
+            )
             services.publications.publish(
                 refreshed,
                 workspace_revision=workspace_revision,
