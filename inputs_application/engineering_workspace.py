@@ -42,13 +42,13 @@ from inputs_application.v2_design_guide_renderer import (
 PageCallable = Callable[..., Any]
 
 _DESIGN_BRAIN_VISIBLE_REVISION_KEY = "_inputs_design_brain_visible_revision"
-_DESIGN_BRAIN_RENDERED_IDENTITY_KEY = "_inputs_design_brain_rendered_identity"
 _DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY = (
     "_inputs_design_brain_widget_marker_revision"
 )
 _DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY = (
     "_inputs_design_brain_widget_marker_state"
 )
+_DESIGN_BRAIN_RENDERED_IDENTITY_KEY = "_inputs_design_brain_rendered_identity"
 
 _ATOMIC_WORKSPACE_CONTAINER_KEY = "inputs_engineering_workspace_atomic"
 
@@ -70,7 +70,8 @@ def _render_atomic_workspace_browser_runtime() -> None:
 (function () {
   const parentWindow = window.parent;
   const doc = parentWindow && parentWindow.document;
-  if (!doc || !doc.body) return;
+  const observationRoot = doc && (doc.body || doc.documentElement);
+  if (!doc || !observationRoot || observationRoot.nodeType !== 1) return;
 
   const previousRuntime = (
     parentWindow.__inputsAtomicRevisionRuntimeV2 ||
@@ -243,7 +244,12 @@ def _render_atomic_workspace_browser_runtime() -> None:
   doc.addEventListener('pointerdown', cancelForUserIntent, true);
 
   const observer = new parentWindow.MutationObserver(inspectCompletion);
-  observer.observe(doc.body, {childList: true, subtree: true, attributes: true});
+  if (observationRoot && observationRoot.nodeType === 1) {
+    observer.observe(observationRoot, {childList: true, subtree: true, attributes: true});
+  } else {
+    observer.disconnect();
+    return;
+  }
   doc.documentElement.dataset.inputsAtomicRevisionRuntime = '3';
   parentWindow[runtimeKey] = {observer, inspectCompletion};
 })();
@@ -1154,11 +1160,15 @@ def render_inputs_deferred_design_brain_fragment(
     runtime: EngineeringWorkspaceRuntime,
     page_context: dict[str, Any],
 ) -> None:
-    """Render Design Brain independently from the engineering result fragment.
+    """Refresh and render Design Brain in its own visual fragment.
 
-    This renderer is intentionally fragment-owned so a recommendation failure
-    cannot replace the Inputs controls or model/diagram regions.
+    The engineering fragment publishes the authoritative packs first and
+    leaves the publication store in ``refreshing`` for the current revision.
+    This fragment is the only place allowed to run the expensive recommendation
+    pass.  Its periodic wake is deliberately a no-op once the publication is
+    current, so it cannot create a continuous recommendation refresh loop.
     """
+
     services = InputsSessionServices.from_mapping(st_module.session_state)
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     workspace_revision = workspace_store.workspace_revision()
@@ -1171,16 +1181,19 @@ def render_inputs_deferred_design_brain_fragment(
         return
 
     current_hash = str(current_result.engineering_hash or "")
-    if not services.publications.is_current(
+    publication_is_current = services.publications.is_current(
         workspace_revision=workspace_revision,
         engineering_hash=current_hash,
-    ):
+    )
+    if not publication_is_current:
         with slot:
-            st_module.info("Updating Design Guide...")
+            st_module.info("Updating Design Guide…")
         try:
             refreshed = runtime.refresh_design_brain_result()
             latest_revision = workspace_store.workspace_revision()
             latest_result = services.engineering_results.current()
+            # A newer action may have committed while the recommendation was
+            # being evaluated.  Do not publish or render the older result.
             if (
                 refreshed is None
                 or latest_result is None
@@ -1210,16 +1223,19 @@ def render_inputs_deferred_design_brain_fragment(
     )
     if region_context is None:
         with slot:
-            st_module.info("Updating Design Guide...")
+            st_module.info("Updating Design Guide…")
         return
     rendered_identity = (
         f"{region_context.identity.input_revision}:"
         f"{region_context.identity.engineering_hash}"
     )
-    # A fragment rerun replaces that fragment's output.  The identity guard
-    # may suppress the expensive recommendation calculation, but it must not
-    # suppress rendering the already-published card or the Design Brain would
-    # disappear on a harmless wake.
+    if (
+        st_module.session_state.get(_DESIGN_BRAIN_RENDERED_IDENTITY_KEY)
+        == rendered_identity
+    ):
+        # The fragment may wake again while its lightweight polling boundary
+        # is active. Do not repaint an unchanged recommendation.
+        return
     render_inputs_design_guide_fragment_section(
         st_module=st_module,
         runtime=runtime,
@@ -1897,6 +1913,7 @@ __all__ = [
     "RevisionIdentity",
     "build_inputs_calculation_region_context",
     "build_inputs_design_brain_region_context",
+    "render_inputs_deferred_design_brain_fragment",
     "build_engineering_workspace_runtime",
     "prepare_engineering_workspace_transaction",
     "render_engineering_workspace",

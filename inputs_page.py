@@ -20,9 +20,9 @@ from inputs_application.engineering_workspace import (
     build_engineering_workspace_runtime,
     build_inputs_controls_region_context,
     render_inputs_controls_fragment_section,
+    render_engineering_workspace,
     render_inputs_deferred_design_brain_fragment,
     render_inputs_widget_fragment_section,
-    render_engineering_workspace,
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
 from inputs_application.engineering_input_store import InputSnapshotStore
@@ -154,7 +154,7 @@ def hydrate_committed_design_action_widgets(
 
 
 def _prepare_inputs_controls_fragment(*, page_context: dict[str, Any]) -> None:
-    """Own the interactive Inputs controls, model and action-independent diagrams."""
+    """Run action ownership and render the fast, always-mounted controls."""
 
     # Streamlit executes the Apply button callback before re-entering this
     # fragment. Consume that immutable, revision-bound command first: no
@@ -184,7 +184,9 @@ def _prepare_inputs_controls_fragment(*, page_context: dict[str, Any]) -> None:
         copy_deepcopy_fn=copy.deepcopy,
     )
 
-    controls_context = build_inputs_controls_region_context(page_context=page_context)
+    controls_context = build_inputs_controls_region_context(
+        page_context=page_context,
+    )
     detailed_mode = render_inputs_controls_fragment_section(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
@@ -202,8 +204,10 @@ def _prepare_inputs_controls_fragment(*, page_context: dict[str, Any]) -> None:
     )
 
 
-def _render_inputs_engineering_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
-    """Own only authoritative engineering results and the summary/calculation regions."""
+def _render_inputs_engineering_fragment(
+    *, page_context: dict[str, Any]
+) -> dict[str, Any]:
+    """Render only the authoritative engineering result region."""
 
     return render_engineering_workspace(
         st_module=st,
@@ -259,14 +263,16 @@ def render_inputs_page() -> None:
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 
-    # Keep each visible region in its own fragment. The controls/model/diagram
-    # fragment remains mounted while the authoritative engineering fragment
-    # calculates, and Design Brain owns its own loading/publish lifecycle.
+    # The Inputs shell shares one committed snapshot and revision across three
+    # scoped regions. Controls rerun quickly after an edit, engineering results
+    # publish independently, and Design Brain owns only its recommendation
+    # refresh. The full-page path remains the safe fallback when fragments are
+    # disabled or unsupported.
     for section_name in (
-        "engineering_calculation_workspace",
-        "engineering_controls_workspace",
+        "engineering_calculation",
+        "engineering_controls",
         "design_brain_workspace",
-        "engineering_input_workspace",
+        "engineering_workspace",
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
     render_timing_mark("inputs_page.shell.workspace.start")
@@ -276,6 +282,7 @@ def render_inputs_page() -> None:
         render_fn=_render_inputs_engineering_fragment,
         kwargs={"page_context": page_context},
         force_fragment=True,
+        run_every=0.5,
     )
     run_inputs_fragment(
         st_module=st,
@@ -283,6 +290,9 @@ def render_inputs_page() -> None:
         render_fn=_prepare_inputs_controls_fragment,
         kwargs={"page_context": page_context},
     )
+    # Design Brain has its own fragment and loading boundary. It wakes while
+    # the current engineering revision lacks a matching publication; the
+    # engineering controls therefore remain interactive during the pass.
     run_inputs_fragment(
         st_module=st,
         fragment_name="design_brain",
@@ -293,6 +303,7 @@ def render_inputs_page() -> None:
             "page_context": page_context,
         },
         force_fragment=True,
+        run_every=0.5,
     )
     render_timing_mark("inputs_page.shell.workspace.end")
 

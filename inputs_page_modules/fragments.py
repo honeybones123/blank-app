@@ -10,7 +10,6 @@ _FRAGMENT_WRAPPERS: dict[
     tuple[str, Callable[..., Any], str | float | None],
     Callable[..., Any],
 ] = {}
-_FRAGMENT_IDS_KEY = "_inputs_fragment_ids_v1"
 def _current_fragment_id() -> str | None:
     """Read the active Streamlit fragment id without making it a hard dependency."""
 
@@ -38,81 +37,15 @@ def _current_fragment_id() -> str | None:
 
 
 def _track_fragment(
-    owner_st_module: Any,
+    st_module: Any,
     fragment_name: str,
     render_fn: Callable[..., Any],
     **payload: Any,
 ) -> Any:
     """Render inside the fragment that Streamlit already owns."""
 
-    fragment_id = _current_fragment_id()
-    if fragment_id:
-        ids = dict(owner_st_module.session_state.get(_FRAGMENT_IDS_KEY) or {})
-        ids[str(fragment_name)] = fragment_id
-        owner_st_module.session_state[_FRAGMENT_IDS_KEY] = ids
-    try:
-        return render_fn(**payload)
-    finally:
-        _stop_fragment_auto_rerun(fragment_id)
-
-
-def _framework_enqueue() -> Callable[[Any], None] | None:
-    try:
-        from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
-
-        context = get_script_run_ctx(suppress_warning=True)
-        return context.enqueue if context is not None else None
-    except (ImportError, AttributeError, TypeError):
-        return None
-
-
-def _stop_fragment_auto_rerun(fragment_id: str | None) -> None:
-    if not fragment_id:
-        return
-    enqueue = _framework_enqueue()
-    if enqueue is None:
-        return
-    try:
-        from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
-
-        message = ForwardMsg()
-        message.stop_auto_rerun.fragment_ids.append(fragment_id)
-        enqueue(message)
-    except (ImportError, AttributeError, TypeError, ValueError):
-        return
-
-
-def current_inputs_fragment_id(st_module: Any, fragment_name: str) -> str | None:
-    ids = st_module.session_state.get(_FRAGMENT_IDS_KEY)
-    if not isinstance(ids, dict):
-        return None
-    value = str(ids.get(str(fragment_name)) or "").strip()
-    return value or None
-
-
-def request_inputs_fragment_wake(
-    st_module: Any,
-    fragment_name: str,
-    *,
-    revision: int | None = None,
-    interval_s: float = 0.1,
-) -> bool:
-    """Wake one sibling fragment once for a committed revision."""
-    del revision
-    fragment_id = current_inputs_fragment_id(st_module, fragment_name)
-    enqueue = _framework_enqueue()
-    if fragment_id is None or enqueue is None:
-        return False
-    try:
-        from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
-
-        message = ForwardMsg()
-        message.auto_rerun.interval = max(0.1, float(interval_s))
-        message.auto_rerun.fragment_id = fragment_id
-        enqueue(message)
-        return True
-    except (ImportError, AttributeError, TypeError, ValueError):
-        return False
+    del st_module, fragment_name
+    return render_fn(**payload)
 
 
 def run_inputs_fragment(
@@ -156,6 +89,8 @@ def run_inputs_fragment(
             try:
                 wrapped = fragment(_fragment_entry, run_every=run_every)
             except TypeError:
+                # Compatibility with the small test/runtime doubles and older
+                # Streamlit versions that only accept the callable.
                 wrapped = fragment(_fragment_entry)
             _FRAGMENT_WRAPPERS[cache_key] = wrapped
         return wrapped(**payload)
@@ -198,8 +133,6 @@ def rerun_inputs_current_scope(st_module: Any) -> None:
 
 
 __all__ = [
-    "current_inputs_fragment_id",
-    "request_inputs_fragment_wake",
     "rerun_inputs_current_scope",
     "run_inputs_fragment",
 ]

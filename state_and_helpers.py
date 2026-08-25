@@ -6930,24 +6930,11 @@ def _request_inputs_engineering_commit(
             for key, value in commit_timings_ms.items()
         },
     }
-    rendered_slug = str(
-        st.session_state.get("page_slug")
-        or st.session_state.get("_active_page_slug")
-        or ""
-    ).strip().lower()
-    if rendered_slug == "inputs" and wake_fragments:
-        from inputs_page_modules.fragments import request_inputs_fragment_wake
-
-        request_inputs_fragment_wake(
-            st,
-            "engineering_calculation",
-            revision=int(committed.revision),
-        )
-        request_inputs_fragment_wake(
-            st,
-            "design_brain",
-            revision=int(committed.revision),
-        )
+    # A widget callback executing inside the unified Inputs fragment already
+    # schedules exactly one owning-fragment rerun.  Do not enqueue a second
+    # framework wake: that duplicate state machine could render an interim
+    # revision and made cold sessions flicker before settling.
+    del wake_fragments
     return committed
 
 
