@@ -637,10 +637,10 @@ def _build_shear_diagram_bundle(
             theta_v_deg=float(runtime.theta_v_deg),
             options=options,
         )
-        plot_height_px = max(
-            1,
-            int(SHEAR_DIAGRAM_PLOT_HEIGHT_PX) - (18 if animated else 0),
-        )
+        # The side view and MCFT panels share the same 320 px viewport. The
+        # former animated-only 18 px reduction made MCFT visibly shorter even
+        # though its surrounding shell remained 320 px high.
+        plot_height_px = int(SHEAR_DIAGRAM_PLOT_HEIGHT_PX)
         figure.update_layout(height=plot_height_px)
         mcft[_mcft_option_key(options)] = {
             "figure": figure.to_json(),
