@@ -1732,6 +1732,49 @@ def _progressive_steps_from_headings(details_md: str) -> tuple[str, ...]:
     return blocks or (content,)
 
 
+_BENDING_WARM_CALC_CARDS_KEY = "_bending_warm_calc_cards"
+
+
+def reset_bending_calc_card_parent_render_state(
+    session_state=None,
+    *,
+    preserve_open_uid: str | None = None,
+) -> None:
+    """Start a header-only calculation-card scope for a parent Bending render.
+
+    Bending calls this only from its parent calculation-check renderer.  A
+    nested calculation-card fragment rerun does not pass through that parent,
+    so a card can remain mounted after its first open without carrying hidden
+    card bodies into a cold page load, beam change, or other parent rerender.
+    A deliberate cross-page calculation jump may preserve its one requested
+    card; all other Bending cards are collapsed before their widgets mount.
+    """
+
+    state = st.session_state if session_state is None else session_state
+    state[_BENDING_WARM_CALC_CARDS_KEY] = {}
+    preserved_key = (
+        f"step_open_{preserve_open_uid}" if preserve_open_uid else None
+    )
+    for key in tuple(state.keys()):
+        key_text = str(key)
+        if key_text.startswith("step_open_bending_") and key_text != preserved_key:
+            state[key] = False
+
+
+def _bending_calc_card_is_warm(uid: str, session_state=None) -> bool:
+    state = st.session_state if session_state is None else session_state
+    warmed = state.get(_BENDING_WARM_CALC_CARDS_KEY, {})
+    return bool(isinstance(warmed, dict) and warmed.get(str(uid), False))
+
+
+def _mark_bending_calc_card_warm(uid: str, session_state=None) -> None:
+    state = st.session_state if session_state is None else session_state
+    warmed = state.get(_BENDING_WARM_CALC_CARDS_KEY, {})
+    warmed = dict(warmed) if isinstance(warmed, dict) else {}
+    warmed[str(uid)] = True
+    state[_BENDING_WARM_CALC_CARDS_KEY] = warmed
+
+
 @st.fragment
 def step_expander_calcbox(
     uid: str,
@@ -1841,6 +1884,15 @@ def step_expander_calcbox(
         st.session_state[open_key] = bool(is_expanded)
     policy = str(render_policy or "lazy").strip().lower()
     mount_closed_body = policy in {"mounted", "eager", "client_mounted"}
+    is_bending_card = str(uid).startswith("bending_")
+    # A parent Bending render publishes card headers without constructing any
+    # hidden bodies.  After a user opens one card, only that nested fragment is
+    # marked warm; closing it mounts the already-used body and later toggles are
+    # browser-local.  The parent renderer resets the warm scope before every
+    # page/beam/loading render, so this optimisation cannot add hidden work to
+    # the loading path or interfere with scrolling while shells are visible.
+    if is_bending_card:
+        mount_closed_body = _bending_calc_card_is_warm(uid)
     expander = st.expander(
         label,
         expanded=bool(is_expanded),
@@ -1860,6 +1912,9 @@ def step_expander_calcbox(
             f"<div id='inner_{uid}'><span class='{status_class}'></span>{accent_html}</div>",
             unsafe_allow_html=True,
         )
+
+        if is_bending_card and expander.open and not mount_closed_body:
+            _mark_bending_calc_card_warm(uid)
 
         if not expander.open and not mount_closed_body:
             return

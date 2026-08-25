@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
-def bind_runtime(namespace: dict) -> None:
-    globals().update({key: value for key, value in namespace.items() if not key.startswith("__")})
+from bending_core import (
+    _compute_bending_capacity,
+    compute_sls_bending_values_from_state,
+)
+from reporting.bending_report_projection import (
+    BendingReportState,
+    build_bending_report,
+)
 
 def _compute_sls_bending_values():
     """
@@ -51,7 +57,11 @@ def compute_bending_results(publish: bool = True) -> dict:
     }
     
     # Build and store report
-    report = build_bending_report(results, params)
+    report = build_bending_report(
+        results,
+        params,
+        state=BendingReportState.from_mapping(st.session_state),
+    )
     
     # Store report in results dict
     if "results" not in st.session_state:

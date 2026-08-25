@@ -165,32 +165,18 @@ def _render_design_check_summary(
     crack_pack = dict(packs.get("crack") or {})
     defl_pack = dict(packs.get("deflection") or {})
 
-    def _resolved_pack_capacity(
-        provided: float | None,
-        pack: dict,
-        pack_key: str,
-    ) -> float | None:
-        for candidate in (provided, pack.get(pack_key)):
-            try:
-                value = float(candidate) if candidate is not None else 0.0
-            except (TypeError, ValueError):
-                continue
-            if math.isfinite(value) and value > 0.0:
-                return value
-        return None
-
     # Load Analysis calculates a page-local authoritative result. Its pack is
-    # therefore the current capacity source when the legacy session aliases
-    # have not yet been projected by Beam Inputs.
-    bending_capacity = _resolved_pack_capacity(
-        bending_capacity,
-        bend_pack,
-        "summary_phiMu_kNm",
+    # the current capacity source; a session alias is only a migration fallback
+    # because it may still describe the previous Design Brain revision.
+    bending_capacity = _summary_policy.resolve_authoritative_pack_capacity(
+        pack=bend_pack,
+        pack_key="summary_phiMu_kNm",
+        legacy_fallback=bending_capacity,
     )
-    shear_capacity = _resolved_pack_capacity(
-        shear_capacity,
-        shear_pack,
-        "summary_phiVu_kN",
+    shear_capacity = _summary_policy.resolve_authoritative_pack_capacity(
+        pack=shear_pack,
+        pack_key="summary_phiVu_kN",
+        legacy_fallback=shear_capacity,
     )
     bending_rows, shear_rows, crack_rows, deflection_rows, *_ = (
         render_inputs_summary_rows_from_packs(

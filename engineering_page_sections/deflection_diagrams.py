@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-
-def bind_runtime(namespace: dict) -> None:
-    globals().update(
-        {
-            key: value
-            for key, value in namespace.items()
-            if not key.startswith("__")
-        }
-    )
+import math
+from typing import Any, Callable, Mapping
 
 
-def _deflection_diagram_reo_layers(D_mm: float) -> dict:
+def deflection_diagram_reo_layers(
+    D_mm: float,
+    *,
+    state: Mapping[str, Any],
+    get_parameter: Callable[[str, Any], Any],
+) -> dict:
     """Return visual-only reinforcement layers for the deflected-shape diagram."""
-
-    state = st.session_state
 
     def _as_float(value, default: float = 0.0) -> float:
         try:
@@ -29,7 +25,7 @@ def _deflection_diagram_reo_layers(D_mm: float) -> dict:
         for key in keys:
             value = state.get(key)
             if value is None:
-                value = get_param(key, None)
+                value = get_parameter(key, None)
             if value is not None:
                 return _as_float(value, default)
         return float(default)
@@ -111,3 +107,6 @@ def _deflection_diagram_reo_layers(D_mm: float) -> dict:
         return layers
 
     return {"bottom": _layers("bot"), "top": _layers("top")}
+
+
+__all__ = ["deflection_diagram_reo_layers"]

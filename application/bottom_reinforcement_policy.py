@@ -53,7 +53,79 @@ def _practical_label(count_1: int, count_2: int, dia: int) -> str:
     return f"{count_1}N{dia}"
 
 
+def format_longitudinal_reinforcement_rows(
+    state: dict[str, Any] | None,
+    *,
+    face: str,
+) -> str:
+    """Return every active committed longitudinal row for compact cards.
+
+    Row 2 values can remain stored while disabled, so the declared row count
+    is the activation authority.  Older projects without that field infer the
+    active rows from the non-zero count, matching the engineering adapter.
+    """
+
+    values = dict(state or {})
+    prefix = "top" if str(face).strip().lower() == "top" else "bot"
+    declared_key = f"{prefix}_row_count"
+    second_count = _as_int(
+        values.get(
+            f"{prefix}_row_2_bars",
+            values.get(f"{prefix}2_count", 0),
+        ),
+        0,
+    )
+    declared_rows = _as_int(
+        values.get(declared_key),
+        2 if second_count > 0 else 1,
+    )
+    declared_rows = 1 if declared_rows <= 1 else 2
+    parts: list[str] = []
+    for row_index in range(1, declared_rows + 1):
+        mode = str(
+            values.get(
+                f"{prefix}_row_{row_index}_mode",
+                values.get(f"{prefix}{row_index}_layout_mode", "Count"),
+            )
+            or "Count"
+        ).strip().lower()
+        diameter = _as_int(
+            values.get(
+                f"{prefix}_row_{row_index}_dia",
+                values.get(
+                    f"db_{prefix}_{row_index}",
+                    values.get(f"db_{prefix}", 0),
+                ),
+            ),
+            0,
+        )
+        if mode == "spacing":
+            spacing = _as_int(
+                values.get(
+                    f"{prefix}_row_{row_index}_spacing",
+                    values.get(f"{prefix}{row_index}_spacing", 0),
+                ),
+                0,
+            )
+            if diameter > 0 and spacing > 0:
+                parts.append(f"N{diameter} @ {spacing}")
+            continue
+        count = _as_int(
+            values.get(
+                f"{prefix}_row_{row_index}_bars",
+                values.get(f"{prefix}{row_index}_count", 0),
+            ),
+            0,
+        )
+        if count > 0 and diameter > 0:
+            parts.append(f"{count}-N{diameter}")
+    return " + ".join(parts) if parts else "None"
+
+
 def _bottom_label(state: dict[str, Any]) -> str:
+    canonical = format_longitudinal_reinforcement_rows(state, face="bottom")
+    if canonical != "None":
+        return canonical.replace("-N", "N")
     mode_1 = str(state.get("bot1_layout_mode", "Count") or "Count")
     mode_2 = str(state.get("bot2_layout_mode", "Count") or "Count")
     if mode_1 == "Count" and mode_2 == "Count":
@@ -66,6 +138,9 @@ def _bottom_label(state: dict[str, Any]) -> str:
 
 
 def _top_label(state: dict[str, Any]) -> str:
+    canonical = format_longitudinal_reinforcement_rows(state, face="top")
+    if canonical != "None":
+        return canonical.replace("-N", "N")
     mode_1 = str(state.get("top1_layout_mode", "Count") or "Count")
     mode_2 = str(state.get("top2_layout_mode", "Count") or "Count")
     count_1 = _as_int(state.get("top1_count"), 0)
@@ -132,4 +207,7 @@ def build_bottom_reo_guidance_change_lines_for_updates(
     return lines
 
 
-__all__ = ["build_bottom_reo_guidance_change_lines_for_updates"]
+__all__ = [
+    "build_bottom_reo_guidance_change_lines_for_updates",
+    "format_longitudinal_reinforcement_rows",
+]

@@ -37,6 +37,9 @@ def make_not_run_beam_summary() -> dict:
         "crack_utilisation": None,
         "deflection_utilisation": None,
         "batch_design_utilisation": None,
+        "batch_pre_optimisation_utilisation": None,
+        "batch_pre_optimisation_phiMu_kNm": None,
+        "batch_pre_optimisation_phiVu_kN": None,
     }
 
 def normalize_beam_status(raw_status=None, *, utilisation=None, pass_flag=None) -> str:
@@ -130,6 +133,9 @@ def _sanitize_beam_summary(summary) -> dict:
         "crack_utilisation",
         "deflection_utilisation",
         "batch_design_utilisation",
+        "batch_pre_optimisation_utilisation",
+        "batch_pre_optimisation_phiMu_kNm",
+        "batch_pre_optimisation_phiVu_kN",
     ):
         cleaned[key] = _safe_summary_float(summary.get(key))
     return cleaned

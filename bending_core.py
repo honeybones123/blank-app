@@ -1,5 +1,6 @@
 # bending_core.py
 import math
+from typing import Any, Mapping
 import streamlit as st
 
 from bending_layer_semantics import resolve_bending_faces
@@ -22,6 +23,9 @@ from calculations.bending import (
 )
 from calculations.materials import derive_concrete_modulus_from_fc
 from inputs_application.authoritative_check_packs import current_authoritative_family
+from inputs_application.active_beam_engineering_state import (
+    resolve_active_beam_engineering_state,
+)
 
 
 # ------------------------------------------------------------
@@ -276,6 +280,64 @@ def compute_sls_bending_values_from_state(publish: bool = True) -> float | None:
     It intentionally owns session/result side effects so orchestration does not
     need to import bending_page.
     """
+    authoritative = current_authoritative_family(st.session_state, "bending") or {}
+    cracked = authoritative.get("sls_cracked_section")
+    if isinstance(cracked, Mapping) and cracked:
+        try:
+            layers = tuple(
+                layer
+                for layer in tuple(cracked.get("layers", ()) or ())
+                if isinstance(layer, Mapping)
+                and layer.get("state") == "tension"
+                and bool(layer.get("included", True))
+            )
+            outer = max(
+                layers,
+                key=lambda layer: float(
+                    layer.get("depth_from_compression_mm", 0.0) or 0.0
+                ),
+                default=None,
+            )
+            if outer is None:
+                return None
+            dn_top = float(
+                cracked.get(
+                    "neutral_axis_depth_from_top_mm",
+                    cracked.get("neutral_axis_depth_mm", 0.0),
+                )
+                or 0.0
+            )
+            dn_compression = float(cracked.get("neutral_axis_depth_mm", 0.0) or 0.0)
+            depth = float(cracked.get("depth_mm", get_param("D", 0.0)) or 0.0)
+            kappa = float(cracked.get("curvature_per_mm", 0.0) or 0.0)
+            compression_face = str(cracked.get("compression_face", "top") or "top")
+            top_from_compression = depth if compression_face == "bottom" else 0.0
+            eps_top = kappa * (top_from_compression - dn_compression)
+            fs_outer = float(outer.get("stress_mpa", 0.0) or 0.0)
+            eps_outer = float(outer.get("strain", 0.0) or 0.0)
+            y_outer = float(outer.get("depth_from_top_mm", 0.0) or 0.0)
+
+            st.session_state["bending_sls_dn"] = dn_top
+            st.session_state["bending_sls_kappa"] = kappa
+            st.session_state["bending_sls_eps_top"] = eps_top
+            st.session_state["bending_sls_fs_outer"] = fs_outer
+            st.session_state["bending_sls_eps_s_outer"] = eps_outer
+            st.session_state["bending_sls_y_tension_outer"] = y_outer
+            st.session_state["bending_sls_eps_bot"] = eps_outer
+            st.session_state["bending_sls_y_bot"] = y_outer
+            if publish:
+                update_results(
+                    sigma_s_sls=abs(fs_outer),
+                    bending_sls_fs_outer=fs_outer,
+                    bending_sls_dn_mm=dn_top,
+                )
+            return abs(fs_outer)
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    # Compatibility fallback for projects without a revision-matched V2
+    # publication. Current Bending calculations use the authoritative branch
+    # above and never create a second teaching solver.
     b = get_param("b")
     D = get_param("D")
     d = get_param("d")
@@ -368,7 +430,13 @@ def compute_sigma_s_sls_for_crack(publish: bool = True) -> float:
 # ============================
 # STRESS–STRAIN STATE
 # ============================
-def _stress_strain_state(state: str, moment_sign: str = "positive"):
+def _stress_strain_state(
+    state: str,
+    moment_sign: str = "positive",
+    *,
+    input_state: Mapping[str, Any] | None = None,
+    authoritative_bending: Mapping[str, Any] | None = None,
+):
     """
     Compute neutral axis and strain/stress info for the demo diagram.
     Uses real shared parameters where possible, but returns a complete
@@ -379,14 +447,31 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
       - "positive" (sagging): bottom tension steel, compression at top; c is NA depth from top.
       - "negative" (hogging): top tension steel, compression at bottom; c is NA depth from bottom.
     """
-    # Try to use real values from the app; fall back to teaching defaults
-    b = get_param("b", 400.0)
-    D = get_param("D", 600.0)
-    fc = get_param("fc")
-    fsy = get_param("fsy")
-    As = get_param("Ast_bot")
-    Ec = get_param("Ec")
-    Es = get_param("Es")
+    # Resolve one revision-bound source before reading any diagram input.  The
+    # previous implementation mixed mutable widget mirrors (geometry and d)
+    # with a newer authoritative neutral axis after Design Brain Apply.
+    # That produced a visually plausible but impossible hybrid diagram and
+    # then cached it under the new revision.  Explicit callers can provide the
+    # same immutable projection used for the section layout; compatibility
+    # callers are routed through the active-beam snapshot boundary here.
+    if input_state is None:
+        input_values = dict(
+            resolve_active_beam_engineering_state(st.session_state).values
+        )
+    else:
+        input_values = dict(input_state)
+
+    def _input(name: str, default: Any = None) -> Any:
+        value = input_values.get(name, default)
+        return default if value is None else value
+
+    b = float(_input("b", 400.0) or 400.0)
+    D = float(_input("D", 600.0) or 600.0)
+    fc = _input("fc")
+    fsy = _input("fsy")
+    As = _input("Ast_bot")
+    Ec = _input("Ec")
+    Es = _input("Es")
 
     # Fallbacks if missing / zero
     if fc is None:
@@ -398,31 +483,30 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
     if Es is None or Es == 0:
         Es = 200000.0
 
-    # Effective depth to centroid of bottom steel
-    # Pull shared values for calculations (matches shear pattern)
-    b = get_param("b")
-    D = get_param("D")
-    nb_bot = get_param("nb_bot")
-    db_bot = get_param("db_bot")
-    cover_bot = get_param("cover_bot")
-    rowgap_bot = get_param("rowgap_bot")
-    lig_diameter_mm = float(get_param("lig_d", 0.0) or 0.0)
-    
-    d = _effective_depth_centroid_pure(
-        b,
-        D,
-        nb_bot,
-        db_bot,
-        cover_bot,
-        rowgap_bot,
-        lig_diameter_mm,
-    )
+    nb_bot = _input("nb_bot")
+    db_bot = _input("db_bot", _input("db_bot_1"))
+    cover_bot = _input("cover_bot")
+    rowgap_bot = _input("rowgap_bot")
+    lig_diameter_mm = float(_input("lig_d", 0.0) or 0.0)
+
+    # ``rebuild_engineering_derived_state`` publishes the true multi-row
+    # centroid.  Only old/migration sessions need the legacy fallback solve.
+    d = float(_input("d", 0.0) or 0.0)
+    if d <= 0.0:
+        d = _effective_depth_centroid_pure(
+            b,
+            D,
+            nb_bot,
+            db_bot,
+            cover_bot,
+            rowgap_bot,
+            lig_diameter_mm,
+        )
     if d in (None, 0):
         if cover_bot is None:
             cover_bot = 40.0
         if db_bot is None:
             db_bot = 24.0
-        lig_diameter_mm = float(get_param("lig_d", 0.0) or 0.0)
         d = effective_depth_with_links_mm(
             D_mm=D,
             cover_to_ligs_mm=cover_bot,
@@ -432,21 +516,27 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
 
     # If As missing or zero, estimate from nb_bot & db_bot
     if As is None or As == 0:
-        nb_bot = get_param("nb_bot", 3)
-        db_bot = get_param("db_bot", 24.0)
+        nb_bot = _input("nb_bot", 3)
+        db_bot = _input("db_bot", _input("db_bot_1", 24.0))
         As = bar_area_mm2(nb_bot, db_bot)
+
+    authoritative = (
+        dict(authoritative_bending)
+        if authoritative_bending is not None
+        else current_authoritative_family(st.session_state, "bending")
+    )
 
     _, _, is_hogging = resolve_bending_faces(moment_sign)
     # d_plot = tension steel centroid y measured from top; d_f = depth compression face → tension steel
     d_plot = float(d)
     d_f = float(d)
     if is_hogging:
-        As = get_param("Ast_top")
-        do_mm = float(get_param("do") or 0.0)
+        As = _input("Ast_top")
+        do_mm = float(_input("do", 0.0) or 0.0)
         Df = float(D or 0.0)
-        cover_top = get_param("cover_top")
-        db_top = get_param("db_top")
-        nb_top = get_param("nb_top")
+        cover_top = _input("cover_top")
+        db_top = _input("db_top", _input("db_top_1"))
+        nb_top = _input("nb_top")
         d_f = hogging_tension_effective_depth_mm(Df, do_mm)
         if d_f <= 1e-6 and Df > 0:
             ct = cover_top if cover_top is not None else 40.0
@@ -460,6 +550,17 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
             db_t = float(db_top) if db_top is not None else 16.0
             As = bar_area_mm2(nb_t, db_t)
 
+    # The published effective depth is the exact centroid used by the current
+    # authoritative layer model.  Use it for the ULS strain line rather than
+    # independently reducing the row arrangement a second time.
+    try:
+        authoritative_d = float(authoritative.get("d_mm")) if authoritative else float("nan")
+    except (AttributeError, TypeError, ValueError):
+        authoritative_d = float("nan")
+    if math.isfinite(authoritative_d) and authoritative_d > 0.0:
+        d_f = authoritative_d
+        d_plot = max(0.0, float(D) - authoritative_d) if is_hogging else authoritative_d
+
     state_values = compute_stress_strain_state_values(
         state=state,
         b=b,
@@ -472,12 +573,15 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
         Ec=Ec,
         Es=Es,
     )
+    # Carry the revision-bound material stiffness into the pure figure
+    # builder.  Plotting must not reacquire an older widget mirror after a
+    # Design Brain revision has already been committed.
+    state_values.update(Ec=float(Ec), Es=float(Es))
 
     # The ULS diagram is explanatory evidence for the calculation cards.  Its
     # strain line must therefore use the same revision-matched neutral-axis
     # solution, not the retired single-layer diagram approximation.
     if state == "ULS":
-        authoritative = current_authoritative_family(st.session_state, "bending")
         try:
             dn = float(authoritative.get("dn_mm")) if authoritative else float("nan")
             d_authoritative = float(authoritative.get("d_mm")) if authoritative else float("nan")
