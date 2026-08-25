@@ -461,10 +461,7 @@ def test_inputs_workspace_uses_ordered_engineering_controls_and_brain_fragments(
     assert "include_design_brain=False" in page_source
     assert 'fragment_name="engineering_controls"' in page_source
     assert 'fragment_name="design_brain"' in page_source
-    # Widget callbacks and authoritative engineering results share one
-    # fragment.  A separate calculation sibling would not rerun when a
-    # widget callback wakes the controls fragment.
-    assert 'fragment_name="engineering_calculation"' not in page_source
+    assert 'fragment_name="engineering_calculation"' in page_source
     assert "render_inputs_deferred_design_brain_fragment" in page_source
     assert "run_every=0.5" in page_source
 
