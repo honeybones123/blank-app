@@ -1224,10 +1224,7 @@ def render_inputs_deferred_design_brain_fragment(
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     workspace_revision = workspace_store.workspace_revision()
     current_result = services.engineering_results.current()
-    # A keyed container can retain an empty fragment delta after the polling
-    # fragment wakes.  Use one fresh replacement slot per wake so the shell or
-    # ready card is always projected into the Design Brain boundary.
-    slot = st_module.empty()
+    slot = page_context.get("design_brain_slot") or st_module.empty()
     if current_result is None:
         with slot:
             st_module.info("Enter a design action or load to calculate.")

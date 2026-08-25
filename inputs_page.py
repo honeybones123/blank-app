@@ -268,6 +268,10 @@ def render_inputs_page() -> None:
     # widget and Apply transactions.
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
+    # The polling Design Brain fragment must repaint one shell-owned slot.
+    # Creating the slot inside the fragment would append a new card on every
+    # wake in Streamlit's fragment delta stream.
+    page_context["design_brain_slot"] = st.empty()
 
     # Keep controls, authoritative engineering results, and Design Brain in
     # separate ordered fragments so each region owns only its own refresh.
