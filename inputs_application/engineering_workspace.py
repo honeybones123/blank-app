@@ -1216,8 +1216,10 @@ def render_inputs_deferred_design_brain_fragment(
         f"{region_context.identity.input_revision}:"
         f"{region_context.identity.engineering_hash}"
     )
-    if st_module.session_state.get(_DESIGN_BRAIN_RENDERED_IDENTITY_KEY) == rendered_identity:
-        return
+    # A fragment rerun replaces that fragment's output.  The identity guard
+    # may suppress the expensive recommendation calculation, but it must not
+    # suppress rendering the already-published card or the Design Brain would
+    # disappear on a harmless wake.
     render_inputs_design_guide_fragment_section(
         st_module=st_module,
         runtime=runtime,
