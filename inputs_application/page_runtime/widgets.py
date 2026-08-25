@@ -1376,7 +1376,7 @@ def render_inputs_widget_sections_current_coordinator(
     sub_mark,
 ):
     nested_section_fragments = str(
-        os.environ.get("CODEX_INPUTS_NESTED_SECTION_FRAGMENTS", "0")
+        os.environ.get("CODEX_INPUTS_NESTED_SECTION_FRAGMENTS", "1")
     ).strip().lower() not in {"0", "false", "no", "off"}
     return render_inputs_widget_sections_module(
         st_module=st,
