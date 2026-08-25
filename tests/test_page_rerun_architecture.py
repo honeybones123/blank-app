@@ -378,7 +378,7 @@ def test_inputs_action_source_transaction_hydrates_before_manual_reconcile() -> 
     assert hydrate_index < reconcile_index
 
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    fragment_start = page_source.index("def _prepare_inputs_controls_fragment(")
+    fragment_start = page_source.index("def _render_v2_workspace_fragment(")
     fragment_end = page_source.index("\ndef render_inputs_page()", fragment_start)
     fragment_source = page_source[fragment_start:fragment_end]
     assert "render_inputs_action_source_transaction(" in fragment_source
@@ -389,7 +389,7 @@ def test_inputs_action_source_transaction_hydrates_before_manual_reconcile() -> 
 
 def test_inputs_apply_is_consumed_before_action_source_transaction_or_rendering() -> None:
     source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    start = source.index("def _prepare_inputs_controls_fragment(")
+    start = source.index("def _render_v2_workspace_fragment(")
     end = source.index("\ndef render_inputs_page()", start)
     fragment_source = source[start:end]
 
@@ -442,7 +442,7 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
         encoding="utf-8-sig"
     )
     start = source.index("def render_inputs_design_guide_fragment_section(")
-    end = source.index("\ndef render_inputs_deferred_design_brain_fragment(", start)
+    end = source.index("\ndef render_inputs_widget_fragment_section(", start)
     renderer_source = source[start:end]
 
     assert renderer_source.count("apply_handler=runtime.handle_pending_apply") == 1
@@ -456,27 +456,24 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
     assert "fragment_store.publish(" in renderer_source
 
 
-def test_inputs_engineering_workspace_separates_design_brain_fragment() -> None:
+def test_inputs_engineering_workspace_keeps_design_brain_in_one_workspace_fragment() -> None:
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    assert "include_design_brain=False" in page_source
-    assert 'fragment_name="engineering_calculation"' in page_source
-    assert 'fragment_name="engineering_controls"' in page_source
-    assert 'fragment_name="design_brain"' in page_source
-    assert "run_every=0.5" in page_source
+    assert "include_design_brain=True" in page_source
+    assert 'fragment_name="engineering_workspace"' in page_source
+    assert 'fragment_name="design_brain"' not in page_source
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
         encoding="utf-8-sig"
     )
-    assert "run_every: str | float | None = None" in fragment_source
+    assert "run_every: str | float | None = None" not in fragment_source
 
 
-def test_inputs_workspace_has_revision_bound_deferred_design_brain_fragment() -> None:
+def test_inputs_workspace_has_no_deferred_design_brain_fragment() -> None:
     source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
         encoding="utf-8-sig"
     )
-    assert "def render_inputs_deferred_design_brain_fragment(" in source
-    assert "latest_result.engineering_hash != current_hash" in source
-    assert "services.publications.publish(" in source
+    assert "def render_inputs_deferred_design_brain_fragment(" not in source
+    assert "_inputs_design_brain_refresh_in_flight_" not in source
 
 
 def test_each_result_page_has_one_workspace_refresh_authority() -> None:

@@ -178,9 +178,7 @@ def render_inputs_widget_sections(
     # it now receives the final committed snapshot for this page transaction;
     # it cannot publish a one-revision-behind Plotly figure.
     if callable(render_diagram_fragment_fn):
-        render_section(
-            "diagrams",
-            render_diagram_fragment_fn,
+        render_diagram_fragment_fn(
             inputs_detailed_mode=bool(inputs_detailed_mode),
             sync_callbacks=sync_callbacks,
             right_diagram=right_diagram,

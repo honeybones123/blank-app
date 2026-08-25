@@ -68,7 +68,6 @@ from inputs_application.design_brain_composition import (
     calculate_v2_authoritative_result,
     v2_engineering_calculation_contract_version,
 )
-from inputs_application.design_brain_job_runtime import remember_design_brain_job_input
 
 from inputs_application.canonical_runtime_contracts import CanonicalConvenienceResyncRuntime, CanonicalDesignStatePackRuntime
 from inputs_page_modules.app_bridge.canonical_convenience_resync import _apply_canonical_convenience_resync_to_shared, convenience_scalar_differs
@@ -1299,18 +1298,6 @@ def _ensure_authoritative_design_result_current_coordinator(
         expected_calculation_contract_version=(
             expected_calculation_contract_version
         ),
-    )
-    # Capture the exact immutable input boundary used by engineering.  The
-    # asynchronous Design Brain worker receives copies of this payload and
-    # never reads Streamlit state.
-    remember_design_brain_job_input(
-        st.session_state,
-        snapshot=snapshot,
-        resolved_inputs=dict(guidance_context),
-        engineering_calculations=dict(result.current_calculations or {}),
-        input_revision=int(input_transaction.revision),
-        family_hint=family_override,
-        debug_enabled=sidebar_debug,
     )
     if active_beam_id:
         readiness_by_beam[active_beam_id] = {
