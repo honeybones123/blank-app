@@ -154,7 +154,13 @@ def hydrate_committed_design_action_widgets(
 
 
 def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> None:
-    """Render controls/widgets without waiting for engineering calculations."""
+    """Render the atomic Inputs engineering workspace transaction.
+
+    Widget callbacks execute in this fragment.  The authoritative engineering
+    transaction must therefore stay in the same fragment as the controls and
+    widgets; otherwise a local widget rerun can commit state without rerunning
+    the result region that owns that commit.
+    """
 
     # Streamlit executes the Apply button callback before re-entering this
     # fragment. Consume that immutable, revision-bound command first: no
@@ -184,23 +190,16 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> None:
         copy_deepcopy_fn=copy.deepcopy,
     )
 
-    controls_context = build_inputs_controls_region_context(
-        page_context=page_context,
-    )
-    detailed_mode = render_inputs_controls_fragment_section(
-        st_module=st,
-        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        region_context=controls_context,
-    )
-    st.session_state["_inputs_detailed_mode"] = bool(detailed_mode)
-    detailed_mode = _INPUTS_PAGE_RUNTIME.render_design_mode_selector(
+    _ENGINEERING_WORKSPACE_RUNTIME.render_mode_selector(
         sync_callbacks=page_context["sync_callbacks"],
     )
-    render_inputs_widget_fragment_section(
+    render_engineering_workspace(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        inputs_detailed_mode=bool(detailed_mode),
+        include_design_brain=False,
+        include_controls=True,
+        include_widgets=True,
     )
 
 
@@ -269,24 +268,17 @@ def render_inputs_page() -> None:
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 
-    # Keep controls, authoritative engineering results, and Design Brain in
-    # separate ordered fragments so each region owns only its own refresh.
+    # Keep the atomic engineering workspace and Design Brain in separate
+    # ordered fragments.  The engineering fragment owns callbacks, widgets,
+    # diagrams, summary and authoritative results; Design Brain owns only its
+    # revision-bound loading/publication card.
     for section_name in (
-        "engineering_calculation",
         "engineering_controls",
         "design_brain_workspace",
         "engineering_workspace",
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
     render_timing_mark("inputs_page.shell.workspace.start")
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="engineering_calculation",
-        render_fn=_render_inputs_engineering_fragment,
-        kwargs={"page_context": page_context},
-        force_fragment=True,
-        run_every=0.5,
-    )
     run_inputs_fragment(
         st_module=st,
         fragment_name="engineering_controls",
