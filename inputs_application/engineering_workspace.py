@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import html
 import json
 import os
 import time
 from typing import Any, Callable
-
-import streamlit.components.v1 as components
 
 from application.guidance_result_adapter import (
     guidance_payload_from_authoritative_design_result,
@@ -31,9 +28,6 @@ from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
 from inputs_application.apply_transaction_store import ApplyTransactionStore
-from inputs_application.active_beam_engineering_state import (
-    resolve_active_beam_engineering_state,
-)
 from inputs_application.v2_design_guide_renderer import (
     render_v2_design_guide_card,
 )
@@ -48,297 +42,6 @@ _DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY = (
 _DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY = (
     "_inputs_design_brain_widget_marker_state"
 )
-
-_ATOMIC_WORKSPACE_CONTAINER_KEY = "inputs_engineering_workspace_atomic"
-
-
-def _render_atomic_workspace_browser_runtime() -> None:
-    """Preserve Apply scroll once while allowing deliberate user scrolling.
-
-    Streamlit streams a fragment's deltas in render order.  A Design Brain
-    Apply can therefore replace Summary before the lower input widgets have
-    arrived.  The server-side revision markers below make that partial render
-    invisible; this small browser bridge preserves the user's location across
-    the single in-place replacement.  It never loops over ``scrollTop`` and
-    immediately yields to wheel, touch, keyboard or scrollbar intent.
-    """
-
-    components.html(
-        r"""
-<script>
-(function () {
-  const parentWindow = window.parent;
-  const doc = parentWindow && parentWindow.document;
-  if (!doc || !doc.body) return;
-
-  const previousRuntime = (
-    parentWindow.__inputsAtomicRevisionRuntimeV2 ||
-    parentWindow.__inputsAtomicRevisionRuntimeV1
-  );
-  if (previousRuntime?.observer) previousRuntime.observer.disconnect();
-  delete parentWindow.__inputsAtomicRevisionRuntimeV1;
-  delete parentWindow.__inputsAtomicRevisionRuntimeV2;
-  const runtimeKey = "__inputsAtomicRevisionRuntimeV3";
-  if (parentWindow[runtimeKey]) return;
-
-  let pending = null;
-  let completionScheduled = false;
-  let settleTimer = null;
-  let settleStartedAt = 0;
-  const workspaceSelector = '[class*="st-key-inputs_engineering_workspace_atomic"]';
-  const applySelector = '[class*="st-key-v2_design_guide_apply_scope"] button';
-  const beamSelector = '[role="combobox"][aria-label="Active set"]';
-
-  function scroller() {
-    return doc.querySelector('section.stMain');
-  }
-
-  function workspace() {
-    return doc.querySelector(workspaceSelector);
-  }
-
-  function completeIdentity(root) {
-    const marker = root && root.querySelector('[data-inputs-workspace-revision-complete]');
-    return marker ? String(
-      marker.getAttribute('data-inputs-workspace-identity-complete') ||
-      marker.getAttribute('data-inputs-workspace-revision-complete') ||
-      ''
-    ) : '';
-  }
-
-  function numericInputValue(label) {
-    const input = doc.querySelector(`input[aria-label="${label}"]`);
-    if (!input) return null;
-    const value = Number(input.value);
-    return Number.isFinite(value) ? value : null;
-  }
-
-  function expectedControlsReady(marker) {
-    if (!marker) return false;
-    const expectedWidth = Number(marker.getAttribute('data-expected-width-mm'));
-    const expectedDepth = Number(marker.getAttribute('data-expected-depth-mm'));
-    const actualWidth = numericInputValue('Width b (mm)');
-    const actualDepth = numericInputValue('Depth D (mm)');
-    return Number.isFinite(expectedWidth) && Number.isFinite(expectedDepth) &&
-      actualWidth !== null && actualDepth !== null &&
-      Math.abs(actualWidth - expectedWidth) <= 1e-6 &&
-      Math.abs(actualDepth - expectedDepth) <= 1e-6;
-  }
-
-  function clearPending() {
-    if (pending && pending.timeoutId) parentWindow.clearTimeout(pending.timeoutId);
-    pending = null;
-    completionScheduled = false;
-  }
-
-  function cancelForUserIntent(event) {
-    if (!pending) return;
-    if (event && event.type === 'pointerdown') {
-      const root = workspace();
-      const main = scroller();
-      const target = event.target;
-      if (
-        target && target.closest &&
-        (target.closest(applySelector) || target.closest(beamSelector))
-      ) return;
-      if (!main || !root) return;
-      const rect = main.getBoundingClientRect();
-      const onScrollbar = event.clientX >= rect.right - 24;
-      if (!onScrollbar) return;
-    }
-    clearPending();
-  }
-
-  function captureWorkspaceTransition(event) {
-    const target = event.target;
-    if (!target || !target.closest) return;
-    const source = target.closest(applySelector)
-      ? 'apply'
-      : (target.closest(beamSelector) ? 'beam_switch' : '');
-    if (!source) {
-      const option = target.closest('[role="option"]');
-      if (!pending || pending.source !== 'beam_switch' || !option) return;
-      const currentValue = String(doc.querySelector(beamSelector)?.value || '').trim();
-      const selectedValue = String(option.textContent || '').trim();
-      if (currentValue && selectedValue === currentValue) {
-        clearPending();
-        return;
-      }
-      return;
-    }
-    const main = scroller();
-    const root = workspace();
-    if (!main || !root) return;
-    clearPending();
-    const rect = root.getBoundingClientRect();
-    pending = {
-      scrollTop: Number(main.scrollTop || 0),
-      height: Math.max(0, rect.height),
-      previousIdentity: completeIdentity(root),
-      source: source,
-      timeoutId: parentWindow.setTimeout(clearPending, 5000)
-    };
-    root.style.setProperty('--inputs-workspace-previous-height', `${pending.height}px`);
-  }
-
-  function inspectCompletion() {
-    if (completionScheduled) return;
-    const root = workspace();
-    const main = scroller();
-    if (!root || !main) return;
-    if (pending) {
-      root.style.setProperty('--inputs-workspace-previous-height', `${pending.height}px`);
-    }
-    const marker = root.querySelector('[data-inputs-workspace-revision-complete]');
-    const identity = marker ? String(
-      marker.getAttribute('data-inputs-workspace-identity-complete') ||
-      marker.getAttribute('data-inputs-workspace-revision-complete') ||
-      ''
-    ) : '';
-    if (!identity) return;
-    if (!expectedControlsReady(marker)) {
-      if (!settleStartedAt) settleStartedAt = parentWindow.performance.now();
-      if (parentWindow.performance.now() - settleStartedAt < 3000 && !settleTimer) {
-        settleTimer = parentWindow.setTimeout(function () {
-          settleTimer = null;
-          inspectCompletion();
-        }, 16);
-      }
-      return;
-    }
-    if (root.getAttribute('data-inputs-workspace-browser-settled-identity') !== identity) {
-      root.setAttribute('data-inputs-workspace-browser-settled-identity', identity);
-    }
-    settleStartedAt = 0;
-    if (settleTimer) parentWindow.clearTimeout(settleTimer);
-    settleTimer = null;
-    if (!pending) {
-      clearPending();
-      return;
-    }
-    // Opening the selector and choosing an option mutates the DOM before the
-    // selected beam's server render arrives.  Seeing the old complete marker
-    // during that interval is not completion and must not discard the saved
-    // scroll position.  Wait for a genuinely different beam/revision identity.
-    if (identity === pending.previousIdentity) return;
-    completionScheduled = true;
-    parentWindow.requestAnimationFrame(function () {
-      parentWindow.requestAnimationFrame(function () {
-        if (!pending) return;
-        main.scrollTop = pending.scrollTop;
-        clearPending();
-      });
-    });
-  }
-
-  doc.addEventListener('pointerdown', captureWorkspaceTransition, true);
-  doc.addEventListener('wheel', cancelForUserIntent, {capture: true, passive: true});
-  doc.addEventListener('touchmove', cancelForUserIntent, {capture: true, passive: true});
-  doc.addEventListener('keydown', function (event) {
-    if (['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End', ' '].includes(event.key)) {
-      cancelForUserIntent(event);
-    }
-  }, true);
-  doc.addEventListener('pointerdown', cancelForUserIntent, true);
-
-  const observer = new parentWindow.MutationObserver(inspectCompletion);
-  observer.observe(doc.body, {childList: true, subtree: true, attributes: true});
-  doc.documentElement.dataset.inputsAtomicRevisionRuntime = '3';
-  parentWindow[runtimeKey] = {observer, inspectCompletion};
-})();
-</script>
-""",
-        height=0,
-        scrolling=False,
-    )
-
-
-def _render_atomic_workspace_start(
-    *,
-    st_module: Any,
-    beam_id: str,
-    revision: int,
-    guard_required: bool,
-) -> None:
-    """Hide a partially streamed revision without changing its final layout."""
-
-    revision_text = str(int(revision))
-    identity_text = html.escape(
-        f"{str(beam_id or '').strip() or 'active'}:{revision_text}",
-        quote=True,
-    )
-    st_module.markdown(
-        f"""
-<style>
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"] {{
-  position: relative;
-}}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"]) {{
-  min-height: var(--inputs-workspace-previous-height, 640px);
-}}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
-  [data-testid="stElementContainer"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])),
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"]):not(:has([data-inputs-workspace-identity-complete="{identity_text}"]))
-  [data-testid="stLayoutWrapper"]:not(:has([data-inputs-workspace-identity-start="{identity_text}"])) {{
-  visibility: hidden !important;
-}}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]
-  [data-testid="stElementContainer"]:has([data-inputs-workspace-identity-start="{identity_text}"]) {{
-  display: block !important;
-  visibility: visible !important;
-}}
-.inputs-workspace-atomic-status {{
-  display: none;
-}}
-[class*="st-key-{_ATOMIC_WORKSPACE_CONTAINER_KEY}"]:has([data-inputs-workspace-identity-start="{identity_text}"][data-atomic-guard="1"]):not([data-inputs-workspace-browser-settled-identity="{identity_text}"])
-  .inputs-workspace-atomic-status {{
-  display: flex;
-  position: absolute;
-  inset: 0 0 auto 0;
-  z-index: 3;
-  min-height: 58px;
-  align-items: center;
-  gap: .65rem;
-  padding: .85rem 1rem;
-  border: 1px solid #cbd5e1;
-  border-left: 5px solid #4263eb;
-  border-radius: 10px;
-  background: #f8fafc;
-  color: #334155;
-  font-weight: 700;
-  box-sizing: border-box;
-}}
-</style>
-<div data-inputs-workspace-revision-start="{revision_text}" data-inputs-workspace-identity-start="{identity_text}" data-atomic-guard="{'1' if guard_required else '0'}" aria-hidden="true">
-  <div class="inputs-workspace-atomic-status" role="status" aria-live="polite">
-    Updating beam revision&hellip;
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
-
-def _render_atomic_workspace_complete(
-    *,
-    st_module: Any,
-    beam_id: str,
-    revision: int,
-    expected_width_mm: float,
-    expected_depth_mm: float,
-) -> None:
-    identity_text = html.escape(
-        f"{str(beam_id or '').strip() or 'active'}:{int(revision)}",
-        quote=True,
-    )
-    st_module.markdown(
-        "<div data-inputs-workspace-revision-complete="
-        f"'{int(revision)}' data-inputs-workspace-identity-complete='{identity_text}' "
-        f"data-expected-width-mm='{float(expected_width_mm):.9g}' "
-        f"data-expected-depth-mm='{float(expected_depth_mm):.9g}' "
-        "style='display:none' aria-hidden='true'></div>",
-        unsafe_allow_html=True,
-    )
 
 
 def _render_design_brain_visibility_marker(
@@ -1194,7 +897,7 @@ def render_inputs_widget_fragment_section(
     return bool(skip_active_beam_record_write)
 
 
-def _render_engineering_workspace_body(
+def render_engineering_workspace(
     *,
     st_module: Any,
     runtime: EngineeringWorkspaceRuntime,
@@ -1744,61 +1447,6 @@ def _render_engineering_workspace_body(
         "engineering_hash": transaction.get("engineering_hash"),
         "workspace_revision": workspace_store.last_rendered_revision(),
     }
-
-
-def render_engineering_workspace(
-    *,
-    st_module: Any,
-    runtime: EngineeringWorkspaceRuntime,
-    page_context: dict[str, Any],
-    include_design_brain: bool = True,
-    include_controls: bool = True,
-    include_widgets: bool = True,
-) -> dict[str, Any]:
-    """Render one revision-gated workspace and reveal it as one visual state."""
-
-    workspace_store = InputsWorkspaceStateStore(st_module.session_state)
-    revision = int(workspace_store.workspace_revision())
-    active_beam_id = str(
-        st_module.session_state.get("active_beam_id") or "active"
-    ).strip() or "active"
-    guard_required = bool(
-        st_module.session_state.pop(
-            "_inputs_atomic_revision_guard_pending",
-            False,
-        )
-    )
-    with st_module.container(key=_ATOMIC_WORKSPACE_CONTAINER_KEY):
-        _render_atomic_workspace_start(
-            st_module=st_module,
-            beam_id=active_beam_id,
-            revision=revision,
-            guard_required=guard_required,
-        )
-        _render_atomic_workspace_browser_runtime()
-        result = _render_engineering_workspace_body(
-            st_module=st_module,
-            runtime=runtime,
-            page_context=page_context,
-            include_design_brain=include_design_brain,
-            include_controls=include_controls,
-            include_widgets=include_widgets,
-        )
-        completed_revision = int(
-            InputsWorkspaceStateStore(st_module.session_state).last_rendered_revision()
-            or revision
-        )
-        active_state = resolve_active_beam_engineering_state(
-            st_module.session_state
-        )
-        _render_atomic_workspace_complete(
-            st_module=st_module,
-            beam_id=str(active_state.beam_id or active_beam_id),
-            revision=completed_revision,
-            expected_width_mm=float(active_state.values.get("b", 0.0) or 0.0),
-            expected_depth_mm=float(active_state.values.get("D", 0.0) or 0.0),
-        )
-    return result
 
 
 __all__ = [

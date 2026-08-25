@@ -133,14 +133,7 @@ CALCULATION_REFERENCE_GROUPS = (
             "Cl. 8.5",
             "Cl. 13.1",
         ),
-        calculation_text_sources=(
-            "engineering_page_sections/bending_uls_checks.py",
-            "engineering_page_sections/bending_sls_checks.py",
-            "engineering_page_sections/bending_minimum_strength_checks.py",
-            "bending_page_runtime.py",
-            "reporting/bending_report_projection.py",
-            "reporting/report_content.py",
-        ),
+        calculation_text_sources=("bending_tabs.py", "bending_page_runtime.py", "reporting/report_content.py"),
         qualifications="The register mirrors the citations displayed by the bending calculation texts; the detailed explanation beside each calculation remains controlling.",
     ),
     CalculationReferenceGroup(

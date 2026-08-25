@@ -8,9 +8,6 @@ from calculations.deflection import (
     get_deflection_limit_ratio,
     resolve_deflection_equiv_loads_from_inputs,
 )
-from reporting.deflection_report_projection import (
-    project_deflection_report_params,
-)
 from deflection_support import (
     compute_and_store_multispan_deflection_metrics,
     get_deflection_diagram_support_condition,
@@ -295,16 +292,9 @@ def compute_deflection_results(publish: bool = True) -> dict:
             "ratio_Asc_Ast": (Asc / Ast) if Ast > 0 else 0.0,
         }
         
-        report_projection = project_deflection_report_params(
-            st.session_state["results"]["_deflection_params"]
-        )
-        st.session_state["results"]["_deflection_params"] = (
-            report_projection.report_params()
-        )
-
         # Build and store report
         try:
-            report = build_deflection_report(report_projection.report_params())
+            report = build_deflection_report(st.session_state["results"]["_deflection_params"])
             st.session_state["results"]["deflection_report"] = report
         except Exception as e:
             st.session_state["results"]["deflection_report_error"] = str(e)

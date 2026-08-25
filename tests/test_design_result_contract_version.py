@@ -75,25 +75,3 @@ def test_old_contract_lru_entry_is_not_restored_after_switching_hashes() -> None
     assert result.current_calculations["calculation_contract_version"] == (
         "inputs_v2.calculation.v7"
     )
-
-
-def test_clear_current_preserves_fingerprinted_warm_result() -> None:
-    snapshot = _snapshot(400)
-    state = {}
-    store = EngineeringResultStore(state)
-    expected = store.store(
-        _result(snapshot, "inputs_v2.calculation.v7"),
-        source_input_revision=3,
-    )
-
-    store.clear_current()
-
-    assert store.current() is None
-    assert store.source_input_revision() is None
-    decision = store.can_reuse(
-        snapshot.engineering_hash,
-        expected_calculation_contract_version="inputs_v2.calculation.v7",
-    )
-    assert decision.reused is True
-    assert decision.reason == "engineering_hash_lru_hit"
-    assert store.current() == expected

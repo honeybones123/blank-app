@@ -85,8 +85,6 @@ from inputs_page_modules.diagrams import (
 
 from inputs_application.engineering_input_store import InputSnapshotStore
 
-from inputs_application.active_beam_engineering_state import resolve_live_active_beam_id
-
 from inputs_application.region_contexts import RevisionIdentity
 
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
@@ -507,15 +505,12 @@ def _render_section_2d_diagram_block_current(
     workspace_context=None, height_scale: float = 1.0,
     _retry_latest: bool = False,
 ):
-    # The batch selector reruns the unified workspace fragment without
-    # rebuilding the outer page-shell context.  Session-owned active-beam
-    # identity is therefore newer than the immutable shell context after a
-    # beam switch.
-    beam_id = resolve_live_active_beam_id(
-        st.session_state,
-        fallback_beam_id=getattr(workspace_context, "active_beam_id", None),
+    beam_id = str(
+        getattr(workspace_context, "active_beam_id", None)
+        or st.session_state.get("active_beam_id")
+        or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
+        or "active"
     )
-    beam_id = beam_id or "active"
     input_store = InputSnapshotStore(st.session_state)
     # Fragment payloads can contain a context captured before the widget
     # callback committed. The store is the authoritative transaction boundary,
@@ -609,11 +604,12 @@ def _render_3d_diagram_block_current(
     *, compact: bool = False, model_state: dict | None = None,
     workspace_context=None, _retry_latest: bool = False,
 ):
-    beam_id = resolve_live_active_beam_id(
-        st.session_state,
-        fallback_beam_id=getattr(workspace_context, "active_beam_id", None),
+    beam_id = str(
+        getattr(workspace_context, "active_beam_id", None)
+        or st.session_state.get("active_beam_id")
+        or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
+        or "active"
     )
-    beam_id = beam_id or "active"
     input_store = InputSnapshotStore(st.session_state)
     # Use the latest committed snapshot rather than a stale parent-fragment
     # context captured before the widget callback.

@@ -184,12 +184,16 @@ def build_shear_clickable_summary_rows(rows_list: Iterable[Mapping[str, Any]]) -
 
 
 def filter_shear_summary_rows(
-    rows_list: Iterable[Mapping[str, Any]],
+    rows_list: Iterable[Mapping[str, Any]], *, show_mcft_breakdown: bool
 ) -> list[dict[str, Any]]:
     return [
         dict(row)
         for row in rows_list or []
         if row.get("Check") in SHEAR_SUMMARY_HEADLINE_CHECKS
+        or (
+            show_mcft_breakdown
+            and row.get("Check") in SHEAR_SUMMARY_MCFT_DETAIL_CHECKS
+        )
     ]
 
 

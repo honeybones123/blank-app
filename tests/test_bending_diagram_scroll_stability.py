@@ -4,143 +4,133 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _bundle_source() -> str:
-    return (
-        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
+def test_bending_views_use_client_side_tabs_without_a_rerun_selector() -> None:
+    source = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
 
-
-def test_bending_views_are_one_native_tab_bundle() -> None:
-    source = _bundle_source()
-
-    assert (
-        "section_tab, side_view_tab, moment_tab = runtime.render_stable_tabs("
-        in source
-    )
-    assert 'scope_id="bending-section-diagrams"' in source
-    assert "with section_tab:" in source
-    assert "with side_view_tab:" in source
-    assert "with moment_tab:" in source
+    assert 'section_tab, side_view_tab, moment_tab = render_stable_tabs(' in source
     assert 'key="bending_diagram_view"' not in source
+    assert 'if diagram_view == "Section":' not in source
 
 
-def test_bundle_uses_one_post_paint_trigger_and_no_per_tab_loader() -> None:
-    source = _bundle_source()
-
-    assert 'key="bending_deferred_bundle_button"' in source
-    assert "requestBundleAfterPaint" in source
-    assert "data-bending-lightweight-ready" in source
-    assert "bending-calculation-ready" in source
-    assert "pointerdown" not in source
-    for obsolete in (
-        "bending_deferred_side_button",
-        "bending_deferred_moment_button",
-        "_bending_side_view_published",
-        "_bending_moment_view_published",
-        "data-bending-side-view-deferred",
-        "data-bending-moment-deferred",
-    ):
-        assert obsolete not in source
-
-
-def test_bundle_prepares_all_three_figures_before_native_tab_use() -> None:
-    source = _bundle_source()
-
-    assert "def _build_or_load_bundle(" in source
-    assert "section_figures = {}" in source
-    assert "side_figures = {}" in source
-    assert "figure_bmd_from_state(" in source
-    assert '"section": section_figures' in source
-    assert '"side": side_figures' in source
-    assert '"moment": moment_figure' in source
-    assert "render_prepared_bending_side_view_diagram(" in source
-    assert "render_plotly_diagram(" in source
-
-
-def test_explicit_state_label_remains_plot_authority() -> None:
-    source = _bundle_source()
+def test_bending_diagrams_use_stable_streamlit_component_keys() -> None:
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
+    side_view = (ROOT / "bending_side_view_diagram.py").read_text(encoding="utf-8")
 
-    assert "def _build_bending_state_projection(" in diagrams
-    assert "state_label=projection[\"state_label\"]" in source
-    assert 'key="bending_state_main"' in source
-    assert "STATE_OPTIONS = (\"ULS\", \"SLS (cracked)\", \"Uncracked\")" in source
-
-
-def test_bending_state_switch_owns_only_diagram_fragment() -> None:
-    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
-    source = _bundle_source()
-
-    assert "_render_bending_diagram_bundle_panel = st.fragment(" in runtime
-    assert "_render_bending_state_controls = st.fragment(" not in runtime
-    assert "def render_bending_diagram_bundle_panel(" in source
-    assert "def render_bending_state_controls(" in source
-    assert "render_bending_state_controls(runtime=runtime)" in source
-    assert "render_uls_tab(" not in source
-    assert "render_sls_tab(" not in source
-    assert "scrollTop" not in source
-    assert "event.preventDefault()" not in source
+    assert 'key="bending_section_stress_strain"' in diagrams
+    assert 'key="bending_side_view"' in side_view
+    assert 'key=f"bending_side_view_' not in side_view
+    assert "@st.fragment\ndef render_bending_side_view_diagram(" in side_view
 
 
-def test_bending_state_switch_uses_cached_fragment_figures_not_browser_dom() -> None:
-    source = _bundle_source()
+def test_bending_check_tabs_keep_a_stable_container() -> None:
+    """A tab click must not replace the detailed-calculation DOM slot."""
 
-    assert 'key="bending_state_main"' in source
-    assert "already-prepared figure" in source
-    assert "Plotly.react(" not in source
-    assert "Plotly.relayout(" not in source
-    assert "applyRequestedState" not in source
-    assert "data-bending-requested-state" not in source
-    assert "node.style.opacity" not in source
-    assert "dataset.sbPlotlyState" not in source
-    assert "data-sb-preloaded-plotly-state" not in source
+    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+
+    assert "calc_blocks_container = st.container()" in source
+    assert "with calc_blocks_container:" in source
+    assert "calc_blocks_placeholder = st.empty()" not in source
 
 
-def test_bundle_keeps_all_state_figures_ready_for_fragment_switching() -> None:
-    source = _bundle_source()
+def test_bending_calculation_tabs_are_client_side_and_preserve_scroll() -> None:
+    """ULS/SLS selection is view-only and must not remount the page."""
 
-    assert "for option in STATE_OPTIONS:" in source
-    assert 'bundle["section"][main_state]' in source
-    assert 'bundle["side"][main_state]' in source
-    assert "Plotly.restyle(" not in source
+    source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
 
-
-def test_material_lesson_has_an_explicit_real_body() -> None:
-    source = _bundle_source()
-
-    assert "def _render_material_teaching_lesson(runtime:" in source
-    assert "render_bending_material_teaching_panel(" in source
-    assert "plot_material_curves=runtime.plot_material_stress_strain_curves" in source
-    assert "runtime.render_lazy_expander(" in source
-    assert "lambda: None" not in source
-
-
-def test_diagram_modules_use_explicit_dependencies_not_runtime_global_binding() -> None:
-    source = _bundle_source()
+    assert "uls_checks_tab, sls_checks_tab, minimum_checks_tab = render_stable_tabs(" in source
+    assert "with uls_checks_tab:" in source
+    assert "with sls_checks_tab:" in source
+    assert "with minimum_checks_tab:" in source
+    assert 'scope_id="bending-calculation-checks"' in source
     diagrams = (
         ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
+    assert 'scope_id="bending-section-diagrams"' in diagrams
+    assert "preserve_scroll_for_preceding_widget" in source
+    assert "render_stable_tabs" in source
+    assert "render_lazy_check_tab_selector" not in source
+
+
+def test_bending_state_selector_preserves_main_scroll_during_rerun() -> None:
     runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
-
-    assert "class BendingDiagramRuntime:" in source
-    assert "runtime: BendingDiagramRuntime" in source
-    assert "bind_runtime" not in source
-    assert "globals().update" not in source
-    assert "bind_runtime" not in diagrams
-    assert "_bending_diagram_runtime =" in runtime
-    assert "_bending_diagram_bundle.bind_runtime" not in runtime
-    assert "_bending_diagrams_section.bind_runtime" not in runtime
-
-
-def test_stable_tabs_do_not_install_a_prolonged_scroll_lock() -> None:
     helper = (
         ROOT / "engineering_page_sections" / "stable_tabs.py"
     ).read_text(encoding="utf-8")
 
-    assert "cancelPendingScrollPreservation" in helper
-    assert "holdPosition" not in helper
-    assert "MutationObserver(lockScroll)" not in helper
-    assert "3500" not in helper
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+    assert "preserve_scroll_for_preceding_widget(" in diagrams
+    assert 'scope_id="bending-state-selector"' in diagrams
+    assert "data-sb-stable-widget-scroll" in helper
+    assert "__sbStableInteractionRuntime" in helper
+    assert "tagWidgetMarkers" in helper
+    assert "widgetMarkerObserver" in helper
+    assert "holdPosition(pending)" in helper
+    assert "MutationObserver(lockScroll)" in helper
+    assert "scroller.scrollTop = pending.top" in helper
     assert "event.preventDefault()" not in helper
+
+
+def test_bending_mounts_one_preloaded_state_figure() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'state_options = ("ULS", "SLS (cracked)", "Uncracked")' in diagrams
+    assert 'scope_id="bending-preloaded-states"' not in diagrams
+    assert diagrams.count('key="bending_section_stress_strain"') == 1
+    assert 'data-sb-plotly-visibility-scope="bending-state-diagram"' in diagrams
+    assert 'data-sb-trace-groups="{trace_group_counts}"' in diagrams
+    assert 'data-sb-trace-state-order="{trace_state_order}"' in diagrams
+    assert 'data-sb-shape-groups="{shape_group_counts}"' in diagrams
+    assert 'data-sb-annotation-groups="{annotation_group_counts}"' in diagrams
+    assert 'target_plotly_visibility_scope_id="bending-state-diagram"' in diagrams
+    assert 'render_timing_mark("bending_page.runtime.diagram.preload.start")' not in diagrams
+    assert "if option == main_state:" in diagrams
+    assert "_plot_stress_strain_profiles(" in diagrams
+
+
+def test_bending_preloaded_states_keep_independent_stress_axes() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"ULS": "x3"' in diagrams
+    assert '"SLS (cracked)": "x4"' in diagrams
+    assert '"Uncracked": "x5"' in diagrams
+    assert "trace_dom_order.append(" in diagrams
+    assert 'trace_json["xaxis"] = target_axis_ref' in diagrams
+    assert 'shape_json["xref"] = target_axis_ref + xref[2:]' in diagrams
+    assert 'annotation_json["xref"] = target_axis_ref + xref[2:]' in diagrams
+    assert 'annotation_json["axref"] = target_axis_ref + axref[2:]' in diagrams
+
+
+def test_bending_preload_marker_cannot_change_page_geometry() -> None:
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert '[data-sb-plotly-visibility-scope="bending-state-diagram"]){' in diagrams
+    assert 'display:none!important;height:0!important;min-height:0!important;' in diagrams
+    assert 'margin:0!important;padding:0!important;' in diagrams
+
+
+def test_bending_state_switch_owns_only_state_dependent_diagrams() -> None:
+    runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
+    diagrams = (
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_render_bending_state_panel = st.fragment(" in runtime
+    assert "def render_bending_state_panel(" in diagrams
+    assert 'key="bending_state_main"' in diagrams
+    assert "render_uls_tab(" not in diagrams
+    assert "render_sls_tab(" not in diagrams
+    assert runtime.index('render_timing_mark("bending_page.runtime.checks.end")') < runtime.rindex(
+        "_render_bending_state_panel("
+    )

@@ -163,22 +163,6 @@ class BatchDesignGuidanceAdapter:
         self._design_guidance_runner = design_guidance_runner
         self._request_kind = str(request_kind or "auto_design")
 
-    def evaluate_current_case(
-        self,
-        case: BatchBeamCase,
-        *,
-        assumptions: Mapping[str, Any] | None = None,
-        base_state: Mapping[str, Any] | None = None,
-    ) -> BatchDesignResult:
-        """Calculate the entered beam before any optimisation search runs."""
-
-        return self.run_case(
-            case,
-            assumptions=assumptions,
-            base_state=base_state,
-            request_kind="current_design",
-        )
-
     def run_case(
         self,
         case: BatchBeamCase,

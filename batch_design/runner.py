@@ -73,37 +73,6 @@ def run_single_design_brain_path(
     return _coerce_result(case, adapter.run_case(case, assumptions=assumptions))
 
 
-def current_capacity_projection(result: BatchDesignResult) -> dict[str, Any]:
-    """Project an authoritative current-design result for neutral UI consumers.
-
-    This projection contains calculation evidence only.  It does not request,
-    select, or apply a Design Brain proposal.
-    """
-
-    raw_result = dict(result.raw_result or {})
-    payload = dict(raw_result.get("design_brain_payload") or {})
-    debug_trace = dict(payload.get("debug_trace") or {})
-    overview = dict(debug_trace.get("overview") or {})
-    return {
-        "calculated": result.error is None,
-        "passed": result.passed,
-        "selected_section": result.selected_section,
-        "utilisation": result.utilisation,
-        "family_utilisations": dict(overview.get("family_utilisations") or {}),
-        "family_capacities": dict(overview.get("family_capacities") or {}),
-        "statuses": dict(overview.get("statuses") or {}),
-        "engineering_hash": debug_trace.get("engineering_hash"),
-        "input_revision": debug_trace.get("input_revision"),
-        "error": result.error,
-    }
-
-
-# Retain the private name for callers/tests written against the initial batch
-# pre-pass implementation.  New presentation code should use the public,
-# calculation-only name above.
-_pre_optimisation_projection = current_capacity_projection
-
-
 def run_batch_design(
     cases: Iterable[BatchBeamCase],
     adapter: DesignBrainAdapter,
@@ -117,33 +86,7 @@ def run_batch_design(
 
     for case in runnable:
         try:
-            baseline_result: BatchDesignResult | None = None
-            evaluate_current_case = getattr(adapter, "evaluate_current_case", None)
-            if callable(evaluate_current_case):
-                baseline_result = _coerce_result(
-                    case,
-                    evaluate_current_case(case, assumptions=assumptions),
-                )
-                if baseline_result.error:
-                    results.append(baseline_result)
-                    continue
-
-            optimised_result = run_single_design_brain_path(
-                case,
-                adapter,
-                assumptions=assumptions,
-            )
-            if baseline_result is not None:
-                raw_result = dict(optimised_result.raw_result or {})
-                raw_result["pre_optimisation"] = current_capacity_projection(
-                    baseline_result
-                )
-                raw_result["batch_execution_order"] = (
-                    "current_capacity",
-                    "optimisation",
-                )
-                optimised_result.raw_result = raw_result
-            results.append(optimised_result)
+            results.append(run_single_design_brain_path(case, adapter, assumptions=assumptions))
         except Exception as exc:
             results.append(
                 BatchDesignResult(

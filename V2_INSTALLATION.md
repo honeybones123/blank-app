@@ -28,7 +28,7 @@ python -m tools.verification.run_inputs_v2_clean_install_contract `
 Hosted Runtime deployments install the tested V2 wheel vendored at
 `vendor/beamapp_inputs_v2-0.1.2-py3-none-any.whl` through `requirements.txt`.
 Its SHA-256 digest is
-`f4abf9f4aee3a8ec3a46cf3928fb4a139be4a750d558f5d7934b464ba89acdfb`.
+`8f6cffb30a9d53951623a7abf705f87ec86f22886d5c04dcd30912d2900cb4e1`.
 
 Publishing `beamapp-inputs-v2==0.1.2` to the deployment package feed is the
 remaining distribution step. Once published, add the pinned dependency to the

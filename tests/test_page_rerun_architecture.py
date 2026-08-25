@@ -104,8 +104,8 @@ def test_result_pages_have_no_direct_app_rerun_authority() -> None:
     pages = (
         "bending_page_runtime.py",
         "shear_page_runtime.py",
-        "creep_page_runtime.py",
-        "shrinkage_page_runtime.py",
+        "creep.py",
+        "shrinkage.py",
         "crack_page_runtime.py",
         "deflection_page_runtime.py",
     )
@@ -123,8 +123,8 @@ def test_result_pages_do_not_write_debug_session_inventories_during_render() -> 
     pages = (
         "bending_page_runtime.py",
         "shear_page_runtime.py",
-        "creep_page_runtime.py",
-        "shrinkage_page_runtime.py",
+        "creep.py",
+        "shrinkage.py",
         "crack_page_runtime.py",
         "deflection_page_runtime.py",
     )
@@ -456,26 +456,6 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
     assert "fragment_store.publish(" in renderer_source
 
 
-def test_inputs_engineering_workspace_keeps_design_brain_in_one_workspace_fragment() -> None:
-    page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
-    assert "include_design_brain=True" in page_source
-    assert 'fragment_name="engineering_workspace"' in page_source
-    assert 'fragment_name="design_brain"' not in page_source
-
-    fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(
-        encoding="utf-8-sig"
-    )
-    assert "run_every: str | float | None = None" not in fragment_source
-
-
-def test_inputs_workspace_has_no_deferred_design_brain_fragment() -> None:
-    source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
-        encoding="utf-8-sig"
-    )
-    assert "def render_inputs_deferred_design_brain_fragment(" not in source
-    assert "_inputs_design_brain_refresh_in_flight_" not in source
-
-
 def test_each_result_page_has_one_workspace_refresh_authority() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
     pages = ("bending", "shear", "creep", "shrinkage", "crack", "deflection")
@@ -539,13 +519,13 @@ def test_authoritative_summaries_publish_before_heavy_page_content() -> None:
             'render_timing_mark("shear_page.runtime.summary.start")',
             'render_timing_mark("shear_page.runtime.visualisation.start")',
         ),
-        "creep_page_runtime.py": (
+        "creep.py": (
             "summary_values = compute_creep_results(publish=True)",
-            "creep_inputs = render_creep_inputs(",
+            "b_val = float(engineering_value(",
         ),
-        "shrinkage_page_runtime.py": (
+        "shrinkage.py": (
             "summary_values = compute_shrinkage_results(publish=True)",
-            "inputs = render_shrinkage_inputs(",
+            "b_val = float(engineering_value(",
         ),
         "crack_page_runtime.py": (
             "crack_pack = build_crack_check_rows_from_state(st.session_state)",
@@ -558,8 +538,8 @@ def test_authoritative_summaries_publish_before_heavy_page_content() -> None:
     }
     entrypoints = {
         "shear_page_runtime.py": "def render_shear():",
-        "creep_page_runtime.py": "def render_creep():",
-        "shrinkage_page_runtime.py": "def render_shrinkage():",
+        "creep.py": "def render_creep():",
+        "shrinkage.py": "def render_shrinkage():",
         "crack_page_runtime.py": "def render_crack():",
         "deflection_page_runtime.py": "def render_deflection():",
     }
@@ -575,25 +555,15 @@ def test_bending_summary_binding_is_deferred_without_changing_layout() -> None:
     """The browser component must not delay or shift the visible shell."""
 
     source = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8-sig")
-    frame = source.index("shell_content = bending_page_shell.reserve_content(st)")
+    diagram_shell = source.index("render_bending_diagram_loading_shell(")
     calculation_shell = source.index(
-        "render_bending_calculation_loading_shell(", frame
+        "render_bending_calculation_loading_shell(", diagram_shell
     )
-    diagram_panel = source.index(
-        "_render_bending_diagram_bundle_panel(", calculation_shell
-    )
-    binding = source.index("bind_summary_clicks()", diagram_panel)
-    diagram_source = (
-        ROOT / "engineering_page_sections/bending_diagram_bundle.py"
-    ).read_text(
+    binding = source.index("bind_summary_clicks()", calculation_shell)
+    diagram_source = (ROOT / "engineering_page_sections/bending_diagrams.py").read_text(
         encoding="utf-8-sig"
     )
 
-    assert frame < calculation_shell < diagram_panel < binding
+    assert diagram_shell < calculation_shell < binding
     assert "data-bending-diagrams-layout-slot" in diagram_source
-    shell_source = (
-        ROOT / "engineering_page_sections/bending_diagrams.py"
-    ).read_text(encoding="utf-8-sig")
-    assert ".st-key-bending_primary_plot_frame" in shell_source
-    assert "> .st-key-bending_diagram_shell" in shell_source
-    assert "margin-top: 16.640625px" not in diagram_source
+    assert "margin-top: 16.640625px" in diagram_source

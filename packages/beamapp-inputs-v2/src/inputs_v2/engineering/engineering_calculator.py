@@ -29,10 +29,6 @@ from inputs_v2.engineering.shear_capacity import (
 from inputs_v2.engineering.shear_detailing import ShearDetailingInput, calculate_shear_detailing
 from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 from inputs_v2.engineering.check_metadata import check_metadata
-from inputs_v2.engineering.sls_cracked_section import (
-    CrackedSectionLayer,
-    solve_sls_cracked_section,
-)
 from inputs_v2.engineering.time_dependent import (
     LoadingAgeFactorInput,
     basic_creep_coeff,
@@ -109,63 +105,6 @@ def _legacy_payload(inputs: BeamInputs, arrangement: ReinforcementArrangement | 
             if top_area > 0.0 else ()
         ),
     }
-
-
-def _authoritative_sls_cracked_section(
-    inputs: BeamInputs,
-    payload: dict[str, object],
-    *,
-    ignore_compression_reinforcement: bool = False,
-) -> dict[str, object]:
-    """Build the one cracked-section result used by engineering and teaching."""
-
-    bottom_layers = tuple(payload.get("bottom_layers", ()) or ())
-    top_layers = tuple(payload.get("top_layers", ()) or ())
-    bottom_labels = tuple(payload.get("bottom_layer_labels", ()) or ())
-    top_labels = tuple(payload.get("top_layer_labels", ()) or ())
-    layer_inputs: list[CrackedSectionLayer] = []
-    for index, (area, depth_from_top) in enumerate(bottom_layers):
-        label = (
-            str(bottom_labels[index])
-            if index < len(bottom_labels)
-            else f"Bottom reinforcement layer {index + 1}"
-        )
-        layer_inputs.append(
-            CrackedSectionLayer(
-                layer_id=f"B{index + 1}",
-                label=label,
-                area_mm2=float(area),
-                depth_from_top_mm=float(depth_from_top),
-            )
-        )
-    for index, (area, depth_from_top) in enumerate(top_layers):
-        label = (
-            str(top_labels[index])
-            if index < len(top_labels)
-            else f"Top reinforcement layer {index + 1}"
-        )
-        layer_inputs.append(
-            CrackedSectionLayer(
-                layer_id=f"T{index + 1}",
-                label=label,
-                area_mm2=float(area),
-                depth_from_top_mm=float(depth_from_top),
-            )
-        )
-    moment = float(inputs.serviceability.moment_knm or 0.0)
-    return solve_sls_cracked_section(
-        width_mm=float(inputs.width_mm),
-        depth_mm=float(inputs.depth_mm),
-        concrete_modulus_mpa=float(inputs.time_dependent.concrete_modulus_mpa),
-        service_moment_knm=abs(moment),
-        layers=tuple(layer_inputs),
-        section_shape=str(inputs.section_shape),
-        flange_width_mm=inputs.flange_width_mm,
-        flange_thickness_mm=inputs.flange_thickness_mm,
-        web_width_mm=inputs.web_width_mm,
-        moment_sign="negative" if moment < 0.0 else "positive",
-        ignore_compression_reinforcement=ignore_compression_reinforcement,
-    )
 
 
 def _nonzero(value: float | None) -> bool:
@@ -338,11 +277,47 @@ def _calculate_serviceability(
 
 def _sls_cracked_section_response(
     inputs: BeamInputs,
-    payload: dict[str, object],
-) -> dict[str, object]:
-    """Return the authoritative multi-layer cracked-section publication."""
+    steel_area_mm2: float,
+    effective_depth_mm: float,
+) -> tuple[float, float]:
+    """Return outer-steel stress and cracked neutral-axis depth at SLS."""
 
-    return _authoritative_sls_cracked_section(inputs, payload)
+    moment = float(inputs.serviceability.moment_knm)
+    if not _nonzero(moment) or steel_area_mm2 <= 0.0 or effective_depth_mm <= 0.0:
+        return 0.0, 0.0
+    ec = float(inputs.time_dependent.concrete_modulus_mpa)
+    es = 200000.0
+    transformed = (es / ec) * steel_area_mm2
+    coefficient = inputs.width_mm / 2.0
+    discriminant = transformed**2 + 4.0 * coefficient * transformed * effective_depth_mm
+    neutral_axis = (-transformed + math.sqrt(max(discriminant, 0.0))) / (2.0 * coefficient)
+    neutral_axis = max(1.0, min(neutral_axis, inputs.depth_mm))
+    cracked_inertia = (
+        inputs.width_mm * neutral_axis**3 / 3.0
+        + transformed * (effective_depth_mm - neutral_axis) ** 2
+    )
+    if cracked_inertia <= 0.0:
+        return 0.0, neutral_axis
+    curvature = (moment * 1e6) / (ec * cracked_inertia)
+    return (
+        float(es * curvature * (effective_depth_mm - neutral_axis)),
+        float(neutral_axis),
+    )
+
+
+def _sls_outer_steel_stress(
+    inputs: BeamInputs,
+    steel_area_mm2: float,
+    effective_depth_mm: float,
+) -> float:
+    """Return the cracked-section SLS outer-steel stress."""
+
+    stress, _neutral_axis = _sls_cracked_section_response(
+        inputs,
+        steel_area_mm2,
+        effective_depth_mm,
+    )
+    return stress
 
 
 def _calculate_crack_control(
@@ -350,7 +325,6 @@ def _calculate_crack_control(
     payload: dict[str, object],
     effective_depth_mm: float,
     arrangement: ReinforcementArrangement | None,
-    cracked_section: dict[str, object],
 ) -> dict[str, object]:
     """Run the copied V1 crack-control equations for explicit SLS moment."""
 
@@ -380,20 +354,11 @@ def _calculate_crack_control(
         )
     else:
         inputs_for_stress = inputs
-    if inputs_for_stress is not inputs:
-        cracked_section = _sls_cracked_section_response(inputs_for_stress, payload)
-    tension_layers = tuple(
-        layer
-        for layer in tuple(cracked_section.get("layers", ()) or ())
-        if isinstance(layer, dict) and layer.get("state") == "tension"
+    sigma_sr, neutral_axis_depth = _sls_cracked_section_response(
+        inputs_for_stress,
+        steel_area,
+        effective_depth_mm,
     )
-    outer_layer = max(
-        tension_layers,
-        key=lambda layer: float(layer.get("depth_from_compression_mm", 0.0) or 0.0),
-        default=None,
-    )
-    sigma_sr = abs(float(outer_layer.get("stress_mpa", 0.0) or 0.0)) if outer_layer else 0.0
-    neutral_axis_depth = float(cracked_section.get("neutral_axis_depth_mm", 0.0) or 0.0)
     crack = calculate_crack_control(CrackControlInput(
         width_mm=inputs.width_mm,
         depth_mm=inputs.depth_mm,
@@ -431,7 +396,6 @@ def _calculate_crack_control(
         "effective_depth_mm": effective_depth_mm,
         "serviceability_loads_present": True,
         "action_source": ServiceabilityActionSource.ACTUAL_SLS_ACTIONS.value,
-        "sls_cracked_section": cracked_section,
     }
 
 
@@ -463,16 +427,6 @@ class EngineeringCalculator:
                 bottom_layer_labels=tuple(payload["bottom_layer_labels"]),
                 top_layer_labels=tuple(payload["top_layer_labels"]),
             ),
-        )
-        sls_cracked_section = _authoritative_sls_cracked_section(inputs, payload)
-        sls_cracked_section_ignore_compression = _authoritative_sls_cracked_section(
-            inputs,
-            payload,
-            ignore_compression_reinforcement=True,
-        )
-        bending["sls_cracked_section"] = sls_cracked_section
-        bending["sls_cracked_section_ignore_compression"] = (
-            sls_cracked_section_ignore_compression
         )
         # Row-level values consumed by the Runtime-style summary contract.
         # These are sourced from the same immutable calculation payload.
@@ -779,13 +733,7 @@ class EngineeringCalculator:
         )
         serviceability = _calculate_serviceability(inputs, payload, effective_d)
         serviceability["check_metadata"] = check_metadata("short_term_deflection", "long_term_deflection", "span_depth_check")
-        crack_control = _calculate_crack_control(
-            inputs,
-            payload,
-            effective_d,
-            fit_arrangement,
-            sls_cracked_section,
-        )
+        crack_control = _calculate_crack_control(inputs, payload, effective_d, fit_arrangement)
         crack_control["check_metadata"] = check_metadata("general_crack_control", "crack_table_method", "direct_crack_width")
         reinforcement_fit = {
             "accepted": fit.accepted,

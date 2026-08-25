@@ -25,9 +25,7 @@ def test_shared_display_mode_defaults_to_standard_and_keeps_progress_per_card() 
 
 
 def test_bending_uls_has_one_section_control_and_check_2_has_six_authored_steps() -> None:
-    source = (
-        ROOT / "engineering_page_sections" / "bending_uls_checks.py"
-    ).read_text(encoding="utf-8")
+    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
 
     assert 'render_calculation_display_control("bending_uls")' in source
     assert 'display_section="bending_uls"' in source
@@ -42,9 +40,7 @@ def test_bending_uls_has_one_section_control_and_check_2_has_six_authored_steps(
 
 
 def test_every_authoritative_bending_uls_check_uses_the_shared_display_section() -> None:
-    source = (
-        ROOT / "engineering_page_sections" / "bending_uls_checks.py"
-    ).read_text(encoding="utf-8")
+    source = (ROOT / "bending_tabs.py").read_text(encoding="utf-8")
     authoritative = source[
         source.index("def _render_authoritative_uls_steps("):
         source.index("# ============================================================\n#  TAB 1")

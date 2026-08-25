@@ -7,10 +7,7 @@ from typing import Any
 from application.design_brain_port import DesignBrainRequest
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
-from inputs_application.design_brain_composition import (
-    build_new_design_brain_service,
-    calculate_v2_authoritative_result,
-)
+from inputs_application.design_brain_composition import build_new_design_brain_service
 
 _V2_BATCH_DESIGN_BRAIN_SERVICE = None
 
@@ -33,6 +30,9 @@ def compute_design_guidance_items(
     del guidance_debug_verbose, debug_enabled
     if not isinstance(state, dict):
         raise TypeError("design guidance state must be a dictionary")
+    global _V2_BATCH_DESIGN_BRAIN_SERVICE
+    if _V2_BATCH_DESIGN_BRAIN_SERVICE is None:
+        _V2_BATCH_DESIGN_BRAIN_SERVICE = build_new_design_brain_service()
     snapshot = build_engineering_input_snapshot_from_resolved_state(state)
     revision = int(
         state.get("_inputs_workspace_revision")
@@ -40,29 +40,14 @@ def compute_design_guidance_items(
         or state.get("_inputs_input_revision")
         or 1
     )
-    current_design_only = str(request_kind or "").strip() == "current_design"
-    if current_design_only:
-        # Batch Design evaluates the member exactly as entered before asking
-        # the Design Brain to optimise it.  This sibling V2 calculation path
-        # publishes the same authoritative families/packs without running the
-        # recommendation search.
-        result = calculate_v2_authoritative_result(
+    execution = _V2_BATCH_DESIGN_BRAIN_SERVICE.run(
+        DesignBrainRequest(
             engineering_snapshot=snapshot,
             resolved_inputs=dict(state),
             input_revision=revision,
         )
-    else:
-        global _V2_BATCH_DESIGN_BRAIN_SERVICE
-        if _V2_BATCH_DESIGN_BRAIN_SERVICE is None:
-            _V2_BATCH_DESIGN_BRAIN_SERVICE = build_new_design_brain_service()
-        execution = _V2_BATCH_DESIGN_BRAIN_SERVICE.run(
-            DesignBrainRequest(
-                engineering_snapshot=snapshot,
-                resolved_inputs=dict(state),
-                input_revision=revision,
-            )
-        )
-        result = execution.result
+    )
+    result = execution.result
     payload = guidance_payload_from_authoritative_design_result(result)
     calculations = dict(result.current_calculations or {})
     # A reviewed batch run is asking V2 to design the member, not merely to
@@ -77,7 +62,7 @@ def compute_design_guidance_items(
         else {}
     )
     template_assignment = request_kind == "template_assignment"
-    candidate_accepted = not (template_assignment or current_design_only) and bool(
+    candidate_accepted = not template_assignment and bool(
         isinstance(result.selected_candidate, dict)
         and candidate_evaluation.get("accepted")
     )
@@ -101,10 +86,6 @@ def compute_design_guidance_items(
         "crack": None,
         "deflection": None,
     }
-    family_capacities: dict[str, float | None] = {
-        "bending": None,
-        "shear": None,
-    }
     statuses: dict[str, str] = {}
     utilisations: list[float] = []
     for family, pack in packs.items():
@@ -123,15 +104,6 @@ def compute_design_guidance_items(
             util = _number(rows[0].get("util"))
         if str(family) in family_utilisations:
             family_utilisations[str(family)] = util
-        capacity_keys = {
-            "bending": ("summary_phiMu_kNm",),
-            "shear": ("summary_phiVu_kN", "summary_governing_capacity_kN"),
-        }.get(str(family), ())
-        for capacity_key in capacity_keys:
-            capacity = _number(pack.get(capacity_key))
-            if capacity is not None:
-                family_capacities[str(family)] = capacity
-                break
         if util is not None:
             utilisations.append(util)
     worst_util = max(utilisations, default=None)
@@ -143,13 +115,11 @@ def compute_design_guidance_items(
         "all_key_pass": not any_fail,
         "worst_util": worst_util,
         "family_utilisations": family_utilisations,
-        "family_capacities": family_capacities,
     }
     payload["debug_trace"] = {
         "overview": overview,
         "source": "inputs_v2",
         "result_basis": "verified_v2_proposal" if candidate_accepted else "current_design",
-        "request_kind": str(request_kind or "design_guide"),
         "input_revision": revision,
         "engineering_hash": result.engineering_hash,
     }

@@ -357,57 +357,6 @@ def save_active_batch_beam_to_table() -> None:
     st.session_state["_beam_skip_auto_persist_once"] = False
 
 
-def _commit_active_batch_beam_revision(source: str) -> None:
-    """Publish one revision after a project-beam identity mutation.
-
-    Add, duplicate, delete, and selector changes all replace the active beam's
-    complete input snapshot.  Hydrating the legacy shared mirrors is not
-    sufficient for the revisioned Inputs workspace: Summary and Design Brain
-    deliberately wait until an authoritative result exists for the new
-    workspace revision.  Keep those operations on the same commit boundary as
-    ordinary engineering widget edits.
-    """
-
-    from inputs_application.session_services import InputsSessionServices
-
-    services = InputsSessionServices.from_mapping(st.session_state)
-    # A project-beam change can move from a high per-beam revision to a lower
-    # one.  Leaving the previous beam's active result/publication installed
-    # makes the workspace supersession guard correctly reject it—but without
-    # another owner to clear that projection, Summary remains "Updating"
-    # forever.  Clear only the active projection; the bounded result LRU keeps
-    # a safe warm revisit by engineering hash.
-    services.engineering_results.clear_current()
-    services.publications.clear()
-    _apply_canonical_convenience_resync(source=source)
-    _request_inputs_engineering_commit(source)
-
-
-def add_batch_project_beam() -> str:
-    """Add and activate a project beam, then publish its initial revision."""
-
-    beam_id = str(add_new_beam_record())
-    _commit_active_batch_beam_revision("inputs_batch_design_add_beam")
-    return beam_id
-
-
-def duplicate_batch_project_beam() -> str:
-    """Duplicate and activate a project beam, then publish its revision."""
-
-    beam_id = str(duplicate_active_beam_record())
-    _commit_active_batch_beam_revision("inputs_batch_design_duplicate_beam")
-    return beam_id
-
-
-def delete_batch_project_beam(beam_id: str) -> bool:
-    """Delete the active project beam and publish the fallback beam revision."""
-
-    changed = bool(delete_beam_record(beam_id))
-    if changed:
-        _commit_active_batch_beam_revision("inputs_batch_design_delete_beam")
-    return changed
-
-
 def activate_batch_project_beam(beam_id: str) -> bool:
     """Switch the active batch beam and commit its full input snapshot.
 
@@ -420,7 +369,10 @@ def activate_batch_project_beam(beam_id: str) -> bool:
     changed = set_active_beam(beam_id)
     if not changed:
         return False
-    _commit_active_batch_beam_revision("inputs_batch_design_activate_beam")
+    _apply_canonical_convenience_resync(
+        source="batch_design:activate_project_beam"
+    )
+    _request_inputs_engineering_commit("inputs_batch_design_activate_beam")
     return True
 
 
@@ -517,41 +469,16 @@ def render_inputs_batch_design_manager_coordinator(
     beam_order: list,
     active_beam_id: str,
 ) -> None:
-    # The Inputs workspace can rerun locally after Add/Duplicate/Delete.  Its
-    # outer page payload may still contain the beam list from the preceding
-    # render, while the session-owned project store has already changed.
-    # Resolve identity metadata at this boundary so the selector never shows
-    # a raw id or offers a stale list during that local rerun.
-    live_records = ss.get("beam_records")
-    live_order = [
-        str(beam_id)
-        for beam_id in (
-            ss.get("beam_order")
-            if isinstance(ss.get("beam_order"), list)
-            else beam_order
-        )
-    ]
-    live_labels = dict(beam_labels or {})
-    if isinstance(live_records, dict):
-        for beam_id in live_order:
-            record = live_records.get(beam_id)
-            if isinstance(record, dict):
-                label = str(record.get("beam_label") or "").strip()
-                if label:
-                    live_labels[beam_id] = label
-    live_active_beam_id = str(
-        ss.get("active_beam_id") or active_beam_id or ""
-    ).strip()
     render_batch_design_page(
         BatchDesignPageContext(
             session_state=ss,
-            beam_order=live_order,
-            active_beam_id=live_active_beam_id,
-            beam_labels=live_labels,
+            beam_order=beam_order,
+            active_beam_id=active_beam_id,
+            beam_labels=beam_labels,
             set_active_beam=activate_batch_project_beam,
-            add_beam=add_batch_project_beam,
-            duplicate_beam=duplicate_batch_project_beam,
-            delete_beam=delete_batch_project_beam,
+            add_beam=add_new_beam_record,
+            duplicate_beam=duplicate_active_beam_record,
+            delete_beam=delete_beam_record,
             reset_workspace=reset_app_to_clean_starter_workspace,
             force_refresh=_force_inputs_apply_refresh_cycle,
             log_rerun=render_inputs_beam_load_triggered_rerun_log_coordinator,

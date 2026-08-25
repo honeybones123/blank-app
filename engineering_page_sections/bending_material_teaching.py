@@ -522,8 +522,8 @@ def render_bending_material_teaching_panel(
                 st.markdown("**Concrete compression**")
                 if state["class"] == "uls":
                     st.markdown(
-                        r"The equivalent concrete stress $\alpha_2f'_c$ acts over the rectangular "
-                        r"compression-block area $ba$, where $a=\gamma d_n$."
+                        "The equivalent concrete stress $\alpha_2f'_c$ acts over the rectangular "
+                        "compression-block area $ba$, where $a=\gamma d_n$."
                     )
                     st.latex(r"a=\gamma d_n")
                     st.latex(r"C_c=\alpha_2f'_cba")

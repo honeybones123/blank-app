@@ -1,6 +1,8 @@
 # bending_diagrams.py
 import math
 import os
+import hashlib
+import json
 import numpy as np
 import streamlit as st
 
@@ -241,21 +243,116 @@ def _sigma_c_parabolic(eps, sigma_peak, eps0=0.002, eps_cu=0.003):
 # ============================================================
 #  MAIN 3-PANEL SECTION / STRAIN / STRESS DIAGRAM
 # ============================================================
+_BENDING_MAIN_FIGURE_CACHE_KEY = "_bending_main_stress_strain_figure_cache"
+_BENDING_MAIN_FIGURE_CACHE_LIMIT = 6
+_BENDING_MAIN_FIGURE_SESSION_KEYS = (
+    "shape_name",
+    "sec_shape",
+    "section_shape",
+    "geometry_section_shape",
+    "bending_sls_dn",
+    "bending_sls_eps_top",
+    "bending_sls_eps_bot",
+    "bending_sls_kappa",
+    "bending_sls_eps_s_outer",
+    "eps_s_sls_bot",
+    "eps_s_sls_bottom",
+    "eps_s_bottom_sls",
+)
+
+
+def _bending_main_figure_fingerprint(
+    state_dict,
+    *,
+    state_label,
+    layout,
+    moment_sign: str,
+) -> str:
+    """Fingerprint every state dependency read by the shared 3-panel builder."""
+    session_inputs = {
+        key: st.session_state.get(key) for key in _BENDING_MAIN_FIGURE_SESSION_KEYS
+    }
+    param_inputs = {
+        "d": get_param("d", None),
+        "sigma_s_sls": get_param("sigma_s_sls", None),
+        "Ec": get_param("Ec", 30000.0),
+        "fsy": get_param("fsy", 500.0),
+        "Es": get_param("Es", 200000.0),
+    }
+    payload = {
+        "version": 1,
+        "state_dict": state_dict,
+        "state_label": state_label,
+        "layout": layout,
+        "moment_sign": str(moment_sign or "positive"),
+        "session_inputs": session_inputs,
+        "param_inputs": param_inputs,
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _plot_stress_strain_profiles(
     state_dict, state_label=None, layout=None, moment_sign: str = "positive"
 ):
-    """Build the shared 3-panel figure from resolved engineering state.
+    """Return the shared 3-panel figure, reusing identical presentation states.
 
-    Bending-page reuse is owned by the bounded diagram-bundle presentation
-    cache.  Keeping this builder free of session cache ownership prevents two
-    competing invalidation paths.
+    The cache is deliberately session-local and bounded. It owns no engineering result:
+    all calculation state is resolved before this wrapper, and every
+    dependency read by the shared figure builder is part of the fingerprint.
+    Keeping a few exact states avoids rebuilding ULS when a user returns from
+    SLS or Uncracked. Dev mode bypasses caching so diagram consistency
+    diagnostics still execute.
     """
-    return _stress_diagram_plot_stress_strain_profiles(
+    if layout is None or state_label is None or st.session_state.get("_dev_mode", False):
+        return _stress_diagram_plot_stress_strain_profiles(
+            state_dict,
+            state_label=state_label,
+            layout=layout,
+            moment_sign=moment_sign,
+        )
+
+    fingerprint = _bending_main_figure_fingerprint(
         state_dict,
         state_label=state_label,
         layout=layout,
         moment_sign=moment_sign,
     )
+    cached = st.session_state.get(_BENDING_MAIN_FIGURE_CACHE_KEY)
+    entries = dict(cached.get("entries") or {}) if isinstance(cached, dict) else {}
+    order = [
+        str(value)
+        for value in (cached.get("order") or ())
+        if str(value) in entries
+    ] if isinstance(cached, dict) else []
+    if entries.get(fingerprint) is not None:
+        order = [value for value in order if value != fingerprint] + [fingerprint]
+        st.session_state[_BENDING_MAIN_FIGURE_CACHE_KEY] = {
+            "entries": entries,
+            "order": order,
+        }
+        return entries[fingerprint]
+
+    figure = _stress_diagram_plot_stress_strain_profiles(
+        state_dict,
+        state_label=state_label,
+        layout=layout,
+        moment_sign=moment_sign,
+    )
+    entries[fingerprint] = figure
+    order = [value for value in order if value != fingerprint] + [fingerprint]
+    while len(order) > _BENDING_MAIN_FIGURE_CACHE_LIMIT:
+        entries.pop(order.pop(0), None)
+    st.session_state[_BENDING_MAIN_FIGURE_CACHE_KEY] = {
+        "entries": entries,
+        "order": order,
+    }
+    return figure
 
 
 def _plot_strain_profile(
@@ -281,17 +378,10 @@ def _plot_material_stress_strain_curves():
     ``ui.diagrams.stress_strain_diagram``.
     """
     try:
-        from inputs_application.active_beam_engineering_state import (
-            resolve_active_beam_engineering_state,
-        )
-
-        material_state = dict(
-            resolve_active_beam_engineering_state(st.session_state).values
-        )
-        fc = float(material_state.get("fc", 40.0))
-        fsy = float(material_state.get("fsy", 500.0))
-        Ec = float(material_state.get("Ec", 30000.0))
-        Es = float(material_state.get("Es", 200000.0))
+        fc = float(get_param("fc", 40.0))
+        fsy = float(get_param("fsy", 500.0))
+        Ec = float(get_param("Ec", 30000.0))
+        Es = float(get_param("Es", 200000.0))
     except Exception:
         fc, fsy, Ec, Es = 40.0, 500.0, 30000.0, 200000.0
 
@@ -598,132 +688,3 @@ def _make_sls_stress_block_figure(
         comp_layer=comp_layer,
         is_hogging=is_hogging,
     )
-
-
-def make_sls_transformed_section_figure(result: dict):
-    """Show the cracked transformed-section geometry used by SLS Check 2."""
-
-    depth = float(result.get("depth_mm", 0.0) or 0.0)
-    shape = str(result.get("section_shape", "RECT") or "RECT").upper()
-    width = float(result.get("width_mm", 1.0) or 1.0)
-    flange_width = float(result.get("flange_width_mm", width) or width)
-    flange_thickness = float(result.get("flange_thickness_mm", 0.0) or 0.0)
-    web_width = float(result.get("web_width_mm", width) or width)
-    dn_from_top = float(result.get("neutral_axis_depth_from_top_mm", 0.0) or 0.0)
-    compression_face = str(result.get("compression_face", "top") or "top")
-    layers = tuple(result.get("layers", ()) or ())
-    if depth <= 0.0:
-        depth = 1.0
-
-    fig = go.Figure()
-    max_width = max(width, flange_width, web_width, 1.0)
-    centre_x = 0.40
-
-    def x_bounds(segment_width: float) -> tuple[float, float]:
-        half = 0.22 * float(segment_width) / max_width
-        return centre_x - half, centre_x + half
-
-    if shape == "T":
-        physical_segments = (
-            (0.0, flange_thickness, flange_width),
-            (flange_thickness, depth, web_width),
-        )
-    elif shape == "I":
-        physical_segments = (
-            (0.0, flange_thickness, flange_width),
-            (flange_thickness, depth - flange_thickness, web_width),
-            (depth - flange_thickness, depth, flange_width),
-        )
-    else:
-        physical_segments = ((0.0, depth, width),)
-    if compression_face == "top":
-        compression_y0, compression_y1 = 0.0, dn_from_top
-        cracked_y0, cracked_y1 = dn_from_top, depth
-    else:
-        compression_y0, compression_y1 = dn_from_top, depth
-        cracked_y0, cracked_y1 = 0.0, dn_from_top
-    for start, end, segment_width in physical_segments:
-        x0, x1 = x_bounds(segment_width)
-        active_start = max(start, compression_y0)
-        active_end = min(end, compression_y1)
-        if active_end > active_start:
-            fig.add_shape(
-                type="rect", x0=x0, x1=x1, y0=active_start, y1=active_end,
-                line=dict(color="#60a5fa", width=1),
-                fillcolor="rgba(96,165,250,0.22)",
-            )
-        cracked_start = max(start, cracked_y0)
-        cracked_end = min(end, cracked_y1)
-        if cracked_end > cracked_start:
-            fig.add_shape(
-                type="rect", x0=x0, x1=x1, y0=cracked_start, y1=cracked_end,
-                line=dict(color="#cbd5e1", width=1, dash="dot"),
-                fillcolor="rgba(248,250,252,0.65)",
-            )
-        fig.add_shape(
-            type="rect", x0=x0, x1=x1, y0=start, y1=end,
-            line=dict(color="#0f172a", width=2), fillcolor="rgba(255,255,255,0)",
-        )
-    fig.add_shape(
-        type="line", x0=0.10, x1=0.90, y0=dn_from_top, y1=dn_from_top,
-        line=dict(color="#7c3aed", width=2, dash="dash"),
-    )
-    fig.add_annotation(
-        x=0.92, y=dn_from_top, text="Trial d<sub>n</sub>", yshift=-15,
-        showarrow=False, xanchor="left", font=dict(color="#6d28d9", size=10),
-    )
-    fig.add_annotation(
-        x=0.40, y=(compression_y0 + compression_y1) / 2.0,
-        text="Active concrete<br>compression region", showarrow=False,
-        font=dict(color="#1d4ed8", size=11),
-    )
-    fig.add_annotation(
-        x=0.40, y=(cracked_y0 + cracked_y1) / 2.0,
-        text="Cracked concrete tension<br>inactive", showarrow=False,
-        font=dict(color="#64748b", size=11),
-    )
-
-    colours = {"tension": "#dc2626", "compression": "#2563eb", "neutral": "#64748b"}
-    symbols = {"tension": "circle", "compression": "square", "neutral": "diamond"}
-    for index, layer in enumerate(layers):
-        y = float(layer.get("depth_from_top_mm", 0.0) or 0.0)
-        state = str(layer.get("state", "neutral") or "neutral")
-        included = bool(layer.get("included", True))
-        factor = float(layer.get("transformed_factor", 0.0) or 0.0)
-        layer_id = str(layer.get("layer_id", f"L{index + 1}"))
-        label = str(layer.get("label", layer_id))
-        fig.add_trace(go.Scatter(
-            x=[0.40], y=[y], mode="markers",
-            marker=dict(
-                size=12,
-                color=colours.get(state, "#64748b"),
-                symbol=symbols.get(state, "circle"),
-                line=dict(color="#ffffff", width=1),
-                opacity=1.0 if included else 0.4,
-            ),
-            name=f"{label}: {state}", hoverinfo="name", showlegend=False,
-        ))
-        factor_text = "omitted" if not included else f"{factor:.3g} A<sub>s</sub>"
-        near_neutral_axis = abs(y - dn_from_top) < 0.08 * depth
-        fig.add_annotation(
-            x=0.66, y=y,
-            text=f"{layer_id} — {state}<br>{factor_text}",
-            yshift=18 if near_neutral_axis else 0,
-            showarrow=False, xanchor="left", align="left",
-            font=dict(color=colours.get(state, "#64748b"), size=9),
-        )
-
-    fig.add_annotation(
-        x=0.50, y=1.08, xref="paper", yref="paper",
-        text="n → trial d<sub>n</sub> → classify layers → transformed equilibrium",
-        showarrow=False, font=dict(color="#0f172a", size=12),
-    )
-    fig.update_xaxes(range=[0.0, 1.35], visible=False, fixedrange=True)
-    fig.update_yaxes(range=[depth * 1.04, -depth * 0.04], visible=False, fixedrange=True)
-    fig.update_layout(
-        height=420,
-        margin=dict(l=10, r=20, t=55, b=10),
-        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-        showlegend=False,
-    )
-    return fig

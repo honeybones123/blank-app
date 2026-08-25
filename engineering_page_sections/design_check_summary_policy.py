@@ -17,29 +17,6 @@ def format_strength(value: float | None, units: str) -> str:
     return f"{value:.2f} {units}"
 
 
-def resolve_authoritative_pack_capacity(
-    *,
-    pack: Mapping[str, Any],
-    pack_key: str,
-    legacy_fallback: float | None,
-) -> float | None:
-    """Prefer the result just calculated for this page's current snapshot.
-
-    Load Analysis receives a page-local authoritative V2 pack.  A legacy
-    session alias can belong to the previous beam revision, so it is strictly
-    a fallback and must never override the pack value.
-    """
-
-    for candidate in (pack.get(pack_key), legacy_fallback):
-        try:
-            value = float(candidate) if candidate is not None else 0.0
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(value) and value > 0.0:
-            return value
-    return None
-
-
 def load_analysis_action_projection(
     *,
     uls_m_pos: float,

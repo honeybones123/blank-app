@@ -72,10 +72,7 @@ def test_triggered_fast_search_reports_bounded_work_and_elapsed_time() -> None:
     # a tighter local-only threshold made the suite sensitive to unrelated
     # host contention rather than candidate expansion. Comparative 5% median,
     # p95 and worst-case regression reporting remains a separate release gate.
-    # The isolated ubuntu-latest gate currently measures about 1.43 s. Keep a
-    # modest runner-variance margin while retaining the independent 2.0 s hard
-    # ceiling and deterministic candidate/cache-miss work bounds above.
-    median_limit_ms = 1600.0
+    median_limit_ms = 1250.0
     worst_limit_ms = 2000.0
     measured_median_ms = median(timings_ms)
     measured_worst_ms = max(timings_ms)

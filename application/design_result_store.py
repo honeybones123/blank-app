@@ -109,18 +109,6 @@ class EngineeringResultStore:
         self._session_state.pop(self._lru_key, None)
         self._session_state.pop(AUTHORITATIVE_DESIGN_RESULT_REVISION_KEY, None)
 
-    def clear_current(self) -> None:
-        """Clear the active projection while preserving warm result reuse.
-
-        Project-beam switching changes which immutable input snapshot is
-        active.  The previous beam's result must disappear immediately, but
-        its fingerprinted LRU entry remains safe presentation/engineering
-        reuse when that same beam is selected again.
-        """
-
-        self._session_state.pop(self._result_key, None)
-        self._session_state.pop(AUTHORITATIVE_DESIGN_RESULT_REVISION_KEY, None)
-
     def can_reuse(
         self,
         engineering_hash: str,

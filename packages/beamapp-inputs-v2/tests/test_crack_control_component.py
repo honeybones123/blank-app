@@ -164,16 +164,28 @@ def test_authoritative_cracked_section_uses_the_input_concrete_modulus() -> None
         serviceability=ServiceabilityInputs(moment_knm=120.0),
         time_dependent=TimeDependentInputs(concrete_modulus_mpa=25_000.0),
     ).validated()
-    families = EngineeringCalculator().calculate(inputs).families
-    result = families["crack_control"]
-    cracked = families["bending"]["sls_cracked_section"]
-    tension_layers = tuple(
-        layer for layer in cracked["layers"] if layer["state"] == "tension"
-    )
-    outer = max(tension_layers, key=lambda layer: layer["depth_from_compression_mm"])
+    result = EngineeringCalculator().calculate(inputs).families["crack_control"]
 
-    assert cracked["concrete_modulus_mpa"] == pytest.approx(25_000.0)
-    assert cracked["modular_ratio"] == pytest.approx(200_000.0 / 25_000.0)
-    assert abs(cracked["equilibrium_residual_mm3"]) <= cracked["solver_tolerance_mm3"]
-    assert result["sigma_sr"] == pytest.approx(abs(outer["stress_mpa"]))
-    assert result["sls_cracked_section"] == cracked
+    steel_area = inputs.bottom.bars * 3.141592653589793 * inputs.bottom.diameter_mm**2 / 4.0
+    effective_depth = inputs.depth_mm - inputs.bottom.cover_mm - inputs.bottom.diameter_mm / 2.0
+    transformed_area = 200_000.0 / 25_000.0 * steel_area
+    coefficient = inputs.width_mm / 2.0
+    neutral_axis = (
+        -transformed_area
+        + (
+            transformed_area**2
+            + 4.0 * coefficient * transformed_area * effective_depth
+        ) ** 0.5
+    ) / (2.0 * coefficient)
+    cracked_inertia = (
+        inputs.width_mm * neutral_axis**3 / 3.0
+        + transformed_area * (effective_depth - neutral_axis) ** 2
+    )
+    expected_stress = (
+        200_000.0
+        * (120.0 * 1_000_000.0)
+        / (25_000.0 * cracked_inertia)
+        * (effective_depth - neutral_axis)
+    )
+
+    assert result["sigma_sr"] == pytest.approx(expected_stress)

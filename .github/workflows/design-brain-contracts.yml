@@ -46,15 +46,9 @@ jobs:
         working-directory: packages/beamapp-inputs-v2
         run: python tools/architecture_check.py
 
-      - name: Verify isolated Design Brain performance guards
+      - name: Run all V2 contracts and tests
         working-directory: packages/beamapp-inputs-v2
-        run: python -m pytest -q -p no:cacheprovider tests/test_performance.py
-
-      - name: Run all non-performance V2 contracts and tests
-        working-directory: packages/beamapp-inputs-v2
-        run: >-
-          python -m pytest -q -p no:cacheprovider tests
-          --ignore=tests/test_performance.py
+        run: python -m pytest -q -p no:cacheprovider tests
 
       - name: Audit every Design Brain family outcome
         working-directory: packages/beamapp-inputs-v2

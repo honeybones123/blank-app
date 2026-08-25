@@ -3,9 +3,7 @@ import math
 import pytest
 
 from bending_neutral_axis_teaching import neutral_axis_hand_solution
-from engineering_page_sections.bending_uls_checks import (
-    _teaching_steel_response_state,
-)
+from bending_tabs import _teaching_steel_response_state
 
 
 def _derive(*, areas, depths, stresses, dn, b=250.0, D=300.0, fc=40.0, fsy=500.0, alpha2=0.79, gamma=0.87):

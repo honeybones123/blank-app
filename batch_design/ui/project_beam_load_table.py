@@ -80,16 +80,12 @@ def _design_state(row: dict[str, Any]) -> str:
     status = _capacity_status(row)
     utilisation = _first_utilisation(row)
     if status == "FAIL" or (utilisation is not None and utilisation > 1.0):
-        return "🔴 FAIL — UNDER-DESIGNED"
-    if status == "CHECK":
-        return "🟠 CHECK INPUTS"
-    if not _has_supplied_action(row):
-        return "⚪ NO LOADS"
+        return "🔴 UNDER-DESIGNED"
     if utilisation is None or status == "NOT RUN":
-        return "⚪ CALCULATING"
+        return "🔵 NOT RUN"
     if utilisation >= 0.85:
-        return "🟢 PASS — OPTIMAL"
-    return "🟢 PASS — OVER-DESIGNED"
+        return "🟢 OPTIMAL"
+    return "🔵 OVER-DESIGNED"
 
 
 def _blank(value: Any) -> bool:
@@ -180,7 +176,6 @@ def project_beam_load_editor_frame(
             f"{utilisation:.2f}" if utilisation is not None else "—"
         )
         for column in (
-            "current_utilisation",
             "bending_utilisation",
             "shear_utilisation",
             "crack_utilisation",
@@ -206,14 +201,6 @@ def apply_project_beam_load_editor_rows(
     edited_df: pd.DataFrame,
 ) -> None:
     """Replace batch cases with project beams that have supplied design actions."""
-
-    cases = project_beam_cases_from_frame(edited_df)
-    validation = workflow.replace_imported_cases(cases)
-    workflow.reviewed_member_ids = {str(case.member_id) for case in validation.valid_cases}
-
-
-def project_beam_cases_from_frame(edited_df: pd.DataFrame) -> list[BatchBeamCase]:
-    """Build neutral batch cases without running calculations or Design Brain."""
 
     cases: list[BatchBeamCase] = []
     if edited_df is not None and not edited_df.empty:
@@ -242,32 +229,9 @@ def project_beam_cases_from_frame(edited_df: pd.DataFrame) -> list[BatchBeamCase
                     },
                 )
             )
-    return cases
 
-
-def project_beam_editor_styler(frame: pd.DataFrame):
-    """Colour each table status band from its passive authoritative result."""
-
-    if frame is None or frame.empty:
-        return frame
-
-    palette = {
-        "PASS": ("#ecfdf3", "#166534"),
-        "FAIL": ("#fff1f2", "#991b1b"),
-        "CHECK": ("#fffbeb", "#92400e"),
-        "NOT RUN": ("#f8fafc", "#475569"),
-    }
-
-    def style_row(row: pd.Series) -> list[str]:
-        status = _capacity_status(row.to_dict())
-        background, foreground = palette.get(status, palette["NOT RUN"])
-        style = (
-            f"background-color: {background}; color: {foreground}; "
-            "border-bottom-color: rgba(148, 163, 184, 0.35)"
-        )
-        return [style] * len(row)
-
-    return frame.style.apply(style_row, axis=1)
+    validation = workflow.replace_imported_cases(cases)
+    workflow.reviewed_member_ids = {str(case.member_id) for case in validation.valid_cases}
 
 
 def project_beam_templates_from_frame(frame: pd.DataFrame) -> list[BatchBeamTemplate]:

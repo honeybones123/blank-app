@@ -4,75 +4,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_shared_stable_tabs_are_scoped_native_view_only_tabs() -> None:
+def test_shared_stable_tabs_are_native_view_only_tabs() -> None:
     source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"
     )
 
     assert "return tuple(st_module.tabs(tab_labels))" in source
     assert "st_module.radio(" not in source
+    assert "section.stMain" in source
     assert 'const listenerKey = "__sbStableInteractionRuntime"' in source
-    assert "stableTabFor(event.target)" in source
-    assert "tabset?.dataset?.sbTabScope" in source
-    assert "tagStableTabsets()" in source
-    assert 'data-sb-tab-scope=' in source
+    assert "snapshotTab(event)" in source
+    assert "snapshotWidget(event)" in source
+    assert "window.parent.setTimeout" in source
     assert "session_state" not in source
+    assert 'data-sb-tab-scope=' in source
 
 
-def test_bending_state_switch_has_one_server_owned_plot_host() -> None:
-    helper = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
-        encoding="utf-8"
-    )
-    diagrams = (
-        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
-    ).read_text(encoding="utf-8")
-    shell = (
-        ROOT / "engineering_page_sections" / "bending_diagrams.py"
-    ).read_text(encoding="utf-8")
-
-    assert 'key="bending_state_main"' in diagrams
-    assert diagrams.count("st.plotly_chart(") == 1
-    assert shell.count(".js-plotly-plot .scatterlayer .trace") == 1
-    assert shell.count(".js-plotly-plot g.shapelayer .shape-group") == 1
-    assert shell.count(".js-plotly-plot .annotation") == 1
-    assert "bending_state_plot_" not in diagrams
-    assert "state_figures" not in diagrams
-    assert "data-bending-selected-state" in diagrams
-    assert "switchPreloadedPlotlyVisibility" not in helper
-    assert "switchPreloadedPlotlyState" not in helper
-    assert "node.style.opacity" not in helper
-    assert "dataset.sbPlotlyState" not in helper
-    assert "data-sb-preloaded-plotly-state" not in helper
-    assert "Plotly.react" not in helper
-    assert "Plotly.update" not in helper
-
-
-def test_tab_scroll_preservation_is_one_shot_and_yields_to_user_intent() -> None:
+def test_preloaded_plotly_state_switch_is_browser_only() -> None:
     source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
         encoding="utf-8"
     )
 
-    assert "pendingTabRestore" in source
-    assert "pendingWidgetRestore" not in source
-    assert "sawReadyRemoval" not in source
-    assert "preserve_scroll_for_preceding_widget" not in source
-    assert "cancelPendingScrollPreservation" in source
-    for event_name in ("wheel", "touchmove", "PageDown", "PageUp", "Home", "End"):
-        assert event_name in source
-    assert "holdPosition" not in source
-    assert "MutationObserver(lockScroll)" not in source
-    assert "3500" not in source
-    assert "750" not in source
-    assert "event.preventDefault()" not in source
-
-
-def test_stable_tabs_runtime_does_not_observe_cross_realm_parent_dom() -> None:
-    source = (ROOT / "engineering_page_sections" / "stable_tabs.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "MutationObserver" not in source
-    assert "if (tabset && !tabset.dataset.sbTabScope) tagStableTabsets();" in source
+    assert "switchPreloadedPlotlyVisibility(group, requestedIndex, recordTiming)" in source
+    assert "scheduleCurrentPlotlyVisibility(group)" in source
+    assert "data-sb-last-plotly-visibility-switch-ms" in source
+    assert "requestAnimationFrame" in source
+    assert "node.dataset.sbPlotlyState" in source
+    assert "data-sb-preloaded-plotly-state" in source
+    assert "plot.setAttribute('data-sb-preloaded-plotly-state'" in source
+    assert "node.style.opacity" not in source
+    assert "data-sb-trace-state-order" in source
+    assert "node.getAttribute('data-index')" in source
+    assert "Plotly.react" not in source
+    assert "Plotly.update" not in source
+    assert "Plotly.restyle" not in source
+    assert "st_module.session_state" not in source
 
 
 def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:
@@ -89,12 +55,9 @@ def test_synchronized_tabs_remain_browser_only_presentation_state() -> None:
 
 def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:
     for filename, scope in (
-        (
-            "engineering_page_sections/bending_checks.py",
-            "bending-calculation-checks",
-        ),
+        ("bending_page_runtime.py", "bending-calculation-checks"),
         ("shear_page_runtime.py", "shear-calculation-checks"),
-        ("engineering_page_sections/creep_checks.py", "creep-calculation-checks"),
+        ("creep.py", "creep-calculation-checks"),
     ):
         source = (ROOT / filename).read_text(encoding="utf-8-sig")
         assert "from engineering_page_sections.stable_tabs import" in source
@@ -107,22 +70,14 @@ def test_calculation_pages_use_one_shared_stable_tab_boundary() -> None:
 
 def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
     bending = (
-        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
-    shear = (
-        ROOT / "engineering_page_sections" / "shear_visualisation.py"
-    ).read_text(encoding="utf-8")
-    creep = (
-        ROOT / "engineering_page_sections" / "creep_visualisation.py"
-    ).read_text(encoding="utf-8-sig")
-    crack = (
-        ROOT / "engineering_page_sections" / "crack_visualisation.py"
-    ).read_text(encoding="utf-8")
+    shear = (ROOT / "shear_page_runtime.py").read_text(encoding="utf-8-sig")
+    creep = (ROOT / "creep.py").read_text(encoding="utf-8-sig")
+    crack = (ROOT / "crack_page_runtime.py").read_text(encoding="utf-8")
 
     assert 'scope_id="bending-section-diagrams"' in bending
-    assert 'scope_id="shear-diagram-panels"' in shear
-    assert 'scope_id="shear-diagram-navigation"' in shear
-    assert "synchronize_tabs(" in shear
+    assert 'scope_id="shear-visualisation-diagrams"' in shear
     assert 'scope_id="creep-side-view-diagrams"' in creep
     assert 'scope_id="crack-method-diagrams"' in crack
     assert 'scope_id="crack-as5100-method-diagrams"' in crack
@@ -130,15 +85,11 @@ def test_diagram_tabs_use_the_shared_stable_boundary() -> None:
 
 def test_bending_owns_one_stable_interaction_runtime() -> None:
     runtime = (ROOT / "bending_page_runtime.py").read_text(encoding="utf-8")
-    checks = (
-        ROOT / "engineering_page_sections" / "bending_checks.py"
-    ).read_text(encoding="utf-8")
     diagrams = (
-        ROOT / "engineering_page_sections" / "bending_diagram_bundle.py"
+        ROOT / "engineering_page_sections" / "bending_diagrams.py"
     ).read_text(encoding="utf-8")
 
-    assert "render_bending_checks(st_module=st, checks=checks_snapshot)" in runtime
-    assert 'scope_id="bending-calculation-checks"' in checks
+    assert 'scope_id="bending-calculation-checks"' in runtime
     assert 'scope_id="bending-section-diagrams"' in diagrams
     assert "install_runtime=False" in diagrams
 
