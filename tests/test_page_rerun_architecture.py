@@ -459,7 +459,8 @@ def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler
 def test_inputs_engineering_workspace_keeps_design_brain_in_one_workspace_fragment() -> None:
     page_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
     assert "include_design_brain=True" in page_source
-    assert 'fragment_name="engineering_workspace"' in page_source
+    assert "_render_v2_workspace_fragment(page_context=page_context)" in page_source
+    assert "run_inputs_fragment" not in page_source
     assert 'fragment_name="design_brain"' not in page_source
 
     fragment_source = (ROOT / "inputs_page_modules" / "fragments.py").read_text(

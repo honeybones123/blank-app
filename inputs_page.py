@@ -28,7 +28,6 @@ from inputs_application.action_source_transaction import (
 from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     hydrate_inputs_longitudinal_reo_widgets_for_revision,
 )
-from inputs_page_modules.fragments import run_inputs_fragment
 from state_and_helpers import (
     _request_inputs_engineering_commit,
     render_timing_mark,
@@ -234,12 +233,10 @@ def render_inputs_page() -> None:
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 
-    # The Inputs shell has one V2-shaped transaction. Calculation, summary,
-    # Design Brain, controls, widgets, and diagrams all consume the same
-    # committed snapshot and revision. Keep that transaction inside one
-    # optional Streamlit fragment: widget callbacks and Apply then rerun only
-    # this workspace, while the shell remains the safe full-page fallback when
-    # fragments are disabled or unsupported.
+    # Keep the authoritative Inputs transaction as a normal page render. The
+    # workspace owns calculation, summary, Batch Design, controls, widgets,
+    # diagrams and Design Brain, so Streamlit keeps the previous complete page
+    # mounted until the replacement revision has finished rendering.
     for section_name in (
         "engineering_calculation_workspace",
         "engineering_controls_workspace",
@@ -248,12 +245,7 @@ def render_inputs_page() -> None:
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
     render_timing_mark("inputs_page.shell.workspace.start")
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="engineering_workspace",
-        render_fn=_render_v2_workspace_fragment,
-        kwargs={"page_context": page_context},
-    )
+    _render_v2_workspace_fragment(page_context=page_context)
     render_timing_mark("inputs_page.shell.workspace.end")
 
     render_timing_mark("inputs_page.shell.tail.start")
