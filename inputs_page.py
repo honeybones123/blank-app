@@ -190,9 +190,6 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> None:
         copy_deepcopy_fn=copy.deepcopy,
     )
 
-    _ENGINEERING_WORKSPACE_RUNTIME.render_mode_selector(
-        sync_callbacks=page_context["sync_callbacks"],
-    )
     render_engineering_workspace(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
