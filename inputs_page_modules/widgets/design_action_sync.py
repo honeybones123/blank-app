@@ -606,6 +606,7 @@ def sync_design_action_widget_to_shared(
     if debug_design_guidance_probe:
         debug_check_design_action_consistency_fn(shared_state_snapshot_fn())
     if trigger_rerun and not bool(st_module.session_state.get("_solver_running", False)):
+        st_module.session_state["_inputs_design_brain_app_wake_requested"] = True
         rerun_inputs_current_scope(st_module)
 
 
