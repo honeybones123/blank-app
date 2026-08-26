@@ -34,6 +34,29 @@ def _bending_check_info_row(help_text: str):
             yield
 
 
+def _render_uls_overview_info() -> None:
+    with _bending_check_info_row("What are the ULS checks assessing?"):
+        st.markdown(
+            r"""### Ultimate Limit State (ULS)
+
+Ultimate Limit State checks determine whether the beam has sufficient strength to resist the design actions without structural failure.
+
+For bending, the section is analysed at its ultimate condition. The extreme compression concrete is assumed to reach its ultimate compressive strain:
+
+$$\varepsilon_{cu}=0.003$$
+
+Strain compatibility is then used to determine the corresponding reinforcement strains and stresses. The internal concrete compression and reinforcement forces are balanced to establish the neutral axis and ultimate moment capacity.
+
+The ULS calculations therefore answer:
+
+$$\boxed{\text{Can this beam safely resist the ultimate design load?}}$$
+
+The calculated design capacity, such as $\phi M_u$, is compared directly with the design action $M^*$. The ULS checks also consider the reinforcement response, concrete compression behaviour, neutral-axis position and ductility requirements needed to establish the ultimate strength of the section.
+
+ULS represents the **strength and collapse-safety side of the design**. Normal-use behaviour such as cracking and deflection is assessed separately at the Serviceability Limit State."""
+        )
+
+
 def _teaching_steel_response_state(
     *, strain: float, final_stress_mpa: float, Es_mpa: float, fsy_mpa: float
 ) -> tuple[float, bool, str]:
@@ -1382,6 +1405,7 @@ def render_authoritative_uls_checks(
     # Apply CSS for compact collapsed steps
     apply_step_expander_css()
     render_calculation_display_control("bending_uls")
+    _render_uls_overview_info()
 
     if top_results.get("_authoritative_uls"):
         _render_authoritative_uls_steps(

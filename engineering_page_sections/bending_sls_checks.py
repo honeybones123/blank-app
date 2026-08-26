@@ -25,6 +25,38 @@ def _info_button(help_text: str, markdown: str) -> None:
             st.markdown(markdown)
 
 
+def _render_sls_overview_info() -> None:
+    _info_button(
+        "What are the SLS checks assessing?",
+        r"""### Serviceability Limit State (SLS)
+
+Serviceability Limit State checks determine how the beam behaves under normal service loading rather than determining its ultimate failure capacity.
+
+The service moment $M_s$ is applied to the section and the cracked elastic behaviour is calculated. After cracking:
+- tensile concrete is ignored;
+- reinforcement is transformed into equivalent concrete using the modular ratio;
+- the cracked neutral axis is determined;
+- the cracked section stiffness is calculated;
+- curvature, strains and stresses are then obtained.
+
+The calculation sequence is:
+
+$$
+M_s \rightarrow d_n \rightarrow I_{cr} \rightarrow \kappa \rightarrow \varepsilon \rightarrow f_s,\;f_c
+$$
+
+These quantities describe the condition of the beam under service loading and provide the inputs required for serviceability checks such as crack control and deflection.
+
+The SLS calculations therefore answer:
+
+$$\boxed{\text{Will this beam perform acceptably during normal use?}}$$
+
+Unlike ULS, this cracked transformed-section analysis is **not attempting to determine the load that causes collapse**. Ultimate strength is checked separately by the ULS calculations.
+
+The SLS analysis instead establishes the stresses, strains and stiffness required to assess normal-use behaviour. If calculated service stresses become large enough that the assumed elastic behaviour is no longer appropriate, the interface should make this limitation clear rather than implying that the elastic SLS model remains valid indefinitely.""",
+    )
+
+
 def _result_for_option(top_results: Mapping[str, Any], ignore: bool) -> dict[str, Any]:
     key = (
         "sls_cracked_section_ignore_compression"
@@ -132,6 +164,7 @@ def render_authoritative_sls_checks(
 
     del d, Ast, Mu_star, moment_sign  # Values are already bound into the publication.
     apply_step_expander_css()
+    _render_sls_overview_info()
     ignore_compression = st.checkbox(
         "Ignore compression reinforcement",
         value=False,
