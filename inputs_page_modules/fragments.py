@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 
 _FRAGMENT_WRAPPERS: dict[
-    tuple[str, Callable[..., Any], str | float | None],
+    tuple[str, Callable[..., Any]],
     Callable[..., Any],
 ] = {}
 def _current_fragment_id() -> str | None:
@@ -55,7 +55,6 @@ def run_inputs_fragment(
     render_fn: Callable[..., Any],
     kwargs: dict[str, Any] | None = None,
     force_fragment: bool = False,
-    run_every: str | float | None = None,
 ) -> Any:
     """Run one existing renderer in a fragment when the runtime supports it."""
 
@@ -75,7 +74,7 @@ def run_inputs_fragment(
     if callable(fragment) and not disabled:
         mode = "fragment"
         st_module.session_state[f"_inputs_{fragment_name}_fragment_mode"] = mode
-        cache_key = (str(fragment_name), render_fn, run_every)
+        cache_key = (str(fragment_name), render_fn)
         wrapped = _FRAGMENT_WRAPPERS.get(cache_key)
         if wrapped is None:
             def _fragment_entry(**fragment_payload: Any) -> Any:
@@ -86,10 +85,7 @@ def run_inputs_fragment(
                     **fragment_payload,
                 )
 
-            try:
-                wrapped = fragment(_fragment_entry, run_every=run_every)
-            except TypeError:
-                wrapped = fragment(_fragment_entry)
+            wrapped = fragment(_fragment_entry)
             _FRAGMENT_WRAPPERS[cache_key] = wrapped
         return wrapped(**payload)
     st_module.session_state[f"_inputs_{fragment_name}_fragment_mode"] = mode
@@ -111,16 +107,6 @@ def rerun_inputs_current_scope(st_module: Any) -> None:
     ids and environment flags are not used to choose the scope.
     """
 
-    # A design-action callback must wake the sibling Design Brain fragment.
-    # That fragment is deliberately stopped when ready, so a fragment-only
-    # rerun would leave it asleep for the next edit. One app-scope handoff
-    # re-registers it with its pending-only scheduler; it does not perform a
-    # second engineering calculation.
-    if st_module.session_state.pop(
-        "_inputs_design_brain_app_wake_requested", False
-    ):
-        st_module.rerun()
-        return
     if _current_fragment_id():
         try:
             st_module.rerun(scope="fragment")

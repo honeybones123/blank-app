@@ -18,12 +18,9 @@ from inputs_application.page_runtime import (
 )
 from inputs_application.engineering_workspace import (
     build_engineering_workspace_runtime,
-    render_inputs_async_design_brain_fragment as render_async_design_brain_region,
     render_engineering_workspace,
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
-from inputs_application.session_services import InputsSessionServices
-from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.engineering_input_store import InputSnapshotStore
 from inputs_application.action_source_transaction import (
     render_inputs_action_source_transaction,
@@ -153,7 +150,7 @@ def hydrate_committed_design_action_widgets(
 
 
 def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
-    """Render the Inputs transaction inside one stable workspace fragment."""
+    """Render the single V2 transaction inside one stable page fragment."""
 
     # Streamlit executes the Apply button callback before re-entering this
     # fragment. Consume that immutable, revision-bound command first: no
@@ -183,34 +180,13 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         copy_deepcopy_fn=copy.deepcopy,
     )
 
-    result = render_engineering_workspace(
+    return render_engineering_workspace(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
         page_context=page_context,
-        include_design_brain=False,
+        include_design_brain=True,
         include_controls=True,
         include_widgets=True,
-    )
-    workspace_store = InputsWorkspaceStateStore(st.session_state)
-    services = InputsSessionServices.from_mapping(st.session_state)
-    current_result = services.engineering_results.current()
-    st.session_state["_inputs_design_brain_scheduler_active"] = bool(
-        current_result is not None
-        and not services.publications.is_current(
-            workspace_revision=workspace_store.workspace_revision(),
-            engineering_hash=(
-                current_result.engineering_hash if current_result is not None else None
-            ),
-        )
-    )
-    return result
-
-
-def _render_inputs_async_design_brain_fragment(*, page_context: dict[str, Any]) -> None:
-    render_async_design_brain_region(
-        st_module=st,
-        runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        page_context=page_context,
     )
 
 
@@ -258,10 +234,12 @@ def render_inputs_page() -> None:
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 
-    # Keep the Inputs page as one stable transaction. Streamlit fragment
-    # reruns are event-driven from widget callbacks; there is deliberately no
-    # periodic scheduler here because periodic wakes were causing the Design
-    # Brain and diagram regions to unmount/remount while idle.
+    # The Inputs shell has one V2-shaped transaction. Calculation, summary,
+    # Design Brain, controls, widgets, and diagrams all consume the same
+    # committed snapshot and revision. Keep that transaction inside one
+    # optional Streamlit fragment: widget callbacks and Apply then rerun only
+    # this workspace, while the shell remains the safe full-page fallback when
+    # fragments are disabled or unsupported.
     for section_name in (
         "engineering_calculation_workspace",
         "engineering_controls_workspace",
@@ -275,17 +253,6 @@ def render_inputs_page() -> None:
         fragment_name="engineering_workspace",
         render_fn=_render_v2_workspace_fragment,
         kwargs={"page_context": page_context},
-    )
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="design_brain",
-        render_fn=_render_inputs_async_design_brain_fragment,
-        kwargs={"page_context": page_context},
-        force_fragment=True,
-        # Poll only while a revision-bound Design Brain job is pending. The
-        # completion handoff below re-runs the app once to remove the wake;
-        # ready cards therefore do not continuously refresh while idle.
-        run_every=(0.5 if ss.get("_inputs_design_brain_scheduler_active") else None),
     )
     render_timing_mark("inputs_page.shell.workspace.end")
 
@@ -301,8 +268,9 @@ def render_inputs_page() -> None:
     )
     render_timing_mark("inputs_page.shell.tail.end")
 
-    # The unified engineering workspace owns summary, diagrams, calculations,
-    # controls, widgets, and the revision-bound Design Brain publication.
+    # The unified engineering workspace owns summary, diagram, calculation
+    # and Design Brain refresh. All page controls settle through this one
+    # shell transaction; no sibling fragment can publish an interim result.
 
 
 render_inputs = speed_profiled(
