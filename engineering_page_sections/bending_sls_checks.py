@@ -8,7 +8,7 @@ from typing import Any, Mapping
 import pandas as pd
 import streamlit as st
 
-from bending_diagrams import make_sls_transformed_section_figure
+from engineering_page_sections.bending_sls_diagram import make_sls_canonical_section_figure
 from state_and_helpers import update_results
 from widgets_helpers import (
     apply_step_expander_css,
@@ -199,11 +199,24 @@ $$\boxed{{n={n:.4f}}}$$
 
 Check 2 uses this modular ratio to determine the cracked neutral-axis depth.
 """
+    def check1_diagram() -> None:
+        render_plotly_diagram(
+            make_sls_canonical_section_figure(result),
+            key=(
+                "bending_sls_canonical_section_check1_ignore"
+                if ignore_compression
+                else "bending_sls_canonical_section_check1"
+            ),
+            title="SLS cracked section",
+            config={"displayModeBar": False},
+        )
+
     step_expander_calcbox(
         uid="bending_sls_3_1",
         summary_line=f"Check 1 — Modular ratio | Result: n = {n:.3f}",
         details_md=check1_details,
         status=None,
+        diagram_fn=check1_diagram,
         content_before=lambda: _info_button(
             "Modular ratio",
             "The modular ratio is the elastic stiffness ratio $n=E_s/E_c$. "
@@ -283,24 +296,12 @@ Check 3 uses the converged cracked neutral axis to calculate $I_{{cr}}$.
         st.markdown("##### Authoritative reinforcement layers and final states")
         st.table(layer_table)
 
-    def check2_diagram() -> None:
-        render_plotly_diagram(
-            make_sls_transformed_section_figure(result),
-            key=(
-                "bending_sls_transformed_section_ignore"
-                if ignore_compression
-                else "bending_sls_transformed_section"
-            ),
-            title="SLS transformed-section neutral-axis method",
-            config={"displayModeBar": False},
-        )
-
     step_expander_calcbox(
         uid="bending_sls_3_2",
         summary_line=f"Check 2 — Cracked neutral-axis depth | Result: d_n = {dn:.1f} mm",
         details_md=check2_details,
         status=None,
-        diagram_fn=check2_diagram,
+        diagram_fn=None,
         content_before=lambda: _info_button(
             "Cracked neutral-axis depth",
             "SLS Check 2 uses elastic transformed areas. It does not use the ULS "
