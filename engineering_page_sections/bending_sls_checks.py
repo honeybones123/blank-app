@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from engineering_page_sections.bending_sls_diagram import make_sls_canonical_section_figure
-from bending_diagrams import make_sls_transformed_section_figure
+from bending_diagrams import _make_sls_stress_block_figure
 from state_and_helpers import update_results
 from widgets_helpers import (
     apply_step_expander_css,
@@ -163,7 +163,7 @@ def render_authoritative_sls_checks(
 ) -> None:
     """Render SLS Checks 1-6 from one authoritative cracked-section result."""
 
-    del d, Ast, Mu_star, moment_sign  # Values are already bound into the publication.
+    del Ast, Mu_star  # Values are already bound into the publication.
     apply_step_expander_css()
     _render_sls_overview_info()
     ignore_compression = st.checkbox(
@@ -332,13 +332,32 @@ Check 3 uses the converged cracked neutral axis to calculate $I_{{cr}}$.
 
     def check2_diagram() -> None:
         render_plotly_diagram(
-            make_sls_transformed_section_figure(result),
-            key=(
-                "bending_sls_transformed_section_ignore"
-                if ignore_compression
-                else "bending_sls_transformed_section"
+            _make_sls_stress_block_figure(
+                D_mm=D,
+                d_mm=d,
+                dn_mm=dn,
+                include_comp=any(
+                    bool(layer.get("included", True))
+                    and str(layer.get("state", "neutral")) == "compression"
+                    for layer in layers
+                ),
+                d_comp_mm=next(
+                    (
+                        float(layer.get("depth_from_compression_mm", 0.0) or 0.0)
+                        for layer in layers
+                        if bool(layer.get("included", True))
+                        and str(layer.get("state", "neutral")) == "compression"
+                    ),
+                    None,
+                ),
+                moment_sign=moment_sign,
             ),
-            title="SLS transformed-section neutral-axis method",
+            key=(
+                "bending_sls_stress_block_ignore"
+                if ignore_compression
+                else "bending_sls_stress_block"
+            ),
+            title="SLS cracked-section neutral-axis method",
             config={"displayModeBar": False},
         )
 
