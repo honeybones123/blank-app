@@ -331,11 +331,7 @@ def render_shear():
             Vu_utilisation=utilisation,
         ),
         publish_rows=lambda rows: update_results("shear", {"rows": rows}),
-        # Bind after the page's target tabs/anchors exist. Installing this
-        # before the heavy Shear body made the retry window race the page
-        # render and produced less reliable scrolling than Bending. This does
-        # not change the summary, calculation boxes, or their preload path.
-        bind_clicks=lambda: None,
+        bind_clicks=bind_summary_clicks,
         render_explainer_expander=render_page_explainer_expander,
         render_explainer=lambda: render_shear_explainer(
             st,
@@ -809,10 +805,6 @@ def render_shear():
         'style="display:none"></span>',
         unsafe_allow_html=True,
     )
-
-    # Install summary navigation only after all Shear anchors and tabs have
-    # mounted, matching the proven Bending ordering.
-    bind_summary_clicks()
 
     # Cross-page jump scroll (Inputs summary → shear/torsion calc anchors)
     from jump_nav import scroll_to_jump_after_render
