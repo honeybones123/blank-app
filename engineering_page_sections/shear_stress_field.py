@@ -130,9 +130,10 @@ def render_mcft_stress_field_diagram(
             ),
         },
     )
-    # The animated renderer adds an 18 px component allowance around Plotly.
-    # Keep its iframe and the static chart on the same shared canvas.
-    plot_height_px = max(1, int(height_px) - (18 if animated else 0))
+    # Animated and static MCFT charts share the same viewport as the Shear
+    # side view. The component owns its own frame, so reducing the Plotly
+    # height here makes MCFT visibly shorter than the side view.
+    plot_height_px = int(height_px)
     figure.update_layout(height=plot_height_px)
     if animated:
         render_animated_plotly(
