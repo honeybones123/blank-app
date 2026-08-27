@@ -8,7 +8,7 @@ from engineering_page_sections.bending_checks_context import BendingChecksSnapsh
 from engineering_page_sections.bending_minimum_strength_checks_view import (
     render_bending_minimum_strength_checks,
 )
-from engineering_page_sections.bending_sls_checks_view_with_icr import (
+from engineering_page_sections.bending_sls_checks_view_with_curvature import (
     render_bending_sls_checks,
 )
 from engineering_page_sections.bending_uls_checks_view_with_yi import (
