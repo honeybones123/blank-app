@@ -81,14 +81,16 @@ $$F_{{s,{x['i']}}}=A_{{s,{x['i']}}}f_{{s,{x['i']}}}=({x['A']:.2f})({x['fs']:.1f}
     ) or "No active reinforcement layers were published."
 
 
-def _iteration_table(r: Mapping[str, Any], dn: float, cc: float, t: float, cs: float, residual: float) -> str:
+def _iteration_table(
+    r: Mapping[str, Any], dn: float, cc: float, t: float, cs: float, residual: float
+) -> str:
     trace = tuple(r.get("neutral_axis_iteration_trace", ()) or ())
     lines = [
         "| Solver step | $d_n$ (mm) | $C_c$ (kN) | $T$ (kN) | $C_s$ (kN) | Residual (kN) |",
         "|---|---:|---:|---:|---:|---:|",
     ]
     seen: list[int] = []
-    for idx in (0, 1, len(trace)//2, len(trace)-1):
+    for idx in (0, 1, len(trace) // 2, len(trace) - 1):
         if 0 <= idx < len(trace) and idx not in seen:
             seen.append(idx)
     for pos, idx in enumerate(seen):
@@ -96,26 +98,49 @@ def _iteration_table(r: Mapping[str, Any], dn: float, cc: float, t: float, cs: f
         if not isinstance(x, Mapping):
             continue
         lines.append(
-            f"| {'Initial' if pos == 0 else 'Intermediate'} | {float(x.get('dn_mm',0) or 0):.3f} | "
-            f"{float(x.get('concrete_force_n',0) or 0)/1000:.3f} | {float(x.get('tension_force_n',0) or 0)/1000:.3f} | "
-            f"{float(x.get('compression_steel_force_n',0) or 0)/1000:.3f} | {float(x.get('equilibrium_residual_n',0) or 0)/1000:.6f} |"
+            f"| {'Initial' if pos == 0 else 'Intermediate'} | {float(x.get('dn_mm', 0) or 0):.3f} | "
+            f"{float(x.get('concrete_force_n', 0) or 0) / 1000:.3f} | "
+            f"{float(x.get('tension_force_n', 0) or 0) / 1000:.3f} | "
+            f"{float(x.get('compression_steel_force_n', 0) or 0) / 1000:.3f} | "
+            f"{float(x.get('equilibrium_residual_n', 0) or 0) / 1000:.6f} |"
         )
-    lines.append(f"| **Converged** | **{dn:.3f}** | **{cc:.3f}** | **{t:.3f}** | **{cs:.3f}** | **{residual:.6f}** |")
+    lines.append(
+        f"| **Converged** | **{dn:.3f}** | **{cc:.3f}** | **{t:.3f}** | "
+        f"**{cs:.3f}** | **{residual:.6f}** |"
+    )
     return "\n".join(lines)
 
 
-def _check2_payload(view: BendingUlsChecksInput, r: Mapping[str, Any]) -> tuple[str, Callable[[], None]]:
+def _check2_payload(
+    view: BendingUlsChecksInput,
+    r: Mapping[str, Any],
+) -> tuple[str, str, tuple[str, ...], str, Callable[[], None]]:
     b, D = float(view.width_mm), float(view.overall_depth_mm)
     fc, fsy = float(view.concrete_strength_mpa), float(view.steel_yield_strength_mpa)
-    alpha2, gamma = float(r.get("alpha2",0) or 0), float(r.get("gamma",0) or 0)
-    dn, a = float(r.get("c",0) or 0), float(r.get("a",0) or 0)
+    alpha2, gamma = float(r.get("alpha2", 0) or 0), float(r.get("gamma", 0) or 0)
+    dn, a = float(r.get("c", 0) or 0), float(r.get("a", 0) or 0)
     d = float(r.get("d", view.effective_depth_mm) or view.effective_depth_mm)
-    cc, cs, t = (float(r.get(k,0) or 0)/1000 for k in ("C_concrete_N","C_steel_N","T_N"))
-    residual = float(r.get("equilibrium_residual_n",0) or 0)/1000
+    cc, cs, t = (
+        float(r.get(k, 0) or 0) / 1000
+        for k in ("C_concrete_N", "C_steel_N", "T_N")
+    )
+    residual = float(r.get("equilibrium_residual_n", 0) or 0) / 1000
     Es = float(get_param("Es") or 200000.0)
-    shape = str(r.get("section_shape","RECT") or "RECT").upper()
+    shape = str(r.get("section_shape", "RECT") or "RECT").upper()
     rows = _layers(r)
-    direct = len(rows) == 1 and shape == "RECT" and abs(abs(rows[0]["fs"])-fsy) <= max(0.5,0.002*max(fsy,1.0))
+    direct = (
+        len(rows) == 1
+        and shape == "RECT"
+        and abs(abs(rows[0]["fs"]) - fsy) <= max(0.5, 0.002 * max(fsy, 1.0))
+    )
+
+    purpose = r"""**Purpose**
+
+Determine the neutral-axis depth from strain compatibility and internal force equilibrium.
+
+$$\boxed{\sum C=\sum T}$$
+
+The trial diagrams illustrate the method. The calculation boxes below show every equation with the current beam values substituted immediately underneath it."""
 
     if direct:
         x = rows[0]
@@ -126,9 +151,9 @@ $$C_c=\alpha_2f'_cb\gamma d_n$$
 
 **For this beam**
 
-$$C_c=({alpha2:.3f})({fc:.1f})({b:.1f})({gamma:.3f})d_n={alpha2*fc*b*gamma/1000:.3f}d_n\ \text{{kN}}$$
+$$C_c=({alpha2:.3f})({fc:.1f})({b:.1f})({gamma:.3f})d_n={alpha2 * fc * b * gamma / 1000:.3f}d_n\ \text{{kN}}$$
 
-$$T=A_{{st}}f_{{sy}}=({x['A']:.2f})({fsy:.1f})={x['A']*fsy/1000:.3f}\ \text{{kN}}$$
+$$T=A_{{st}}f_{{sy}}=({x['A']:.2f})({fsy:.1f})={x['A'] * fsy / 1000:.3f}\ \text{{kN}}$$
 
 $$\boxed{{T={t:.3f}\ \text{{kN}}}}$$""",
             rf"""**Step 2 — Apply force equilibrium**
@@ -137,7 +162,7 @@ $$C_c=T$$
 
 **For this beam**
 
-$$({alpha2*fc*b*gamma/1000:.6f})d_n={t:.6f}$$""",
+$$({alpha2 * fc * b * gamma / 1000:.6f})d_n={t:.6f}$$""",
             rf"""**Step 3 — Solve and accept the neutral axis**
 
 $$d_n=\frac{{A_{{st}}f_{{sy}}}}{{\alpha_2f'_cb\gamma}}$$
@@ -156,9 +181,12 @@ $$R(d_n)={residual:.6f}\ \text{{kN}}\approx0$$""",
     else:
         if shape == "RECT":
             cc_formula = r"C_c=\alpha_2f'_cb\gamma d_n"
-            cc_sub = rf"C_c=({alpha2:.3f})({fc:.1f})({b:.1f})({gamma:.3f})({dn:.3f})={cc:.3f}\ \text{{kN}}"
+            cc_sub = (
+                rf"C_c=({alpha2:.3f})({fc:.1f})({b:.1f})({gamma:.3f})"
+                rf"({dn:.3f})={cc:.3f}\ \text{{kN}}"
+            )
         else:
-            Ac = float(r.get("compression_concrete_area_mm2",0) or 0)
+            Ac = float(r.get("compression_concrete_area_mm2", 0) or 0)
             cc_formula = r"C_c=\alpha_2f'_cA_c"
             cc_sub = rf"C_c=({alpha2:.3f})({fc:.1f})({Ac:.2f})/1000={cc:.3f}\ \text{{kN}}"
         steps = (
@@ -177,14 +205,14 @@ $$\varepsilon_{{s,i}}=-\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}},\qquad\varepsil
 
 **For this beam**
 
-{_layer_strains(rows,dn)}""",
+{_layer_strains(rows, dn)}""",
             rf"""**Step 3 — Reinforcement stress**
 
 $$f_{{s,i}}=\operatorname{{sign}}(\varepsilon_{{s,i}})\min(E_s|\varepsilon_{{s,i}}|,f_{{sy}})$$
 
 **For this beam**
 
-{_layer_stresses(rows,dn,Es,fsy)}""",
+{_layer_stresses(rows, dn, Es, fsy)}""",
             rf"""**Step 4 — Reinforcement force**
 
 $$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
@@ -219,48 +247,57 @@ $$\boxed{{a={a:.3f}\ \text{{mm}}}}$$""",
 
     convergence = rf"""**Convergence evidence**
 
-{_iteration_table(r,dn,cc,t,cs,residual)}
+{_iteration_table(r, dn, cc, t, cs, residual)}
 
 **Final result:** $d_n={dn:.3f}\,\text{{mm}}$, $a={a:.3f}\,\text{{mm}}$, $R={residual:.6f}\,\text{{kN}}$."""
 
-    def after() -> None:
-        calc_col, diagram_col = st.columns([2.0, 1.0], gap="large")
-        with calc_col:
-            st.markdown("#### Neutral-axis calculation")
-            for i, md in enumerate(steps,1):
-                calcbox(md, uid=f"bending_uls_check2_step_{i}")
-            calcbox(convergence, uid="bending_uls_check2_convergence")
-        with diagram_col:
-            st.markdown("#### Converged neutral axis and block depth")
-            fig = _make_uls_stress_block_figure(
-                b_mm=b,D_mm=D,d_mm=d,dn_mm=dn,a_mm=a,alpha2=alpha2,gamma=gamma,fc=fc,fsy=fsy,
-                show_lever_arm=False,show_dn=True,show_alpha_label=True,show_C=False,C_N=None,
-                variant="13",moment_sign=str(view.moment_sign or "positive"),
-            )
-            render_plotly_diagram(
-                fig,
-                key=f"bending_uls_equilibrium_in_check2_{view.moment_sign}",
-                title="Neutral axis and block depth",
-                config={"displayModeBar":False},
-            )
+    def final_diagram() -> None:
+        st.markdown("#### Converged neutral axis and block depth")
+        fig = _make_uls_stress_block_figure(
+            b_mm=b,
+            D_mm=D,
+            d_mm=d,
+            dn_mm=dn,
+            a_mm=a,
+            alpha2=alpha2,
+            gamma=gamma,
+            fc=fc,
+            fsy=fsy,
+            show_lever_arm=False,
+            show_dn=True,
+            show_alpha_label=True,
+            show_C=False,
+            C_N=None,
+            variant="13",
+            moment_sign=str(view.moment_sign or "positive"),
+        )
+        render_plotly_diagram(
+            fig,
+            key=f"bending_uls_equilibrium_in_check2_{view.moment_sign}",
+            title="Neutral axis and block depth",
+            config={"displayModeBar": False},
+        )
 
-    return method, after
+    return method, purpose, steps, convergence, final_diagram
 
 
 def _info(legacy: Any, help_text: str, heading: str, body: str) -> Callable[[], None]:
     def render() -> None:
         with legacy._bending_check_info_row(help_text=help_text):
             st.markdown(f"### {heading}\n\n{body}")
+
     return render
 
 
 def _install_dispatch(legacy: Any) -> None:
-    if getattr(legacy,"_uls_check2_original_step",None) is not None:
+    if getattr(legacy, "_uls_check2_original_step", None) is not None:
         return
     original = legacy.step_expander_calcbox
+
     def dispatch(*args: Any, **kwargs: Any):
         fn = _ACTIVE.get()
-        return fn(original,*args,**kwargs) if fn else original(*args,**kwargs)
+        return fn(original, *args, **kwargs) if fn else original(*args, **kwargs)
+
     legacy._uls_check2_original_step = original
     legacy.step_expander_calcbox = dispatch
 
@@ -271,16 +308,25 @@ def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
 
     r = view.mutable_results()
     if not r.get("_authoritative_uls"):
-        legacy.render_authoritative_uls_checks(r,view.width_mm,view.overall_depth_mm,view.concrete_strength_mpa,
-            view.steel_yield_strength_mpa,view.reinforcement_area_mm2,view.effective_depth_mm,summary_mode=False,
-            Mu_star_override=view.demand_kNm,moment_sign=view.moment_sign)
+        legacy.render_authoritative_uls_checks(
+            r,
+            view.width_mm,
+            view.overall_depth_mm,
+            view.concrete_strength_mpa,
+            view.steel_yield_strength_mpa,
+            view.reinforcement_area_mm2,
+            view.effective_depth_mm,
+            summary_mode=False,
+            Mu_star_override=view.demand_kNm,
+            moment_sign=view.moment_sign,
+        )
         return
 
     _install_dispatch(legacy)
-    method, after = _check2_payload(view,r)
-    deferred: dict[str,Any] | None = None
+    method, purpose, steps, convergence, final_diagram = _check2_payload(view, r)
+    deferred: dict[str, Any] | None = None
 
-    def intercept(original: Callable[...,Any], *args: Any, **kwargs: Any):
+    def intercept(original: Callable[..., Any], *args: Any, **kwargs: Any):
         nonlocal deferred
         uid = str(kwargs.get("uid", args[0] if args else ""))
         if uid == "bending_uls_authoritative_strains":
@@ -288,47 +334,81 @@ def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
             return None
         if uid == "bending_uls_authoritative_equilibrium":
             return None
+
         revised = dict(kwargs)
         if uid == "bending_uls_authoritative_method":
             revised["summary_line"] = f"Check 2 — Neutral-axis solution method | {method}"
-            revised["details_md"] = r"""**Purpose**
+            old_before = revised.get("content_before")
+            old_diagram = revised.get("diagram_fn")
 
-Determine the neutral-axis depth from strain compatibility and internal force equilibrium.
+            def left_column_content() -> None:
+                if old_before:
+                    old_before()
+                calcbox(purpose, uid="bending_uls_check2_purpose")
+                st.markdown("#### Neutral-axis calculation")
+                for i, md in enumerate(steps, 1):
+                    calcbox(md, uid=f"bending_uls_check2_step_{i}")
 
-$$\boxed{\sum C=\sum T}$$
+            def right_column_diagrams() -> None:
+                if old_diagram:
+                    old_diagram()
+                final_diagram()
 
-The trial diagrams illustrate the method. The calculation boxes below show every equation with the current beam values substituted immediately underneath it."""
+            revised["details_md"] = convergence
+            revised["content_before"] = left_column_content
+            revised["diagram_fn"] = right_column_diagrams
+            revised["content_after"] = None
             revised["progressive_steps"] = None
-            old_after = revised.get("content_after")
-            revised["content_after"] = lambda: ((old_after() if old_after else None), after())
-            result = original(*args,**revised)
+
+            result = original(*args, **revised)
             if deferred:
-                k = dict(deferred); deferred = None
-                k["summary_line"] = str(k.get("summary_line","")).replace("Check 4","Check 3")
-                k["details_md"] = str(k.get("details_md","")).replace("from Check 3","from Check 2")
-                k["content_before"] = _info(legacy,"Reinforcement strains and stresses","Check 3 — Reinforcement strains and stresses",
-                    "Using the neutral-axis depth solved in Check 2, this check reports the final compatible strain and authoritative steel stress for each active reinforcement layer.")
+                k = dict(deferred)
+                deferred = None
+                k["summary_line"] = str(k.get("summary_line", "")).replace("Check 4", "Check 3")
+                k["details_md"] = str(k.get("details_md", "")).replace("from Check 3", "from Check 2")
+                k["content_before"] = _info(
+                    legacy,
+                    "Reinforcement strains and stresses",
+                    "Check 3 — Reinforcement strains and stresses",
+                    "Using the neutral-axis depth solved in Check 2, this check reports the final compatible strain and authoritative steel stress for each active reinforcement layer.",
+                )
                 st.session_state["_rendering_deferred_bending_uls_check_2"] = True
-                try: original(**k)
-                finally: st.session_state.pop("_rendering_deferred_bending_uls_check_2",None)
+                try:
+                    original(**k)
+                finally:
+                    st.session_state.pop("_rendering_deferred_bending_uls_check_2", None)
             return result
+
         if uid == "bending_uls_authoritative_4":
-            revised["summary_line"] = str(revised.get("summary_line","")).replace("Check 5","Check 4")
-            revised["details_md"] = str(revised.get("details_md","")).replace("from Check 4","from Check 3").replace("established in Check 3","established in Check 2")
+            revised["summary_line"] = str(revised.get("summary_line", "")).replace("Check 5", "Check 4")
+            revised["details_md"] = (
+                str(revised.get("details_md", ""))
+                .replace("from Check 4", "from Check 3")
+                .replace("established in Check 3", "established in Check 2")
+            )
         elif uid == "bending_uls_authoritative_6":
-            revised["summary_line"] = str(revised.get("summary_line","")).replace("Check 6","Check 5")
+            revised["summary_line"] = str(revised.get("summary_line", "")).replace("Check 6", "Check 5")
         elif uid == "bending_uls_authoritative_7":
-            revised["summary_line"] = str(revised.get("summary_line","")).replace("Check 7","Check 6")
-            revised["details_md"] = str(revised.get("details_md","")).replace("from Check 5","from Check 4")
+            revised["summary_line"] = str(revised.get("summary_line", "")).replace("Check 7", "Check 6")
+            revised["details_md"] = str(revised.get("details_md", "")).replace("from Check 5", "from Check 4")
         elif uid == "bending_uls_authoritative_8":
-            revised["summary_line"] = str(revised.get("summary_line","")).replace("Check 8","Check 7")
-        return original(*args,**revised)
+            revised["summary_line"] = str(revised.get("summary_line", "")).replace("Check 8", "Check 7")
+        return original(*args, **revised)
 
     token = _ACTIVE.set(intercept)
     try:
-        legacy.render_authoritative_uls_checks(r,view.width_mm,view.overall_depth_mm,view.concrete_strength_mpa,
-            view.steel_yield_strength_mpa,view.reinforcement_area_mm2,view.effective_depth_mm,summary_mode=False,
-            Mu_star_override=view.demand_kNm,moment_sign=view.moment_sign)
+        legacy.render_authoritative_uls_checks(
+            r,
+            view.width_mm,
+            view.overall_depth_mm,
+            view.concrete_strength_mpa,
+            view.steel_yield_strength_mpa,
+            view.reinforcement_area_mm2,
+            view.effective_depth_mm,
+            summary_mode=False,
+            Mu_star_override=view.demand_kNm,
+            moment_sign=view.moment_sign,
+        )
     finally:
         _ACTIVE.reset(token)
 
