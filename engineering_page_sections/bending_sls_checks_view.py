@@ -52,9 +52,7 @@ def _classification_markdown(
             rf"""**{label}**
 
 $$
-y_{{{i}}}={y:.3f}\ \text{{mm}}
-\ {relation}\
-d_n={dn:.3f}\ \text{{mm}}
+y_{{{i}}}={y:.3f}\ \text{{mm}}\ {relation}\ d_n={dn:.3f}\ \text{{mm}}
 $$
 
 $$
