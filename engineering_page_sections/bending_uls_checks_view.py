@@ -224,17 +224,25 @@ $$\boxed{{a={a:.3f}\ \text{{mm}}}}$$""",
 **Final result:** $d_n={dn:.3f}\,\text{{mm}}$, $a={a:.3f}\,\text{{mm}}$, $R={residual:.6f}\,\text{{kN}}$."""
 
     def after() -> None:
-        st.markdown("#### Neutral-axis calculation")
-        for i, md in enumerate(steps,1):
-            calcbox(md, uid=f"bending_uls_check2_step_{i}", accent="moment")
-        calcbox(convergence, uid="bending_uls_check2_convergence", accent="moment")
-        st.markdown("#### Converged neutral axis and block depth")
-        fig = _make_uls_stress_block_figure(
-            b_mm=b,D_mm=D,d_mm=d,dn_mm=dn,a_mm=a,alpha2=alpha2,gamma=gamma,fc=fc,fsy=fsy,
-            show_lever_arm=False,show_dn=True,show_alpha_label=True,show_C=False,C_N=None,
-            variant="13",moment_sign=str(view.moment_sign or "positive"),
-        )
-        render_plotly_diagram(fig,key=f"bending_uls_equilibrium_in_check2_{view.moment_sign}",title="Neutral axis and block depth",config={"displayModeBar":False})
+        calc_col, diagram_col = st.columns([2.0, 1.0], gap="large")
+        with calc_col:
+            st.markdown("#### Neutral-axis calculation")
+            for i, md in enumerate(steps,1):
+                calcbox(md, uid=f"bending_uls_check2_step_{i}")
+            calcbox(convergence, uid="bending_uls_check2_convergence")
+        with diagram_col:
+            st.markdown("#### Converged neutral axis and block depth")
+            fig = _make_uls_stress_block_figure(
+                b_mm=b,D_mm=D,d_mm=d,dn_mm=dn,a_mm=a,alpha2=alpha2,gamma=gamma,fc=fc,fsy=fsy,
+                show_lever_arm=False,show_dn=True,show_alpha_label=True,show_C=False,C_N=None,
+                variant="13",moment_sign=str(view.moment_sign or "positive"),
+            )
+            render_plotly_diagram(
+                fig,
+                key=f"bending_uls_equilibrium_in_check2_{view.moment_sign}",
+                title="Neutral axis and block depth",
+                config={"displayModeBar":False},
+            )
 
     return method, after
 
