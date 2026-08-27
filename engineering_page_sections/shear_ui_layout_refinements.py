@@ -101,7 +101,11 @@ def _resolve_check4_strain_inputs(mcft_module: Any, view: Any) -> tuple[float, f
 
 
 def _render_check4_technical_basis() -> None:
-    """Keep the existing Check 4 technical-basis affordance with the new layout."""
+    """Render the original Check 4 technical-basis content verbatim.
+
+    Layout wrappers must not rewrite or shorten engineering info-copy. Change
+    this content only when the user explicitly requests an info-content edit.
+    """
 
     spacer, info_col = st.columns([0.92, 0.08])
     with spacer:
@@ -112,17 +116,36 @@ def _render_check4_technical_basis() -> None:
                 r"""
 ### Longitudinal strain $\varepsilon_x$ (MCFT)
 
-Check 4 evaluates the average longitudinal strain at mid-depth for the Modified
-Compression Field Theory shear model. Bending, axial load and the longitudinal
-component of the diagonal compression field all contribute to this strain.
+Check 4 evaluates the average longitudinal strain in the concrete at mid-height of the section,
+$\varepsilon_x$, for use in the Modified Compression Field Theory shear model.
+The section shear $V^*$ is assumed to be carried mainly by diagonal compression struts in the web,
+inclined at angle $\theta_v$. Because the strut is diagonal, it has both a vertical component, which carries
+the shear, and a horizontal component, which introduces a longitudinal compressive force in the web equal to
+$V^*\cot\theta_v$.
 
-The **internal force resolution** diagram shows how the section actions resolve
-into longitudinal resisting forces. The **longitudinal strain profile** diagram
-then shows how the resulting mid-depth strain relates to the top and bottom
-section strains.
+Only longitudinal force components contribute to the longitudinal strain $\varepsilon_x$.
+The vertical component of the diagonal strut is required for shear equilibrium, but it does not directly
+contribute to strain in the beam axis direction, so it is not included separately in the strain calculation.
+Instead, the strain equation includes the longitudinal effect of carrying the shear through the diagonal
+compression field.
 
-The calculated $\varepsilon_x$ is carried into the following MCFT checks to
-resolve $k_v$ and $\theta_v$.
+This longitudinal component is assumed to be shared equally between the compression and tension flanges,
+so each flange resists about $0.5V^*\cot\theta_v$. For design, AS 3600 simplifies this by taking
+$0.5\cot\theta_v \approx 1.0$, which is why the shear contribution appears directly as $V^*$ in the strain equation.
+
+The strain $\varepsilon_x$ is taken at mid-height and may be viewed as the average longitudinal strain between
+the compression and tension flanges. In practice, the compression-flange strain $\varepsilon_c$ is usually a small
+negative value, so it is acceptable and conservative to approximate the mid-height strain as half of the tension-flange
+strain, that is:
+
+$$\varepsilon_x \approx \frac{\varepsilon_t}{2}$$
+
+Accordingly, the code equation effectively calculates the tension-side longitudinal strain contribution from bending,
+shear, and axial load, and then converts this into the average mid-height concrete strain $\varepsilon_x$ by dividing
+by twice the longitudinal reinforcement stiffness.
+
+The resulting value of $\varepsilon_x$ is then used to determine $k_v$ and the compression-field angle $\theta_v$
+in the general shear method.
 """
             )
 
