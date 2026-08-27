@@ -11,7 +11,7 @@ from engineering_page_sections.bending_minimum_strength_checks_view import (
 from engineering_page_sections.bending_sls_checks_view import (
     render_bending_sls_checks,
 )
-from engineering_page_sections.bending_uls_checks_view_embedded_force import (
+from engineering_page_sections.bending_uls_checks_view_with_yi import (
     render_bending_uls_checks,
 )
 from engineering_page_sections.stable_tabs import render_stable_tabs
