@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-MCFT_CHECK4_VERTICAL_PAD = 0.18
+MCFT_CHECK4_VERTICAL_PAD = 0.32
 
 
 def install_mcft_check4_vertical_padding() -> None:
