@@ -138,7 +138,6 @@ def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
                 st.markdown("#### Neutral-axis calculation")
                 for i, md in enumerate(tuple(steps)[:3], 1):
                     calcbox(md, uid=f"bending_uls_check2_step_{i}")
-                calcbox(force_md, uid="bending_uls_check2_internal_force")
 
             def right_column_diagrams() -> None:
                 if old_diagram:
@@ -146,7 +145,7 @@ def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
                 final_diagram()
                 force_diagram()
 
-            revised["details_md"] = ""
+            revised["details_md"] = force_md
             revised["content_before"] = left_column_content
             revised["diagram_fn"] = right_column_diagrams
             revised["content_after"] = None
