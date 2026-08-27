@@ -16,6 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
+from engineering_page_sections.shear_mcft_check4_padding import (
+    install_mcft_check4_vertical_padding,
+)
 from engineering_page_sections.shear_ui_layout_refinements import (
     install_shear_ui_layout_refinements,
 )
@@ -24,6 +27,7 @@ from engineering_page_sections.shear_ui_layout_refinements import (
 # Install presentation-only wrappers before shear_page_runtime imports the
 # individual check renderers. Engineering calculation ownership is unchanged.
 install_shear_ui_layout_refinements()
+install_mcft_check4_vertical_padding()
 
 
 _RenderResult = TypeVar("_RenderResult")
