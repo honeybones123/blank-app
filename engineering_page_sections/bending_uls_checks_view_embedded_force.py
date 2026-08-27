@@ -51,7 +51,9 @@ def _authoritative_layers(
 
 
 def _strain_for_depth(y_mm: float, dn_mm: float) -> float:
-    return -0.003 * (float(y_mm) - float(dn_mm)) / float(dn_mm) if abs(float(dn_mm)) > 1e-9 else float("nan")
+    if abs(float(dn_mm)) <= 1e-9:
+        return float("nan")
+    return -0.003 * (float(y_mm) - float(dn_mm)) / float(dn_mm)
 
 
 def _state_from_depth(*, y_mm: float, dn_mm: float) -> str:
@@ -63,31 +65,21 @@ def _state_from_depth(*, y_mm: float, dn_mm: float) -> str:
 
 
 def _step2_strain_md(rows: tuple[dict[str, Any], ...], dn: float) -> str:
-    blocks = []
+    """Use simple display-math blocks so Streamlit/KaTeX never falls back to raw LaTeX."""
+    blocks: list[str] = []
     for row in rows:
         y = float(row["y"])
         eps = _strain_for_depth(y, dn)
         state = _state_from_depth(y_mm=y, dn_mm=dn)
-        relation = ">" if y > dn + 1e-9 else "<" if y < dn - 1e-9 else r"\approx"
+        relation = ">" if y > dn + 1e-9 else "<" if y < dn - 1e-9 else "="
         blocks.append(
             rf"""**{row['label']}**
 
-$$y_{{{row['i']}}}={y:.3f}\ \text{{mm}}\ {relation}\ d_n={dn:.3f}\ \text{{mm}}
-\quad\Rightarrow\quad
-\text{{{state}}}$$
+**Position:** {y:.3f} mm {relation} {dn:.3f} mm → **{state}**
 
-$$
-\varepsilon_{{s,{row['i']}}}
-=
--0.003
-\left(
-\frac{{{y:.3f}-{dn:.3f}}}{{{dn:.3f}}}
-\right)
-=
-{eps:.6f}
-$$
+$$\varepsilon_{{s,{row['i']}}}=-0.003\left(\frac{{{y:.3f}-{dn:.3f}}}{{{dn:.3f}}}\right)={eps:.6f}$$
 
-$$\boxed{{\varepsilon_{{s,{row['i']}}}={eps:.6f}}}$$"""
+**Result:** $\varepsilon_{{s,{row['i']}}}={eps:.6f}$"""
         )
     return "\n\n".join(blocks) or "No active reinforcement layers were published."
 
@@ -98,43 +90,31 @@ def _step3_stress_md(
     Es: float,
     fsy: float,
 ) -> str:
-    blocks = []
+    blocks: list[str] = []
     for row in rows:
         eps = _strain_for_depth(float(row["y"]), dn)
         trial = Es * eps if math.isfinite(eps) else float("nan")
         yielded = math.isfinite(trial) and abs(trial) > fsy + 1e-9
         state = "Yielded" if yielded else "Elastic"
-        role = "tension" if float(row["fs"]) < -1e-9 else "compression" if float(row["fs"]) > 1e-9 else "approximately zero stress"
-        conclusion = (
-            rf"""Since
-
-$$|{trial:.1f}|>{fsy:.1f}\ \text{{MPa}}$$
-
-the layer has yielded and its stress is limited to the yield strength:
-
-$$\boxed{{f_{{s,{row['i']}}}={float(row['fs']):.1f}\ \text{{MPa}}}}$$"""
-            if yielded
-            else
-            rf"""Since
-
-$$|{trial:.1f}|\leq {fsy:.1f}\ \text{{MPa}}$$
-
-the layer remains elastic:
-
-$$\boxed{{f_{{s,{row['i']}}}={float(row['fs']):.1f}\ \text{{MPa}}}}$$"""
+        role = (
+            "tension"
+            if float(row["fs"]) < -1e-9
+            else "compression"
+            if float(row["fs"]) > 1e-9
+            else "approximately zero stress"
         )
+        if yielded:
+            conclusion = rf"""Since $|{trial:.1f}|>{fsy:.1f}\ \text{{MPa}}$, the layer has yielded:
+
+$$\boxed{{f_{{s,{row['i']}}}={float(row['fs']):.1f}\ \text{{MPa}}}}$$"""
+        else:
+            conclusion = rf"""Since $|{trial:.1f}|\leq {fsy:.1f}\ \text{{MPa}}$, the layer remains elastic:
+
+$$\boxed{{f_{{s,{row['i']}}}={float(row['fs']):.1f}\ \text{{MPa}}}}$$"""
         blocks.append(
             rf"""**{row['label']}**
 
-$$
-f_{{s,\mathrm{{elastic}},{row['i']}}}
-=
-E_s\varepsilon_{{s,{row['i']}}}
-=
-({Es:.0f})({eps:.6f})
-=
-{trial:.1f}\ \text{{MPa}}
-$$
+$$f_{{s,\mathrm{{elastic}},{row['i']}}}=E_s\varepsilon_{{s,{row['i']}}}=({Es:.0f})({eps:.6f})={trial:.1f}\ \text{{MPa}}$$
 
 {conclusion}
 
@@ -143,27 +123,25 @@ $$
     return "\n\n".join(blocks) or "No active reinforcement layers were published."
 
 
-def _step4_force_md(
+def _reinforcement_force_md(
     rows: tuple[dict[str, Any], ...],
     tension_kn: float,
     compression_steel_kn: float,
 ) -> str:
-    blocks = []
+    blocks: list[str] = []
     for row in rows:
         force_kn = float(row["F"]) / 1000.0
-        role = "tension" if float(row["fs"]) < -1e-9 else "compression" if float(row["fs"]) > 1e-9 else "approximately zero stress"
+        role = (
+            "tension"
+            if float(row["fs"]) < -1e-9
+            else "compression"
+            if float(row["fs"]) > 1e-9
+            else "approximately zero stress"
+        )
         blocks.append(
             rf"""**{row['label']} — {role}**
 
-$$
-F_{{s,{row['i']}}}
-=
-A_{{s,{row['i']}}}f_{{s,{row['i']}}}
-=
-({float(row['A']):.2f})({float(row['fs']):.1f})
-=
-{force_kn:.3f}\ \text{{kN}}
-$$"""
+$$F_{{s,{row['i']}}}=A_{{s,{row['i']}}}f_{{s,{row['i']}}}=({float(row['A']):.2f})({float(row['fs']):.1f})={force_kn:.3f}\ \text{{kN}}$$"""
         )
     layer_text = "\n\n".join(blocks) or "No active reinforcement layers were published."
     return rf"""$$F_{{s,i}}=A_{{s,i}}f_{{s,i}}$$
@@ -172,20 +150,12 @@ $$"""
 
 {layer_text}
 
-The tensile-force magnitude is:
+$$\boxed{{\sum T={tension_kn:.3f}\ \text{{kN}}}}$$
 
-$$
-\boxed{{\sum T={tension_kn:.3f}\ \text{{kN}}}}
-$$
-
-The compression-steel resultant is:
-
-$$
-\boxed{{\sum C_s={compression_steel_kn:.3f}\ \text{{kN}}}}
-$$"""
+$$\boxed{{\sum C_s={compression_steel_kn:.3f}\ \text{{kN}}}}$$"""
 
 
-def _step5_concrete_md(
+def _concrete_compression_md(
     *,
     shape: str,
     b: float,
@@ -199,55 +169,32 @@ def _step5_concrete_md(
 ) -> str:
     if shape == "RECT":
         area = b * a
-        area_line = rf"""
-$$
-A_c=ba=({b:.1f})({a:.3f})={area:.3f}\ \text{{mm}}^2
-$$
-"""
+        area_line = rf"""$$A_c=ba=({b:.1f})({a:.3f})={area:.3f}\ \text{{mm}}^2$$"""
     else:
         area = float(r.get("compression_concrete_area_mm2", 0.0) or 0.0)
-        area_line = rf"""
-For this {shape} section, the authoritative compression-block area is:
+        area_line = rf"""For this {shape} section, the authoritative compression-block area is:
 
-$$
-\boxed{{A_c={area:.3f}\ \text{{mm}}^2}}
-$$
-"""
-    return rf"""The same neutral-axis depth defines the equivalent rectangular stress-block depth:
+$$\boxed{{A_c={area:.3f}\ \text{{mm}}^2}}$$"""
 
-$$
-\boxed{{a=\gamma d_n}}
-$$
+    return rf"""The neutral-axis depth defines the equivalent rectangular stress-block depth:
+
+$$\boxed{{a=\gamma d_n}}$$
 
 **For this beam**
 
-$$
-a=({gamma:.3f})({dn:.3f})={a:.3f}\ \text{{mm}}
-$$
+$$a=({gamma:.3f})({dn:.3f})={a:.3f}\ \text{{mm}}$$
 
-$$
-\boxed{{a={a:.3f}\ \text{{mm}}}}
-$$
+$$\boxed{{a={a:.3f}\ \text{{mm}}}}$$
 
 {area_line}
 
 The concrete compression resultant is:
 
-$$
-\boxed{{C_c=\alpha_2 f'_c A_c}}
-$$
+$$\boxed{{C_c=\alpha_2 f'_c A_c}}$$
 
-$$
-C_c
-=
-({alpha2:.3f})({fc:.1f})({area:.3f})/1000
-=
-{concrete_kn:.3f}\ \text{{kN}}
-$$
+$$C_c=({alpha2:.3f})({fc:.1f})({area:.3f})/1000={concrete_kn:.3f}\ \text{{kN}}$$
 
-$$
-\boxed{{C_c={concrete_kn:.3f}\ \text{{kN}}}}
-$$"""
+$$\boxed{{C_c={concrete_kn:.3f}\ \text{{kN}}}}$$"""
 
 
 def _step_row(
@@ -267,7 +214,7 @@ def _step_row(
 def _check2_payload(
     view: BendingUlsChecksInput,
     r: Mapping[str, Any],
-) -> tuple[str, str, tuple[str, ...], Callable[[], None]]:
+) -> tuple[str, str, Callable[[], None]]:
     """Build the six-step neutral-axis teaching flow from authoritative publications."""
     b = float(view.width_mm)
     D = float(view.overall_depth_mm)
@@ -293,44 +240,32 @@ def _check2_payload(
         if trace and isinstance(trace[0], Mapping)
         else dn
     )
+
     direct = (
         len(rows) == 1
         and shape == "RECT"
-        and abs(abs(float(rows[0]["fs"])) - fsy) <= max(0.5, 0.002 * max(fsy, 1.0))
+        and abs(abs(float(rows[0]["fs"])) - fsy)
+        <= max(0.5, 0.002 * max(fsy, 1.0))
     )
-    method = "Direct single-layer solution" if direct else "General multi-layer equilibrium solution"
+    method = (
+        "Direct single-layer solution"
+        if direct
+        else "General multi-layer equilibrium solution"
+    )
 
     purpose = rf"""**Purpose**
 
 Determine the neutral-axis depth $d_n$ that satisfies strain compatibility and internal force equilibrium:
 
-$$
-\boxed{{\sum C=\sum T}}
-$$
+$$\boxed{{\sum C=\sum T}}$$
 
 For multiple reinforcement layers, the steel strain and stress depend on $d_n$, so the neutral axis is generally found by iteration:
 
-$$
-\boxed{{
-d_n
-\rightarrow
-\varepsilon_{{s,i}}
-\rightarrow
-f_{{s,i}}
-\rightarrow
-F_{{s,i}}
-\rightarrow
-C_c
-\rightarrow
-R(d_n)
-}}
-$$
+$$\boxed{{d_n\rightarrow\varepsilon_{{s,i}}\rightarrow f_{{s,i}}\rightarrow F_{{s,i}}\rightarrow C_c\rightarrow R(d_n)}}$$
 
-where
+where:
 
-$$
-R(d_n)=\sum C-\sum T
-$$
+$$R(d_n)=\sum C-\sum T$$
 
 If $R(d_n)\neq0$, the trial neutral-axis depth is updated and the process repeats.
 
@@ -339,19 +274,13 @@ If $R(d_n)\neq0$, the trial neutral-axis depth is updated and the process repeat
     if direct:
         step1 = rf"""**Step 1 — Establish the neutral-axis depth**
 
-With one active yielded tension layer, the neutral axis can be obtained directly from equilibrium rather than by iteration.
+With one active yielded tension layer, the neutral axis can be obtained directly from equilibrium:
 
-$$
-d_n
-=
-\frac{{A_{{st}}f_{{sy}}}}{{\alpha_2f'_cb\gamma}}
-$$
+$$d_n=\frac{{A_{{st}}f_{{sy}}}}{{\alpha_2f'_cb\gamma}}$$
 
 **For this beam**
 
-$$
-\boxed{{d_n={dn:.3f}\ \text{{mm}}}}
-$$
+$$\boxed{{d_n={dn:.3f}\ \text{{mm}}}}$$
 
 Steps 2–6 verify the compatible strain, stress, forces and equilibrium at this depth."""
     else:
@@ -359,44 +288,27 @@ Steps 2–6 verify the compatible strain, stress, forces and equilibrium at this
 
 Start with a trial neutral-axis depth measured from the extreme compression face:
 
-$$
-d_n=d_{{n,\mathrm{{trial}}}}
-$$
+$$d_n=d_{{n,\mathrm{{trial}}}}$$
 
-The solver began this search at:
+The solver began the search at:
 
-$$
-d_n^{{(0)}}={initial_dn:.3f}\ \text{{mm}}
-$$
+$$d_n^{{(0)}}={initial_dn:.3f}\ \text{{mm}}$$
 
-Changing $d_n$ changes the reinforcement strain, steel stress, reinforcement forces and concrete compression force.
+Changing $d_n$ changes the reinforcement strain, steel stress, concrete compression and reinforcement forces.
 
-After repeating Steps 2–6, the final converged trial for this beam is:
+After repeating the solution cycle, the final converged trial is:
 
-$$
-\boxed{{d_n={dn:.3f}\ \text{{mm}}}}
-$$
+$$\boxed{{d_n={dn:.3f}\ \text{{mm}}}}$$
 
 The following steps verify that this value satisfies equilibrium."""
 
     step2 = rf"""**Step 2 — Reinforcement strain**
 
-Assuming plane sections remain plane, the strain in reinforcement layer $i$ is:
+Assuming plane sections remain plane:
 
-$$
-\boxed{{
-\varepsilon_{{s,i}}
-=
--\varepsilon_{{cu}}
-\frac{{y_i-d_n}}{{d_n}}
-}}
-$$
+$$\boxed{{\varepsilon_{{s,i}}=-\varepsilon_{{cu}}\frac{{y_i-d_n}}{{d_n}}}}$$
 
-with:
-
-$$
-\varepsilon_{{cu}}=0.003
-$$
+with $\varepsilon_{{cu}}=0.003$.
 
 A layer is on the tension side when $y_i>d_n$, and on the compression side when $y_i<d_n$.
 
@@ -408,32 +320,20 @@ A layer is on the tension side when $y_i>d_n$, and on the compression side when 
 
 First calculate the elastic trial stress:
 
-$$
-\boxed{{
-f_{{s,\mathrm{{elastic}},i}}
-=
-E_s\varepsilon_{{s,i}}
-}}
-$$
+$$\boxed{{f_{{s,\mathrm{{elastic}},i}}=E_s\varepsilon_{{s,i}}}}$$
 
-Then compare its magnitude with the yield strength $f_{{sy}}={fsy:.1f}\ \text{{MPa}}$.
+Then compare its magnitude with $f_{{sy}}={fsy:.1f}\ \text{{MPa}}$.
 
-If $|E_s\varepsilon_{{s,i}}|\leq f_{{sy}}$, the layer remains elastic.  
-If $|E_s\varepsilon_{{s,i}}|>f_{{sy}}$, the layer has yielded and $|f_{{s,i}}|=f_{{sy}}$.
+If $|E_s\varepsilon_{{s,i}}|\leq f_{{sy}}$, the layer remains elastic. If it exceeds $f_{{sy}}$, the layer yields.
 
 **For this beam**
 
 {_step3_stress_md(rows, dn, Es, fsy)}"""
 
-    step4 = rf"""**Step 4 — Reinforcement forces**
+    # User-requested order: concrete compression before reinforcement-force resultants.
+    step4 = rf"""**Step 4 — Concrete compression**
 
-Convert the stress in each reinforcement layer into an internal force:
-
-{_step4_force_md(rows, tension_kn, compression_steel_kn)}"""
-
-    step5 = rf"""**Step 5 — Concrete compression**
-
-{_step5_concrete_md(
+{_concrete_compression_md(
         shape=shape,
         b=b,
         alpha2=alpha2,
@@ -445,61 +345,37 @@ Convert the stress in each reinforcement layer into an internal force:
         r=r,
     )}"""
 
+    step5 = rf"""**Step 5 — Reinforcement forces**
+
+Convert the stress in each reinforcement layer into an internal force:
+
+{_reinforcement_force_md(rows, tension_kn, compression_steel_kn)}"""
+
     step6 = rf"""**Step 6 — Check equilibrium**
 
 Now compare total compression with total tension:
 
-$$
-\boxed{{
-R(d_n)=\sum C-\sum T
-}}
-$$
+$$\boxed{{R(d_n)=\sum C-\sum T}}$$
 
 **For this beam**
 
-$$
-\sum C=C_c+C_s={concrete_kn:.3f}+{compression_steel_kn:.3f}
-=
-{total_compression_kn:.3f}\ \text{{kN}}
-$$
+$$\sum C=C_c+C_s={concrete_kn:.3f}+{compression_steel_kn:.3f}={total_compression_kn:.3f}\ \text{{kN}}$$
 
-$$
-\sum T={tension_kn:.3f}\ \text{{kN}}
-$$
+$$\sum T={tension_kn:.3f}\ \text{{kN}}$$
 
-$$
-R({dn:.3f})
-=
-{total_compression_kn:.3f}
--
-{tension_kn:.3f}
-=
-{residual_kn:.6f}\ \text{{kN}}
-$$
+$$R({dn:.3f})={total_compression_kn:.3f}-{tension_kn:.3f}={residual_kn:.6f}\ \text{{kN}}$$
 
-$$
-\boxed{{R(d_n)\approx0}}
-$$
+$$\boxed{{R(d_n)\approx0}}$$
 
-Therefore the trial neutral axis is accepted:
+Therefore the neutral axis is accepted:
 
-$$
-\boxed{{d_n={dn:.3f}\ \text{{mm}}}}
-$$
+$$\boxed{{d_n={dn:.3f}\ \text{{mm}}}}$$
 
-$$
-\boxed{{a={a:.3f}\ \text{{mm}}}}
-$$
+$$\boxed{{a={a:.3f}\ \text{{mm}}}}$$
 
 and the final force balance is:
 
-$$
-\boxed{{
-{total_compression_kn:.3f}\ \text{{kN compression}}
-=
-{tension_kn:.3f}\ \text{{kN tension}}
-}}
-$$"""
+$$\boxed{{{total_compression_kn:.3f}\ \text{{kN compression}}={tension_kn:.3f}\ \text{{kN tension}}}}$$"""
 
     def trial_diagram() -> None:
         trial_dn = max(1.0, min(initial_dn, D - 1.0))
@@ -546,24 +422,6 @@ $$"""
             config={"displayModeBar": False},
         )
 
-    def force_diagram() -> None:
-        fig = _make_uls_force_model_figure(
-            D_mm=D,
-            d_mm=d,
-            a_mm=a,
-            C_N=float(r.get("C_concrete_N", 0.0) or 0.0),
-            T_N=float(r.get("T_N", 0.0) or 0.0),
-            moment_sign=moment_sign,
-            dn_mm=dn,
-        )
-        fig.update_layout(height=320, margin=dict(l=0, r=10, t=35, b=10))
-        render_plotly_diagram(
-            fig,
-            key=f"bending_uls_check2_step4_force_{moment_sign}",
-            title="Internal reinforcement and concrete resultants",
-            config={"displayModeBar": False},
-        )
-
     def concrete_diagram() -> None:
         fig = _make_uls_stress_block_figure(
             b_mm=b,
@@ -586,8 +444,26 @@ $$"""
         fig.update_layout(height=300, margin=dict(l=0, r=10, t=35, b=10))
         render_plotly_diagram(
             fig,
-            key=f"bending_uls_check2_step5_concrete_{moment_sign}",
+            key=f"bending_uls_check2_step4_concrete_{moment_sign}",
             title="Concrete compression block",
+            config={"displayModeBar": False},
+        )
+
+    def force_diagram() -> None:
+        fig = _make_uls_force_model_figure(
+            D_mm=D,
+            d_mm=d,
+            a_mm=a,
+            C_N=float(r.get("C_concrete_N", 0.0) or 0.0),
+            T_N=float(r.get("T_N", 0.0) or 0.0),
+            moment_sign=moment_sign,
+            dn_mm=dn,
+        )
+        fig.update_layout(height=320, margin=dict(l=0, r=10, t=35, b=10))
+        render_plotly_diagram(
+            fig,
+            key=f"bending_uls_check2_step5_force_{moment_sign}",
+            title="Internal reinforcement and concrete resultants",
             config={"displayModeBar": False},
         )
 
@@ -610,32 +486,19 @@ $$"""
         _step_row(
             step_md=step4,
             uid="bending_uls_check2_step_4",
-            diagram_fn=force_diagram,
+            diagram_fn=concrete_diagram,
         )
         _step_row(
             step_md=step5,
             uid="bending_uls_check2_step_5",
-            diagram_fn=concrete_diagram,
+            diagram_fn=force_diagram,
+        )
+        _step_row(
+            step_md=step6,
+            uid="bending_uls_check2_step_6",
         )
 
-        calc_col, _diagram_col = st.columns([2.0, 1.0], gap="large")
-        with calc_col:
-            calcbox(step6, uid="bending_uls_check2_step_6")
-            trace_table = base._iteration_table(
-                r,
-                dn,
-                concrete_kn,
-                tension_kn,
-                compression_steel_kn,
-                residual_kn,
-            )
-            with st.expander("Show solver iterations", expanded=False):
-                st.markdown(
-                    "Representative trial values from the authoritative neutral-axis solver:"
-                )
-                st.markdown(trace_table)
-
-    return method, purpose, (step1, step2, step3, step4, step5, step6), render_steps
+    return method, purpose, render_steps
 
 
 def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
@@ -659,20 +522,15 @@ def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
         return
 
     base._install_dispatch(legacy)
-    method, purpose, _steps, render_steps = _check2_payload(view, r)
-    deferred: dict[str, Any] | None = None
+    method, purpose, render_steps = _check2_payload(view, r)
 
     def intercept(original: Callable[..., Any], *args: Any, **kwargs: Any):
-        nonlocal deferred
         uid = str(kwargs.get("uid", args[0] if args else ""))
 
-        if uid == "bending_uls_authoritative_strains":
-            deferred = dict(kwargs)
-            return None
-
-        # The old standalone equilibrium and internal-force cards are now
-        # entirely explained inside Check 2.
+        # Check 2 now contains the strain/stress, equilibrium, and internal-force teaching,
+        # so do not render the old standalone cards again.
         if uid in {
+            "bending_uls_authoritative_strains",
             "bending_uls_authoritative_equilibrium",
             "bending_uls_authoritative_4",
         }:
@@ -687,50 +545,25 @@ def render_bending_uls_checks(view: BendingUlsChecksInput) -> None:
             revised["diagram_fn"] = None
             revised["content_after"] = render_steps
             revised["progressive_steps"] = None
+            return original(*args, **revised)
 
-            result = original(*args, **revised)
-
-            if deferred:
-                k = dict(deferred)
-                deferred = None
-                k["summary_line"] = str(k.get("summary_line", "")).replace(
-                    "Check 4", "Check 3"
-                )
-                k["details_md"] = str(k.get("details_md", "")).replace(
-                    "from Check 3", "from Check 2"
-                )
-                k["content_before"] = base._info(
-                    legacy,
-                    "Reinforcement strains and stresses",
-                    "Check 3 — Reinforcement strains and stresses",
-                    "Using the neutral-axis depth solved in Check 2, this check reports the final compatible strain and authoritative steel stress for each active reinforcement layer.",
-                )
-                st.session_state["_rendering_deferred_bending_uls_check_2"] = True
-                try:
-                    original(**k)
-                finally:
-                    st.session_state.pop(
-                        "_rendering_deferred_bending_uls_check_2", None
-                    )
-            return result
-
-        # Standalone internal-force Check 4 has been absorbed into Check 2,
-        # so keep the remaining user-facing check numbers contiguous.
+        # With the former standalone Check 3 and force-resultant card removed,
+        # the remaining visible ULS checks continue immediately after Check 2.
         if uid == "bending_uls_authoritative_6":
             revised["summary_line"] = str(
                 revised.get("summary_line", "")
-            ).replace("Check 6", "Check 4")
+            ).replace("Check 6", "Check 3")
         elif uid == "bending_uls_authoritative_7":
             revised["summary_line"] = str(
                 revised.get("summary_line", "")
-            ).replace("Check 7", "Check 5")
+            ).replace("Check 7", "Check 4")
             revised["details_md"] = str(
                 revised.get("details_md", "")
-            ).replace("from Check 5", "from Check 4")
+            ).replace("from Check 5", "from Check 2")
         elif uid == "bending_uls_authoritative_8":
             revised["summary_line"] = str(
                 revised.get("summary_line", "")
-            ).replace("Check 8", "Check 6")
+            ).replace("Check 8", "Check 5")
 
         return original(*args, **revised)
 
