@@ -17,7 +17,9 @@ from widgets_helpers import calcbox, info_i_button
 
 
 _TORSION_COMPACT_HEIGHT_PX = 420
-_MCFT_CHECK4_HEIGHT_PX = 430
+# Give the compact side-by-side MCFT diagrams more actual canvas height instead
+# of widening the y-axis range, which visually shortens the full-depth sketch.
+_MCFT_CHECK4_HEIGHT_PX = 520
 _MCFT_CHECK4_MAX_WIDTH_PX = 540
 
 _ACTIVE_MCFT_VIEW: ContextVar[Any | None] = ContextVar(
