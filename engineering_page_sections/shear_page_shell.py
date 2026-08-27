@@ -16,6 +16,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
+from engineering_page_sections.shear_ui_layout_refinements import (
+    install_shear_ui_layout_refinements,
+)
+
+
+# Install presentation-only wrappers before shear_page_runtime imports the
+# individual check renderers. Engineering calculation ownership is unchanged.
+install_shear_ui_layout_refinements()
+
 
 _RenderResult = TypeVar("_RenderResult")
 
