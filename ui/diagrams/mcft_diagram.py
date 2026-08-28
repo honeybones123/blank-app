@@ -11,8 +11,12 @@ import strain_display
 
 
 MCFT_CHECK4_FACE_X_HALF = 1.15
-# Extra y-axis extent (fraction of depth) so the shared beam-face line is not clipped at plot edges.
-MCFT_CHECK4_Y_PAD = 0.045
+# Base y-axis extent (fraction of depth) for the shared Check 4 beam-face frame.
+# This now lives in the actual diagram builder rather than a page-shell monkeypatch.
+MCFT_CHECK4_Y_PAD = 0.18
+# The strain-profile view needs a little more true data-space headroom so it reads
+# as zoomed out without changing the outer Streamlit/Plotly wrapper dimensions.
+MCFT_CHECK4_STRAIN_Y_PAD = 0.28
 # Pull display x toward the beam face (x=0) for the MCFT point/tick/labels only — not a calc change.
 MCFT_CHECK4_EPSX_VISUAL_INWARD = 0.40
 # Small compression cue at top (display x < 0); tension at bottom (x > 0). Keeps a shallow C→T line through x_vis.
@@ -93,12 +97,14 @@ def _apply_mcft_check4_layout(
     *,
     extra_top_margin: int = 0,
     extend_y_top_norm: float = 0.0,
+    vertical_pad: float | None = None,
 ) -> None:
     """Identical frame for strain and force-resolution views (face registers at x = 0).
 
     extend_y_top_norm: extra headroom in normalized depth above y_top (force mode only), lowers sketch in the axes.
+    vertical_pad: optional data-space zoom-out around the full-depth beam-face line.
     """
-    pad = MCFT_CHECK4_Y_PAD
+    pad = MCFT_CHECK4_Y_PAD if vertical_pad is None else max(0.0, float(vertical_pad))
     # Widen plot bounds in y only; beam face stays y_top..y_bot in data space (unchanged geometry).
     _y_top_axis = y_top - pad - max(0.0, float(extend_y_top_norm))
     y_axis_range = [y_bot + pad, _y_top_axis]
@@ -788,12 +794,15 @@ def make_mcft_longitudinal_strain_profile_fig(
             bgcolor="rgba(255,255,255,0.85)",
         )
         fig.add_annotation(
-            x=0.0,
-            y=y_bot + 0.028 * (y_bot - y_top),
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.035,
             text="Indicative strain trend only — not a calculated full-depth strain profile.",
             showarrow=False,
             font=dict(size=9, color="rgba(95,95,95,0.98)"),
             xanchor="center",
+            yanchor="bottom",
         )
 
     _apply_mcft_check4_layout(
@@ -804,6 +813,7 @@ def make_mcft_longitudinal_strain_profile_fig(
         extra_top_margin=MCFT_CHECK4_TOP_MARGIN_SHIFT_PX
         + (MCFT_CHECK4_TOP_MARGIN_FORCE_HEADINGS_PX if force_resolution else 0),
         extend_y_top_norm=MCFT_CHECK4_FORCE_DIAGRAM_AXIS_TOP_GAP if force_resolution else 0.0,
+        vertical_pad=MCFT_CHECK4_Y_PAD if force_resolution else MCFT_CHECK4_STRAIN_Y_PAD,
     )
     return fig
 
