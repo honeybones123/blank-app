@@ -19,16 +19,21 @@ from typing import Any, Callable, TypeVar
 from engineering_page_sections.shear_equivalent_shear_diagram_restore import (
     install_equivalent_shear_diagram_restore,
 )
+from engineering_page_sections.shear_mcft_legacy_strain_restore import (
+    install_legacy_mcft_strain_profile,
+)
 from engineering_page_sections.shear_ui_layout_refinements import (
     install_shear_ui_layout_refinements,
 )
 
 
-# Install presentation-only layout wrappers before shear_page_runtime imports
-# the individual check renderers. MCFT diagram framing is owned by the actual
-# diagram builder in ui/diagrams/mcft_diagram.py.
+# Install presentation-only refinements before shear_page_runtime imports the
+# individual check renderers. The current Check 4 location remains owned by the
+# side-by-side layout; only its non-force strain figure is restored to the older
+# full-depth strain presentation.
 install_shear_ui_layout_refinements()
 install_equivalent_shear_diagram_restore()
+install_legacy_mcft_strain_profile()
 
 
 _RenderResult = TypeVar("_RenderResult")
