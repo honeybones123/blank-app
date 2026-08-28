@@ -1,6 +1,6 @@
 """Presentation-only isolation for Shear Check 10 detailing advice.
 
-Check 10 is intentionally not an engineering-result authority.  It may read the
+Check 10 is intentionally not an engineering-result authority. It may read the
 already-resolved shear zoning/layout publication and use that to teach/show a
 more economical link arrangement in the Shear side-view diagram, but it must
 not mutate shared link spacing, alter the canonical shear result, publish a
@@ -17,6 +17,7 @@ def install_shear_check10_detailing_isolation() -> None:
 
     from engineering_page_sections import shear_reinforcement_checks as check10_module
     from ui.diagrams import side_view_diagram
+    import shear_visuals as shear_visuals_module
 
     if getattr(check10_module, "_check10_detailing_isolation_installed", False):
         return
@@ -25,7 +26,7 @@ def install_shear_check10_detailing_isolation() -> None:
     # 1. Side-view projection
     # ------------------------------------------------------------------
     # Use the already-calculated zoning publication for the diagram whether or
-    # not Design Brain / auto-design is enabled.  This is display-only: s_lig is
+    # not Design Brain / auto-design is enabled. This is display-only: s_lig is
     # never overwritten and no capacity/result publication is changed.
     original_spacing_pair = side_view_diagram.shear_spacing_used_mm_pair
 
@@ -33,7 +34,12 @@ def install_shear_check10_detailing_isolation() -> None:
         shear_zone_results: dict[str, Any] | None,
     ) -> tuple[float, float]:
         sz = shear_zone_results if isinstance(shear_zone_results, dict) else {}
-        s_in = max(side_view_diagram._safe_float(side_view_diagram.get_param("s_lig", 0.0), 0.0), 0.0)
+        s_in = max(
+            side_view_diagram._safe_float(
+                side_view_diagram.get_param("s_lig", 0.0), 0.0
+            ),
+            0.0,
+        )
 
         s_mid = side_view_diagram._safe_float(
             sz.get("shear_mid_spacing_calc_mm")
@@ -47,7 +53,7 @@ def install_shear_check10_detailing_isolation() -> None:
         )
 
         # Never make the support/end-zone diagram looser than the user's
-        # provided link spacing.  Midspan may be shown looser only where the
+        # provided link spacing. Midspan may be shown looser only where the
         # existing Check 10 zoning calculation explicitly allows it.
         end_used = s_in
         if s_end > 0.0 and s_in <= 0.0:
@@ -64,10 +70,26 @@ def install_shear_check10_detailing_isolation() -> None:
 
     side_view_diagram.shear_spacing_used_mm_pair = detailing_spacing_pair
 
+    # shear_visuals._beam_model previously omitted the existing Check 10 zone
+    # publication. That forced build_stirrup_markers() down its uniform s_lig
+    # fallback, so the end/midspan zones disappeared even though Check 10 had
+    # calculated them. Project the publication into the visual model only.
+    # Nothing is written back to session state or any engineering result.
+    original_beam_model = shear_visuals_module._beam_model
+
+    def detailing_beam_model() -> dict[str, Any]:
+        model = original_beam_model()
+        zone_payload = side_view_diagram.get_param("shear_zone_results", None)
+        if isinstance(zone_payload, dict) and zone_payload:
+            model["shear_zone_results"] = zone_payload
+        return model
+
+    shear_visuals_module._beam_model = detailing_beam_model
+
     # ------------------------------------------------------------------
     # 2. Check 10 card isolation
     # ------------------------------------------------------------------
-    # The existing Check 10 renderer already performs no writes.  Wrap only its
+    # The existing Check 10 renderer already performs no writes. Wrap only its
     # presentation boundary so its local PASS/FAIL cannot masquerade as a main
     # page/global result, and so it shows the calculated zoning even when
     # shear_auto_design is off.
@@ -79,7 +101,7 @@ def install_shear_check10_detailing_isolation() -> None:
         if key == "shear_auto_design":
             # Presentation-only: causes the Check 10 card to display its own
             # calculated end/mid zoning rather than the globally provided
-            # uniform spacing.  Session state remains untouched.
+            # uniform spacing. Session state remains untouched.
             return True
         return original_get_param(key, default)
 
@@ -111,6 +133,7 @@ def install_shear_check10_detailing_isolation() -> None:
     check10_module.render_shear_reinforcement_checks = isolated_render
     check10_module._check10_detailing_isolation_installed = True
     check10_module._check10_original_spacing_pair = original_spacing_pair
+    check10_module._check10_original_beam_model = original_beam_model
 
 
 __all__ = ["install_shear_check10_detailing_isolation"]
