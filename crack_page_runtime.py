@@ -718,6 +718,14 @@ def render_crack():
             "Ec": Ec,
             "Es": Es,
             "cover_mm": c,
+            "rowgap_bot": get_param(
+                "rowgap_bot",
+                st.session_state.get("crack_rowgap_bot", 60.0),
+            ),
+            "exposure_class": get_param(
+                "exposure_class",
+                st.session_state.get("crack_exposure_class", "B1"),
+            ),
             "crack_tension_face": tension_face,
             "crack_member_type": member_type,
             "wmax_char_limit": wmax_choice,
@@ -734,6 +742,18 @@ def render_crack():
             "reference_source": "Beam Inputs",
         }
     )
+    for _face in ("bot",):
+        for _row in range(1, 5):
+            for _field in ("mode", "bars", "spacing", "dia"):
+                _key = f"{_face}_row_{_row}_{_field}"
+                crack_reference_values[_key] = get_param(
+                    _key,
+                    st.session_state.get(f"crack_{_key}", None),
+                )
+        crack_reference_values[f"{_face}_row_count"] = get_param(
+            f"{_face}_row_count",
+            st.session_state.get(f"crack_{_face}_row_count", 1),
+        )
     render_page_reference_sidebar(build_crack_reference(crack_reference_values))
     render_as3600_crack_checks(st, checks_snapshot)
 

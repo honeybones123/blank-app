@@ -185,6 +185,19 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
     )
     inputs_reference_values = dict(beam_snapshot.snapshot)
     inputs_reference_values["reference_source"] = "Beam Inputs"
+    # These two controls are presentation/workspace selectors rather than
+    # separate engineering state.  Project their existing values into the
+    # read-only reference model so the sidebar follows the same live page
+    # branch and load-set controls as the editor.
+    inputs_reference_values["inputs_detailed_mode"] = bool(
+        st.session_state.get(
+            "inputs_detailed_mode",
+            st.session_state.get("_inputs_detailed_mode", False),
+        )
+    )
+    inputs_reference_values["loads_edit_mode"] = str(
+        st.session_state.get("loads_edit_mode", "ULS") or "ULS"
+    )
     render_page_reference_sidebar(
         build_beam_inputs_reference(inputs_reference_values)
     )
