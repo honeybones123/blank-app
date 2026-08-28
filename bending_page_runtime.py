@@ -62,6 +62,10 @@ from engineering_page_sections.bending_checks_context import (
     build_bending_checks_snapshot,
 )
 from engineering_page_sections.bending_checks import render_bending_checks
+from engineering_page_sections.page_reference_sidebar import (
+    build_bending_reference,
+    render_page_reference_sidebar,
+)
 
 
 def _plot_stress_strain_profiles(*args, **kwargs):
@@ -277,33 +281,6 @@ def render_bending():
     )
 
 
-    # ---------------- Sidebar glossary ----------------
-    with st.sidebar.expander("📘 Glossary – Bending terms", expanded=False):
-        st.markdown(
-            """
-            **Mu*** – Factored design bending moment at the critical section (kNm).
-            **b** – Beam/web width (mm).
-            **D** – Overall section depth (mm).
-            **d** – Effective depth to **centroid of tension steel** (mm).
-            **Ast,bot** – Area of bottom (tension) reinforcement (mm²).
-            **As_min** – Minimum required tensile steel for ductile behaviour.
-            **f'c** – Concrete cylinder strength (MPa).
-            **fsy** – Steel yield strength (MPa).
-            **Ec, Es** – Elastic moduli of concrete and steel (MPa).
-
-            **c** – Neutral axis depth from the top fibre (mm).
-            **a = γc** – Equivalent rectangular stress block depth (mm).
-            **kᵤ = c/d** – Neutral axis depth ratio (ductility indicator).
-            **α₂, γ** – AS 3600-style stress block factors.
-            **ϕ** – Strength reduction factor for bending.
-
-            **M_cr** – Cracking moment (kNm) based on f_ct,f and gross section.
-            **M_u** – Nominal flexural capacity (kNm).
-            **ϕM_u,cap** – Design flexural capacity (kNm).
-            **Utilisation** – M_u* / ϕM_u,cap → should be ≤ 1.0.
-            """
-        )
-
     # Sync ULS load to Mu_star (contract-compliant via update_results)
     # Skip in design-driven mode to avoid overwriting SFD/BMD actions.
     if get_param("actions_mode", "manual") != "design":
@@ -437,6 +414,42 @@ def render_bending():
         ),
         valid_detail_views=_valid_bending_views,
         selected_diagram_state=canonical_state,
+    )
+
+    active_bending_case = bending_page_snapshot.active_case
+    bending_reference_values = dict(bending_page_snapshot.engineering_state)
+    bending_reference_values.update(
+        {
+            "M_star": active_bending_case.uls_demand_kNm,
+            "M_s": active_bending_case.sls_demand_kNm,
+            "d": active_bending_case.effective_depth_mm,
+            "moment_sign": (
+                "Hogging"
+                if bending_page_snapshot.view.showing_negative
+                else "Sagging"
+            ),
+            "actions_mode": bending_page_snapshot.engineering_state.get(
+                "actions_mode", get_param("actions_mode", "manual")
+            ),
+            "sls_ignore_compression_reinforcement": bool(
+                st.session_state.get(
+                    "sls_ignore_compression_reinforcement", False
+                )
+            ),
+            "reference_source": (
+                "Load Analysis"
+                if str(
+                    bending_page_snapshot.engineering_state.get(
+                        "actions_mode", ""
+                    )
+                ).lower()
+                == "design"
+                else "Beam Inputs"
+            ),
+        }
+    )
+    render_page_reference_sidebar(
+        build_bending_reference(bending_reference_values)
     )
 
     render_timing_mark("bending_page.runtime.summary_compute.end")

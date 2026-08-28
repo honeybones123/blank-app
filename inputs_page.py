@@ -35,6 +35,10 @@ from state_and_helpers import (
     speed_profiled,
 )
 from widgets_helpers import render_result_page_title
+from engineering_page_sections.page_reference_sidebar import (
+    build_beam_inputs_reference,
+    render_page_reference_sidebar,
+)
 
 
 _INPUTS_PAGE_RUNTIME = build_inputs_page_runtime()
@@ -178,6 +182,11 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         revision=int(beam_snapshot.revision or 0),
         active_beam_id=active_beam_id,
         copy_deepcopy_fn=copy.deepcopy,
+    )
+    inputs_reference_values = dict(beam_snapshot.snapshot)
+    inputs_reference_values["reference_source"] = "Beam Inputs"
+    render_page_reference_sidebar(
+        build_beam_inputs_reference(inputs_reference_values)
     )
 
     return render_engineering_workspace(

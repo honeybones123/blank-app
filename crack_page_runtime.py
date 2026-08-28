@@ -80,6 +80,10 @@ from reporting.crack_report_projection import (
     project_c766_end_result,
     project_c766_result,
 )
+from engineering_page_sections.page_reference_sidebar import (
+    build_crack_reference,
+    render_page_reference_sidebar,
+)
 
 
 # ------------------------------------------------------------
@@ -227,6 +231,18 @@ def render_crack():
                     st.session_state.get("step_open_crk_as5100_spacing", False)
                 ),
             },
+        )
+        render_page_reference_sidebar(
+            build_crack_reference(
+                {
+                    "crack_control_method": selected_method,
+                    "crack_wall_thickness_mm": wall_inputs.thickness_mm,
+                    "crack_wall_horizontal_area_per_face": wall_inputs.horizontal_area_per_face_mm2_per_m,
+                    "crack_wall_vertical_spacing_mm": wall_inputs.vertical_spacing_mm,
+                    "crack_wall_in_base_zone": wall_inputs.in_base_zone,
+                    "reference_source": "Beam Inputs",
+                }
+            )
         )
         return
     else:
@@ -421,6 +437,49 @@ def render_crack():
                 ),
             },
         )
+        crack_reference_values = {
+            "crack_control_method": selected_method,
+            "crack_c766_restraint_type": method_inputs.restraint_type,
+            "crack_c766_cover_mm": method_inputs.cover_mm,
+            "crack_c766_bar_diameter_mm": method_inputs.bar_diameter_mm,
+            "crack_c766_effective_reinforcement_ratio": method_inputs.effective_reinforcement_ratio,
+            "reference_source": "Beam Inputs",
+        }
+        if isinstance(method_inputs, C766EndInputValues):
+            crack_reference_values.update(
+                {
+                    "crack_c766_modular_ratio": method_inputs.effective_modular_ratio,
+                    "crack_c766_non_uniform_k": method_inputs.non_uniform_stress_coefficient,
+                    "crack_c766_stress_distribution_kc": method_inputs.stress_distribution_coefficient,
+                    "crack_c766_characteristic_tensile_mpa": method_inputs.characteristic_tensile_strength_mpa,
+                    "crack_c766_total_reinforcement_ratio": method_inputs.total_reinforcement_ratio,
+                    "Es": method_inputs.reinforcement_modulus_mpa,
+                }
+            )
+        else:
+            c766_shrinkage = dict(
+                method_inputs.shrinkage_components or {}
+            )
+            crack_reference_values.update(
+                {
+                    "crack_c766_t1_c": method_inputs.temperature_drop_early_c,
+                    "crack_c766_t2_c": method_inputs.temperature_change_long_term_c,
+                    "crack_c766_alpha_micro_per_c": method_inputs.thermal_expansion_microstrain_per_c,
+                    "crack_c766_restraint_early": method_inputs.restraint_early,
+                    "crack_c766_restraint_medium": method_inputs.restraint_medium,
+                    "crack_c766_restraint_long": method_inputs.restraint_long,
+                    "crack_c766_tensile_capacity_micro": method_inputs.tensile_strain_capacity_microstrain,
+                    "crack_c766_autogenous_early_micro": float(
+                        c766_shrinkage.get("autogenous_early", 0.0)
+                    )
+                    * 1e6,
+                    "crack_c766_autogenous_long_micro": float(
+                        c766_shrinkage.get("autogenous_long_term", 0.0)
+                    )
+                    * 1e6,
+                }
+            )
+        render_page_reference_sidebar(build_crack_reference(crack_reference_values))
         return
 
     # --------------------------------------------------------
@@ -644,6 +703,38 @@ def render_crack():
             }
         ),
     )
+    crack_reference_values = dict(page_snapshot.engineering_state)
+    crack_reference_values.update(
+        {
+            "crack_control_method": selected_method,
+            "sec_shape": get_param("sec_shape", "RECT"),
+            "b": b,
+            "D": D,
+            "bf": get_param("bf", None),
+            "tf": get_param("tf", None),
+            "bw": get_param("bw", None),
+            "tw": get_param("tw", None),
+            "fc": fc,
+            "Ec": Ec,
+            "Es": Es,
+            "cover_mm": c,
+            "crack_tension_face": tension_face,
+            "crack_member_type": member_type,
+            "wmax_char_limit": wmax_choice,
+            "fsy": fsy,
+            "bar_diameter_mm": db,
+            "bar_spacing_mm": spacing,
+            "Ast": Ast,
+            "sigma_sr": sigma_sr,
+            "crack_k1": k1,
+            "crack_k2": k2,
+            "sls_Mstar": get_param("sls_Mstar", None),
+            "phi_cc_t": phi_ce,
+            "eps_cs_total_micro": eps_cs_micro,
+            "reference_source": "Beam Inputs",
+        }
+    )
+    render_page_reference_sidebar(build_crack_reference(crack_reference_values))
     render_as3600_crack_checks(st, checks_snapshot)
 
     # --------------------------------------------------------
