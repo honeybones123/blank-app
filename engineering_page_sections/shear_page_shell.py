@@ -16,6 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
+from engineering_page_sections.shear_check10_detailing_isolation import (
+    install_shear_check10_detailing_isolation,
+)
 from engineering_page_sections.shear_equivalent_shear_diagram_restore import (
     install_equivalent_shear_diagram_restore,
 )
@@ -30,10 +33,13 @@ from engineering_page_sections.shear_ui_layout_refinements import (
 # Install presentation-only refinements before shear_page_runtime imports the
 # individual check renderers. The current Check 4 location remains owned by the
 # side-by-side layout; only its non-force strain figure is restored to the older
-# full-depth strain presentation.
+# full-depth strain presentation. Check 10 remains a local detailing adviser:
+# it may alter only the Shear side-view link spacing projection, never the
+# authoritative engineering result, summary or Design Brain state.
 install_shear_ui_layout_refinements()
 install_equivalent_shear_diagram_restore()
 install_legacy_mcft_strain_profile()
+install_shear_check10_detailing_isolation()
 
 
 _RenderResult = TypeVar("_RenderResult")
