@@ -16,7 +16,7 @@ MCFT_CHECK4_FACE_X_HALF = 1.15
 MCFT_CHECK4_Y_PAD = 0.18
 # The strain-profile view needs a little more true data-space headroom so it reads
 # as zoomed out without changing the outer Streamlit/Plotly wrapper dimensions.
-MCFT_CHECK4_STRAIN_Y_PAD = 0.28
+MCFT_CHECK4_STRAIN_Y_PAD = 0.55
 # Pull display x toward the beam face (x=0) for the MCFT point/tick/labels only — not a calc change.
 MCFT_CHECK4_EPSX_VISUAL_INWARD = 0.40
 # Small compression cue at top (display x < 0); tension at bottom (x > 0). Keeps a shallow C→T line through x_vis.
