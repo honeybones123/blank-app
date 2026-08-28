@@ -429,6 +429,26 @@ def render_deflection():
     _defl_bot_dia = get_param("db_bot_1", get_param("db_bot", None))
     _defl_top_count = get_param("nb_or_s_top_1", get_param("nb_top", None))
     _defl_top_dia = get_param("db_top_1", get_param("db_top", None))
+
+    def _deflection_reference_row_projection() -> dict[str, object]:
+        """Project the active row editor values without creating new state."""
+
+        projected: dict[str, object] = {}
+        for face in ("bot", "top"):
+            row_count_key = f"{face}_row_count"
+            projected[row_count_key] = get_param(
+                row_count_key,
+                st.session_state.get(f"defl_{row_count_key}", 1),
+            )
+            for row in range(1, 5):
+                for field in ("mode", "bars", "spacing", "dia"):
+                    key = f"{face}_row_{row}_{field}"
+                    projected[key] = get_param(
+                        key,
+                        st.session_state.get(f"defl_{key}"),
+                    )
+        return projected
+
     col_geom, col_mats, col_loads, col_reo_bot, col_reo_top = compact_check_input_columns(
         st,
         CheckInputPanelConfig(
@@ -975,10 +995,22 @@ def render_deflection():
                     "sls_Mstar": M_used,
                     "sls_Vstar": V_used,
                     "load_case": load_case,
+                    "beam_system_mode": st.session_state.get(
+                        "sfd_beam_system_mode",
+                        get_param("beam_system_mode", None),
+                    ),
                     "span_L_m": L_sfd,
                     "w_sls_kNm_per_m": w_sls,
                     "P_sls_kN": P_sls,
                     "a_m": a,
+                    "actions_source": actions_source,
+                    "g_udl_kNm_per_m": g,
+                    "q_udl_kNm_per_m": q,
+                    "psi_udl": psi_s,
+                    "G_point_kN": G_point,
+                    "Q_point_kN": Q_point,
+                    "psi_point": get_param("psi_point", psi_s),
+                    **_deflection_reference_row_projection(),
                     "defl_L_eff": L_eff_m,
                     "phi_cc_t": phi_cc_t,
                     "stress_ratio": stress_ratio,
@@ -1160,10 +1192,22 @@ def render_deflection():
             "sls_Mstar": M_used,
             "sls_Vstar": V_used,
             "load_case": load_case,
+            "beam_system_mode": st.session_state.get(
+                "sfd_beam_system_mode",
+                get_param("beam_system_mode", None),
+            ),
             "span_L_m": L_sfd,
             "w_sls_kNm_per_m": w_sls,
             "P_sls_kN": P_sls,
             "a_m": a,
+            "actions_source": actions_source,
+            "g_udl_kNm_per_m": g,
+            "q_udl_kNm_per_m": q,
+            "psi_udl": psi_s,
+            "G_point_kN": G_point,
+            "Q_point_kN": Q_point,
+            "psi_point": get_param("psi_point", psi_s),
+            **_deflection_reference_row_projection(),
             "defl_L_eff": L_eff_m,
             "phi_cc_t": phi_cc_t,
             "stress_ratio": stress_ratio,

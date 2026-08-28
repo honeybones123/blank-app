@@ -431,6 +431,12 @@ def render_bending():
             "actions_mode": bending_page_snapshot.engineering_state.get(
                 "actions_mode", get_param("actions_mode", "manual")
             ),
+            "concrete_stress_model": st.session_state.get(
+                "concrete_stress_model", "rectangular"
+            ),
+            "loads_edit_mode": str(
+                st.session_state.get("loads_edit_mode", "ULS") or "ULS"
+            ),
             "sls_ignore_compression_reinforcement": bool(
                 st.session_state.get(
                     "sls_ignore_compression_reinforcement", False
@@ -448,6 +454,30 @@ def render_bending():
             ),
         }
     )
+    # The action editor uses the shared load-set proxy controls.  Project the
+    # existing ULS/SLS values into the sidebar so its exact labels and current
+    # values follow the same active branch as the page editor.
+    for _prefix in ("uls", "sls"):
+        try:
+            _signed_moment = float(
+                bending_reference_values.get(
+                    f"{_prefix}_Mstar", get_param(f"{_prefix}_Mstar", 0.0)
+                )
+                or 0.0
+            )
+        except (TypeError, ValueError):
+            _signed_moment = 0.0
+        bending_reference_values.setdefault(
+            f"{_prefix}_Mstar_pos_manual",
+            get_param(f"{_prefix}_Mstar_pos_manual", max(0.0, _signed_moment)),
+        )
+        bending_reference_values.setdefault(
+            f"{_prefix}_Mstar_neg_manual",
+            get_param(f"{_prefix}_Mstar_neg_manual", max(0.0, -_signed_moment)),
+        )
+        bending_reference_values.setdefault(
+            f"{_prefix}_Nstar", get_param(f"{_prefix}_Nstar", 0.0)
+        )
     render_page_reference_sidebar(
         build_bending_reference(bending_reference_values)
     )

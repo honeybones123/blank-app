@@ -4240,6 +4240,13 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
             "load_case": case,
             "support_condition": support_condition_active,
             "L_m": beam_length,
+            # This existing source pointer is rendered on the Load Analysis
+            # page; project it read-only so the sidebar shows the same branch
+            # selector without creating a second control or state owner.
+            "actions_source": st.session_state.get(
+                "actions_source",
+                "Manual design actions (inputs below)",
+            ),
             "design_actions_source": design_actions_source,
             "active_mode": active_mode,
             "M_uls": M_uls,

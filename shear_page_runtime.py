@@ -78,6 +78,33 @@ from engineering_page_sections.shear_visualisation import (
 )
 
 
+def _shear_reference_action_projections() -> dict[str, object]:
+    """Project the active Shear action controls without changing their owner."""
+
+    projected: dict[str, object] = {
+        "P_star": get_param("P_star", 0.0),
+        "bending_detail_view": st.session_state.get("bending_detail_view", "positive"),
+    }
+    for prefix in ("uls", "sls"):
+        try:
+            signed_moment = float(get_param(f"{prefix}_Mstar", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            signed_moment = 0.0
+        projected[f"{prefix}_Mstar_pos_manual"] = get_param(
+            f"{prefix}_Mstar_pos_manual", max(0.0, signed_moment)
+        )
+        projected[f"{prefix}_Mstar_neg_manual"] = get_param(
+            f"{prefix}_Mstar_neg_manual", max(0.0, -signed_moment)
+        )
+        projected[f"manual_{prefix}_Vstar"] = get_param(
+            f"{prefix}_Vstar", 0.0
+        )
+        projected[f"manual_{prefix}_Nstar"] = get_param(
+            f"{prefix}_Nstar", 0.0
+        )
+    return projected
+
+
 def _render_shear_diagram_bundle_panel_impl(
     *,
     runtime: ShearVisualisationRuntime,
@@ -426,6 +453,24 @@ def render_shear():
         )
         incomplete_shear_reference_values.update(
             {
+                "sec_shape": get_param("sec_shape", "RECT"),
+                "b": b,
+                "D": D,
+                "L": get_param("L", None),
+                "bf": get_param("bf", None),
+                "tf": get_param("tf", None),
+                "bw": get_param("bw", None),
+                "tw": get_param("tw", None),
+                "fc": fc,
+                "fsy": fsy,
+                "Ec": Ec,
+                "Es": Es,
+                "n_ducts": get_param("n_ducts", 0.0),
+                "duct_dia": get_param("duct_dia", 0.0),
+                "defl_support_type": get_param(
+                    "defl_support_type",
+                    get_param("shear_defl_support_type", "Simply supported"),
+                ),
                 "M_star": M_star,
                 "V_star": V_star,
                 "T_star": T_star,
@@ -442,7 +487,14 @@ def render_shear():
                 "s_lig": s_lig,
                 "phi_shear": phi,
                 "k_v_method": method,
+                "loads_edit_mode": str(
+                    st.session_state.get("loads_edit_mode", "ULS") or "ULS"
+                ),
+                "shear_include_prestress_effects_ui": bool(
+                    st.session_state.get("shear_include_prestress_effects_ui", False)
+                ),
                 "actions_mode": shear_page_snapshot.view.actions_mode,
+                **_shear_reference_action_projections(),
                 "reference_source": (
                     "Load Analysis"
                     if shear_page_snapshot.view.is_design_driven
@@ -605,6 +657,24 @@ def render_shear():
     shear_reference_values = dict(shear_page_snapshot.engineering_state)
     shear_reference_values.update(
         {
+            "sec_shape": get_param("sec_shape", "RECT"),
+            "b": b,
+            "D": D,
+            "L": get_param("L", None),
+            "bf": get_param("bf", None),
+            "tf": get_param("tf", None),
+            "bw": get_param("bw", None),
+            "tw": get_param("tw", None),
+            "fc": fc,
+            "fsy": fsy,
+            "Ec": Ec,
+            "Es": Es,
+            "n_ducts": get_param("n_ducts", 0.0),
+            "duct_dia": get_param("duct_dia", 0.0),
+            "defl_support_type": get_param(
+                "defl_support_type",
+                get_param("shear_defl_support_type", "Simply supported"),
+            ),
             "M_star": M_star,
             "V_star": V_star,
             "T_star": T_star,
@@ -635,7 +705,14 @@ def render_shear():
             "theta_v_deg": theta_v_deg,
             "crack_theta_deg": theta_deg,
             "shear_auto_design": bool(get_param("shear_auto_design", False)),
+            "loads_edit_mode": str(
+                st.session_state.get("loads_edit_mode", "ULS") or "ULS"
+            ),
+            "shear_include_prestress_effects_ui": bool(
+                st.session_state.get("shear_include_prestress_effects_ui", False)
+            ),
             "actions_mode": shear_page_snapshot.view.actions_mode,
+            **_shear_reference_action_projections(),
             "reference_source": (
                 "Load Analysis"
                 if shear_page_snapshot.view.is_design_driven
