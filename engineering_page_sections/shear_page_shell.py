@@ -16,6 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
+from engineering_page_sections.shear_equivalent_shear_diagram_restore import (
+    install_equivalent_shear_diagram_restore,
+)
 from engineering_page_sections.shear_ui_layout_refinements import (
     install_shear_ui_layout_refinements,
 )
@@ -25,6 +28,7 @@ from engineering_page_sections.shear_ui_layout_refinements import (
 # the individual check renderers. MCFT diagram framing is owned by the actual
 # diagram builder in ui/diagrams/mcft_diagram.py.
 install_shear_ui_layout_refinements()
+install_equivalent_shear_diagram_restore()
 
 
 _RenderResult = TypeVar("_RenderResult")
