@@ -284,6 +284,10 @@ def test_shear_action_and_duct_controls_project_current_values() -> None:
     items = {item.key: item for item in model.items if item.visible}
     assert items["manual_uls_Vstar"].value == 96.0
     assert items["manual_uls_Nstar"].value == 4.0
+    assert items["V_star"].input_label == "Resolved design shear V* (kN)"
+    assert items["M_star"].input_label == "Resolved design moment M* (kNm)"
+    assert items["T_star"].input_label == "Resolved torsion T* (kNm)"
+    assert items["N_star"].input_label == "Resolved axial force N* (kN, +tension)"
     assert items["P_star"].input_label == "Prestress force P* (kN)"
     assert items["n_ducts"].value == 2
     assert items["n_ducts"].units == "ducts"
