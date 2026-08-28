@@ -187,6 +187,10 @@ def _render_check4_diagrams(mcft_module: Any, view: Any) -> None:
         fig_strain,
         title_pad_t=int(mcft_module.MCFT_BEHAVIOUR_MARGIN["t"]),
     )
+    # Force the final rendered strain viewport to keep the full-depth line large
+    # while retaining a small true top/bottom clearance. This deliberately
+    # overrides the builder's current over-zoomed-out strain pad.
+    fig_strain.update_yaxes(range=[1.10, -0.10], autorange=False)
     fig_strain.update_layout(
         height=_MCFT_CHECK4_HEIGHT_PX,
         autosize=True,
