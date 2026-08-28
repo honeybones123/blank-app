@@ -16,6 +16,10 @@ from application.opening_page_preferences import (
 from ui.opening_page_preference_bridge import render_pending_guest_preference_write
 from application.reference_registry import reference_entries
 from application.user_preference_store import save_account_preference
+from engineering_page_sections.page_reference_sidebar import (
+    build_start_reference,
+    render_page_reference_sidebar,
+)
 
 
 PENDING_NAV_PAGE_SLUG_KEY = "_pending_nav_page_slug"
@@ -189,6 +193,7 @@ def render_start_page(
 ) -> None:
     """Render initial navigation without owning calculations."""
     _render_card_styles()
+    render_page_reference_sidebar(build_start_reference())
     st.markdown(
         '<div class="start-page-intro"><p>Choose whether to define the beam directly or calculate its design actions from applied loads.</p></div>',
         unsafe_allow_html=True,

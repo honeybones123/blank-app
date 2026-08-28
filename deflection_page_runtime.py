@@ -41,6 +41,10 @@ from widgets_helpers import (
     compact_side_view_figure,
     inject_compact_side_view_spacing,
 )
+from engineering_page_sections.page_reference_sidebar import (
+    build_deflection_reference,
+    render_page_reference_sidebar,
+)
 from step_ui import init_step_ui_state
 from ui.summary_rows import build_deflection_summary_rows
 from deflection_checks_helpers import build_deflection_check_rows_from_state
@@ -938,6 +942,54 @@ def render_deflection():
             if isinstance(results, dict)
             else "Deflection calculation failed: invalid span length."
         )
+        render_page_reference_sidebar(
+            build_deflection_reference(
+                {
+                    "b": b,
+                    "D": D,
+                    "L": L,
+                    "sec_shape": get_param("sec_shape", "RECT"),
+                    "bf": get_param("bf", None),
+                    "tf": get_param("tf", None),
+                    "fc": fc,
+                    "Ec": Ec,
+                    "Ec_short": Ec_short,
+                    "Eceff": Ec,
+                    "Es": get_param("Es", None),
+                    "d": d,
+                    "bw": bw,
+                    "beff": beff,
+                    "Ast": Ast,
+                    "Asc": Asc,
+                    "nb_or_s_bot_1": _defl_bot_count,
+                    "db_bot_1": _defl_bot_dia,
+                    "nb_or_s_top_1": _defl_top_count,
+                    "db_top_1": _defl_top_dia,
+                    "rowgap_bot": rowgap_bot_val,
+                    "rowgap_top": rowgap_top_val,
+                    "defl_support_type": support_type,
+                    "defl_limit_ratio": defl_limit_ratio,
+                    "defl_Fdef": Fdef_kNm,
+                    "defl_use_simplified_ief": use_simplified_ief,
+                    "defl_Ief_user": st.session_state.get("defl_Ief_user"),
+                    "sls_Mstar": M_used,
+                    "sls_Vstar": V_used,
+                    "load_case": load_case,
+                    "span_L_m": L_sfd,
+                    "w_sls_kNm_per_m": w_sls,
+                    "P_sls_kN": P_sls,
+                    "a_m": a,
+                    "defl_L_eff": L_eff_m,
+                    "phi_cc_t": phi_cc_t,
+                    "stress_ratio": stress_ratio,
+                    "sustained_Mstar_kNm": sustained_mstar,
+                    "sustained_sigma_cs_mpa": sustained_sigma_cs,
+                    "reference_source": (
+                        "Load Analysis" if is_design_driven else "Beam Inputs"
+                    ),
+                }
+            )
+        )
         st.warning(error_msg)
         return
 
@@ -1074,6 +1126,56 @@ def render_deflection():
             "w_sust": w_sust,
             "w_total": w_total,
         }
+    )
+    deflection_reference_values = dict(checks_snapshot.values)
+    deflection_reference_values.update(
+        {
+            "b": b,
+            "D": D,
+            "L": L,
+            "sec_shape": get_param("sec_shape", "RECT"),
+            "bf": get_param("bf", None),
+            "tf": get_param("tf", None),
+            "fc": fc,
+            "Ec": Ec,
+            "Ec_short": Ec_short,
+            "Eceff": Ec,
+            "Es": get_param("Es", None),
+            "d": d,
+            "bw": bw,
+            "beff": beff,
+            "Ast": Ast,
+            "Asc": Asc,
+            "nb_or_s_bot_1": _defl_bot_count,
+            "db_bot_1": _defl_bot_dia,
+            "nb_or_s_top_1": _defl_top_count,
+            "db_top_1": _defl_top_dia,
+            "rowgap_bot": rowgap_bot_val,
+            "rowgap_top": rowgap_top_val,
+            "defl_support_type": support_type,
+            "defl_limit_ratio": defl_limit_ratio,
+            "defl_Fdef": Fdef_kNm,
+            "defl_use_simplified_ief": use_simplified_ief,
+            "defl_Ief_user": st.session_state.get("defl_Ief_user"),
+            "sls_Mstar": M_used,
+            "sls_Vstar": V_used,
+            "load_case": load_case,
+            "span_L_m": L_sfd,
+            "w_sls_kNm_per_m": w_sls,
+            "P_sls_kN": P_sls,
+            "a_m": a,
+            "defl_L_eff": L_eff_m,
+            "phi_cc_t": phi_cc_t,
+            "stress_ratio": stress_ratio,
+            "sustained_Mstar_kNm": sustained_mstar,
+            "sustained_sigma_cs_mpa": sustained_sigma_cs,
+            "reference_source": (
+                "Load Analysis" if is_design_driven else "Beam Inputs"
+            ),
+        }
+    )
+    render_page_reference_sidebar(
+        build_deflection_reference(deflection_reference_values)
     )
     render_deflection_checks(
         checks_snapshot,

@@ -54,6 +54,10 @@ from engineering_page_sections.creep_page_context import build_creep_page_snapsh
 from reporting.creep_report_projection import build_creep_report_projection
 from engineering_page_sections.creep_checks_context import CreepChecksSnapshot
 from engineering_page_sections.creep_checks import render_creep_checks
+from engineering_page_sections.page_reference_sidebar import (
+    build_creep_reference,
+    render_page_reference_sidebar,
+)
 
 
 def _inject_calcbox_css():
@@ -438,6 +442,34 @@ def render_creep():
         eps_cc=eps_cc,
         eps_cc_micro=eps_cc_micro,
     )
+    creep_reference_values = dict(creep_page_snapshot.engineering_state)
+    creep_reference_values.update(
+        {
+            "b": creep_checks_snapshot.width_mm,
+            "D": creep_checks_snapshot.depth_mm,
+            "fc": creep_checks_snapshot.concrete_strength_mpa,
+            "Ec": creep_checks_snapshot.concrete_modulus_mpa,
+            "member_faces_exposed": creep_checks_snapshot.faces_exposed,
+            "env_option": creep_checks_snapshot.environment,
+            "t_creep": creep_checks_snapshot.time_after_loading_days,
+            "age_at_loading": creep_checks_snapshot.age_at_loading_days,
+            "sustained_Mstar_kNm": creep_checks_snapshot.sustained_moment_knm,
+            "sls_Mstar": creep_page_snapshot.engineering_state.get(
+                "sls_Mstar",
+                creep_page_snapshot.engineering_state.get("SLS_M_pos"),
+            ),
+            "sustained_sigma_cs_mpa": creep_checks_snapshot.sustained_stress_mpa,
+            "sustained_section_modulus_mm3": creep_checks_snapshot.sustained_section_modulus_mm3,
+            "stress_ratio": creep_checks_snapshot.sustained_stress_ratio,
+            "sustained_compression_fibre": creep_checks_snapshot.sustained_compression_fibre,
+            "A_g": creep_checks_snapshot.gross_area_mm2,
+            "ue": creep_checks_snapshot.exposed_perimeter_mm,
+            "th_raw": creep_checks_snapshot.notional_thickness_raw_mm,
+            "th_table": creep_checks_snapshot.notional_thickness_table_mm,
+            "reference_source": "Beam Inputs",
+        }
+    )
+    render_page_reference_sidebar(build_creep_reference(creep_reference_values))
     render_creep_checks(st, creep_checks_snapshot)
 
     scroll_to_jump_after_render()

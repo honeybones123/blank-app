@@ -67,6 +67,10 @@ from inputs_page_modules.summaries.models import InputsSummaryCardSource, Inputs
 from inputs_page_modules.summaries.rows_from_packs import render_inputs_summary_rows_from_packs
 from ui_seamless_steps import inject_seamless_steps_css
 from inputs_page_modules.fragments import rerun_inputs_current_scope
+from engineering_page_sections.page_reference_sidebar import (
+    build_load_analysis_reference,
+    render_page_reference_sidebar,
+)
 
 from beam_analysis import (
     build_beam_model_from_legacy_case,
@@ -4227,6 +4231,33 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
             "inputs_action_source_toggle",
             changed_keys=projected_action_keys,
         )
+
+    load_analysis_reference_values = load_analysis_store.current().to_dict()
+    load_analysis_reference_values.update(dict(params))
+    load_analysis_reference_values.update(
+        {
+            "beam_system_mode": beam_system_mode,
+            "load_case": case,
+            "support_condition": support_condition_active,
+            "L_m": beam_length,
+            "design_actions_source": design_actions_source,
+            "active_mode": active_mode,
+            "M_uls": M_uls,
+            "V_uls": V_uls,
+            "M_sls": M_sls,
+            "V_sls": V_sls,
+            "reference_source": "Load Analysis",
+        }
+    )
+    load_analysis_reference_values.setdefault("g_udl_kNm_per_m", base_g)
+    load_analysis_reference_values.setdefault("q_udl_kNm_per_m", base_q)
+    load_analysis_reference_values.setdefault("psi_udl", base_psi)
+    load_analysis_reference_values.setdefault("G_point_kN", base_G)
+    load_analysis_reference_values.setdefault("Q_point_kN", base_Q)
+    load_analysis_reference_values.setdefault("psi_point", base_psi_point)
+    render_page_reference_sidebar(
+        build_load_analysis_reference(load_analysis_reference_values)
+    )
 
     # Bind JS click/scroll after all steps render
     bind_summary_clicks()

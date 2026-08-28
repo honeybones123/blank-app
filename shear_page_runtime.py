@@ -65,6 +65,10 @@ from engineering_page_sections.shear_reinforcement_checks import (
     render_shear_reinforcement_checks,
 )
 from reporting.shear_report_projection import build_shear_report
+from engineering_page_sections.page_reference_sidebar import (
+    build_shear_reference,
+    render_page_reference_sidebar,
+)
 
 
 from engineering_page_sections.shear_visualisation import (
@@ -417,6 +421,38 @@ def render_shear():
     sum_duct = live_shear_state["sum_duct"]
 
     if not (b and D and d):
+        incomplete_shear_reference_values = dict(
+            shear_page_snapshot.engineering_state
+        )
+        incomplete_shear_reference_values.update(
+            {
+                "M_star": M_star,
+                "V_star": V_star,
+                "T_star": T_star,
+                "N_star": N_star,
+                "P_v": P_v,
+                "A_st": A_st,
+                "A_pt": A_pt,
+                "f_po": f_po,
+                "A_ct": A_ct,
+                "sigma_cp": sigma_cp,
+                "sum_duct": sum_duct,
+                "lig_d": lig_d,
+                "lig_legs": legs,
+                "s_lig": s_lig,
+                "phi_shear": phi,
+                "k_v_method": method,
+                "actions_mode": shear_page_snapshot.view.actions_mode,
+                "reference_source": (
+                    "Load Analysis"
+                    if shear_page_snapshot.view.is_design_driven
+                    else "Beam Inputs"
+                ),
+            }
+        )
+        render_page_reference_sidebar(
+            build_shear_reference(incomplete_shear_reference_values)
+        )
         st.error("Geometry (b, D, d) not fully defined – check Inputs / Bending tab.")
         return
 
@@ -565,6 +601,49 @@ def render_shear():
     k_v = float(getattr(shear_results, "k_v", k_v) or 0.0)
     theta_v_deg = float(getattr(shear_results, "theta_v_deg", theta_v_deg) or 0.0)
     theta_v_rad = float(getattr(shear_results, "theta_v_rad", math.radians(theta_v_deg)) or 0.0)
+
+    shear_reference_values = dict(shear_page_snapshot.engineering_state)
+    shear_reference_values.update(
+        {
+            "M_star": M_star,
+            "V_star": V_star,
+            "T_star": T_star,
+            "N_star": N_star,
+            "P_v": P_v,
+            "A_st": A_st,
+            "A_pt": A_pt,
+            "f_po": f_po,
+            "A_ct": A_ct,
+            "sigma_cp": sigma_cp,
+            "sum_duct": sum_duct,
+            "lig_d": lig_d,
+            "lig_legs": legs,
+            "s_lig": s,
+            "Asv": Asv,
+            "phi_shear": phi,
+            "phi_torsion": get_param("phi_torsion", None),
+            "k_v_method": method,
+            "k_d_option": get_param(
+                "shear_k_d_option",
+                get_param("k_d_option", "None (no ducts in web)"),
+            ),
+            "b_v": b_v,
+            "d_v": d_v,
+            "V_eq": V_eq,
+            "eps_x": eps_x,
+            "k_v": k_v,
+            "theta_v_deg": theta_v_deg,
+            "crack_theta_deg": theta_deg,
+            "shear_auto_design": bool(get_param("shear_auto_design", False)),
+            "actions_mode": shear_page_snapshot.view.actions_mode,
+            "reference_source": (
+                "Load Analysis"
+                if shear_page_snapshot.view.is_design_driven
+                else "Beam Inputs"
+            ),
+        }
+    )
+    render_page_reference_sidebar(build_shear_reference(shear_reference_values))
 
     # The visualisation placeholder is created before the input rail, but the
     # actual diagram work happens here. Keep a separate measured boundary so

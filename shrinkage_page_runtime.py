@@ -64,6 +64,10 @@ from widgets_helpers import (
     render_page_explainer_expander,
     render_result_page_title,
 )
+from engineering_page_sections.page_reference_sidebar import (
+    build_shrinkage_reference,
+    render_page_reference_sidebar,
+)
 
 
 def _inject_calcbox_css() -> None:
@@ -440,6 +444,30 @@ def render_shrinkage():
             st.session_state, "shrinkage"
         ),
         inputs=inputs,
+    )
+
+    shrinkage_reference_values = dict(page_snapshot.engineering_state)
+    shrinkage_reference_values.update(
+        {
+            "b": page_snapshot.inputs.width_mm,
+            "D": page_snapshot.inputs.depth_mm,
+            "fc": page_snapshot.inputs.concrete_strength_mpa,
+            "member_faces_exposed": page_snapshot.inputs.faces_exposed,
+            "shrinkage_env": page_snapshot.inputs.environment,
+            "shrinkage_method": page_snapshot.inputs.method,
+            "t_shrink": page_snapshot.inputs.time_days,
+            "shrinkage_relative_humidity_percent": page_snapshot.inputs.relative_humidity_percent,
+            "shrinkage_cement_class": page_snapshot.inputs.cement_class,
+            "shrinkage_drying_start_age_days": page_snapshot.inputs.drying_start_age_days,
+            "A_g": area,
+            "ue": perimeter,
+            "th_raw": thickness_raw,
+            "th_table": thickness_table,
+            "reference_source": "Beam Inputs",
+        }
+    )
+    render_page_reference_sidebar(
+        build_shrinkage_reference(shrinkage_reference_values)
     )
 
     visualisation_slot.render(
