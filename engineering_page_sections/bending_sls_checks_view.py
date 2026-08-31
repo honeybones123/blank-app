@@ -529,7 +529,7 @@ Check 3 uses this converged $d_n$ to calculate $I_{{cr}}$.
             step_md=step1,
             uid="bending_sls_check2_step_1",
             diagram_fn=lambda: canonical_diagram(
-                "Converged cracked section (reference)",
+                "Cracked section and neutral axis",
                 "trial_section",
             ),
         )
