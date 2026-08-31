@@ -16,6 +16,12 @@ _STATE_COLOURS = {
     "neutral": "#64748b",
 }
 
+_TRANSFORM_FILL_COLOURS = {
+    "tension": "rgba(220,38,38,0.13)",
+    "compression": "rgba(37,99,235,0.13)",
+    "neutral": "rgba(100,116,139,0.11)",
+}
+
 
 def _physical_segments(layout: Mapping[str, Any]) -> tuple[tuple[float, float, float, float], ...]:
     """Return section rectangles as (x0, x1, y0, y1) in real section coordinates."""
@@ -85,6 +91,66 @@ def _bar_points(layout: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
             for x, y in zip(xs, y_values):
                 collected.append({"x": float(x), "y": y, "db": db, "layer": face})
     return tuple(collected)
+
+
+def _transformed_area_expression(state: str) -> str:
+    if state == "tension":
+        return "nA<sub>s</sub>"
+    if state == "compression":
+        return "(n−1)A<sub>s</sub>"
+    return "kA<sub>s</sub>"
+
+
+def _draw_transformed_area_bands(
+    fig: go.Figure,
+    *,
+    layers: tuple[Mapping[str, Any], ...],
+    width: float,
+    depth: float,
+) -> None:
+    """Draw area-scaled schematic bands for the equivalent transformed steel area.
+
+    The physical bars remain visible on top.  The translucent rectangle has an
+    area equal to ``transformed_factor * As`` whenever it can be represented
+    inside the section width, making the transformed-section substitution
+    visually explicit without changing any engineering calculation.
+    """
+
+    for layer in layers:
+        included = bool(layer.get("included", True))
+        area = float(layer.get("area_mm2", 0.0) or 0.0)
+        factor = float(layer.get("transformed_factor", 0.0) or 0.0)
+        if not included or area <= 0.0 or factor <= 0.0:
+            continue
+
+        equivalent_area = area * factor
+        y = float(layer.get("depth_from_top_mm", 0.0) or 0.0)
+        state = str(layer.get("state", "neutral") or "neutral")
+        colour = _STATE_COLOURS.get(state, _STATE_COLOURS["neutral"])
+        fill = _TRANSFORM_FILL_COLOURS.get(state, _TRANSFORM_FILL_COLOURS["neutral"])
+
+        # Use a thin area-equivalent rectangle centred on the physical bar layer.
+        # Increase the band height only when needed to keep the rectangle inside
+        # the section width; this preserves the equivalent area visually for
+        # ordinary beam reinforcement arrangements.
+        band_height = max(10.0, min(18.0, 0.055 * depth))
+        max_band_width = max(1.0, 0.84 * width)
+        if equivalent_area / band_height > max_band_width:
+            band_height = equivalent_area / max_band_width
+        band_width = min(max_band_width, equivalent_area / max(band_height, 1e-9))
+        band_height = min(max(band_height, 8.0), max(8.0, 0.16 * depth))
+
+        x_mid = 0.5 * width
+        fig.add_shape(
+            type="rect",
+            x0=x_mid - 0.5 * band_width,
+            x1=x_mid + 0.5 * band_width,
+            y0=y - 0.5 * band_height,
+            y1=y + 0.5 * band_height,
+            line=dict(color=colour, width=1.6, dash="dot"),
+            fillcolor=fill,
+            layer="below",
+        )
 
 
 def make_sls_canonical_section_figure(
@@ -190,6 +256,11 @@ def make_sls_canonical_section_figure(
                 line=dict(color="#334155", width=max(1.0, min(2.5, lig_d / 5.0))),
             )
 
+    # Show the transformed-section substitution as a translucent area-equivalent
+    # band behind each included physical reinforcement layer.  This is
+    # presentation-only: all areas/factors come from the authoritative SLS result.
+    _draw_transformed_area_bands(fig, layers=layers, width=width, depth=depth)
+
     # Draw every real longitudinal bar at its real centre and diameter.
     for point in _bar_points(canonical):
         x = float(point.get("x", 0.0) or 0.0)
@@ -248,22 +319,42 @@ def make_sls_canonical_section_figure(
             font=dict(color="#64748b", size=9),
         )
 
-    # Keep authoritative SLS layer labels/state beside the real physical bars.
+    # Keep authoritative SLS layer labels/state beside the real physical bars,
+    # but explicitly distinguish physical steel from the transformed equivalent
+    # area used in the cracked-section calculation.
     for layer in layers:
         y = float(layer.get("depth_from_top_mm", 0.0) or 0.0)
         state = str(layer.get("state", "neutral") or "neutral")
         included = bool(layer.get("included", True))
         factor = float(layer.get("transformed_factor", 0.0) or 0.0)
+        area = float(layer.get("area_mm2", 0.0) or 0.0)
+        equivalent_area = factor * area
         label = str(layer.get("label", layer.get("layer_id", "Layer")))
-        factor_text = "omitted" if not included else f"{factor:.3g} A<sub>s</sub>"
+        colour = _STATE_COLOURS.get(state, _STATE_COLOURS["neutral"])
+
+        if not included:
+            label_text = (
+                f"{label} — {state}<br>"
+                f"Physical steel: A<sub>s</sub> = {area:.1f} mm²<br>"
+                "Equivalent transformed area: omitted"
+            )
+        else:
+            expression = _transformed_area_expression(state)
+            label_text = (
+                f"{label} — {state}<br>"
+                f"Physical steel: A<sub>s</sub> = {area:.1f} mm²<br>"
+                "<b>Equivalent transformed area</b><br>"
+                f"{expression} = {factor:.3g} × {area:.1f} = {equivalent_area:,.0f} mm²"
+            )
+
         fig.add_annotation(
             x=1.10 * width,
             y=y,
-            text=f"{label} — {state}<br>{factor_text}",
+            text=label_text,
             showarrow=False,
             xanchor="left",
             align="left",
-            font=dict(color=_STATE_COLOURS.get(state, _STATE_COLOURS["neutral"]), size=9),
+            font=dict(color=colour, size=8.5),
         )
 
     fig.add_annotation(
@@ -281,6 +372,17 @@ def make_sls_canonical_section_figure(
         showarrow=False,
         font=dict(color="#475569", size=9),
     )
+    fig.add_annotation(
+        x=0.5 * width,
+        y=1.085 * depth,
+        text=(
+            "● physical reinforcement &nbsp;&nbsp; "
+            "▭ translucent band = equivalent transformed area used in the cracked section"
+        ),
+        showarrow=False,
+        align="center",
+        font=dict(color="#475569", size=8),
+    )
 
     fig.add_trace(
         go.Scatter(
@@ -293,13 +395,13 @@ def make_sls_canonical_section_figure(
         )
     )
     fig.update_xaxes(
-        range=[-0.18 * width, 1.58 * width],
+        range=[-0.18 * width, 1.95 * width],
         visible=False,
         fixedrange=True,
         constrain="domain",
     )
     fig.update_yaxes(
-        range=[depth * 1.08, -depth * 0.12],
+        range=[depth * 1.14, -depth * 0.12],
         visible=False,
         fixedrange=True,
         scaleanchor="x",
