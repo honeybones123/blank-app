@@ -9,6 +9,9 @@ import streamlit as st
 from bending_diagrams import _make_sls_stress_block_figure
 from engineering_page_sections.bending_checks_context import BendingSlsChecksInput
 from engineering_page_sections.bending_sls_diagram import make_sls_canonical_section_figure
+from engineering_page_sections.bending_sls_transformed_diagram import (
+    make_sls_transformed_section_figure,
+)
 from widgets_helpers import calcbox, render_plotly_diagram
 
 
@@ -379,6 +382,15 @@ Check 3 uses this converged cracked neutral axis to calculate $I_{{cr}}$.
             config={"displayModeBar": False},
         )
 
+    def transformed_diagram() -> None:
+        fig = make_sls_transformed_section_figure(result)
+        render_plotly_diagram(
+            fig,
+            key=f"bending_sls_check2_transformed_layers_{suffix}",
+            title="Cracked transformed section (SLS)",
+            config={"displayModeBar": False},
+        )
+
     def stress_block_diagram(title: str, key_suffix: str) -> None:
         include_comp = any(
             bool(layer.get("included", True))
@@ -437,14 +449,13 @@ Check 3 uses this converged cracked neutral axis to calculate $I_{{cr}}$.
                 "layer_classification",
             ),
         )
-        _step_row(
-            step_md=step4,
-            uid="bending_sls_check2_step_4",
-            diagram_fn=lambda: canonical_diagram(
-                "Transformed reinforcement",
-                "transformed_layers",
-            ),
-        )
+
+        # Step 4 needs a wide teaching canvas: the calculation stays intact and
+        # the approved section + right-hand callout layout renders full-width
+        # below it so the text cannot overlap the section diagram.
+        calcbox(step4, uid="bending_sls_check2_step_4")
+        transformed_diagram()
+
         _step_row(
             step_md=step5,
             uid="bending_sls_check2_step_5",
