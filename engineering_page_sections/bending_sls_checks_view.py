@@ -66,30 +66,28 @@ $$
     return "\n\n".join(blocks) or "No active reinforcement layers were published."
 
 
-def _transformed_layer_markdown(
+def _transformed_area_markdown(
     layers: tuple[Mapping[str, Any], ...],
-    dn: float,
-    n: float,
 ) -> str:
+    """Explain steel-to-concrete area transformation before any first moments."""
+
     blocks: list[str] = []
     for i, layer in enumerate(layers, start=1):
         label = str(layer.get("label", layer.get("layer_id", f"Layer {i}")))
-        y = float(layer.get("depth_from_compression_mm", 0.0) or 0.0)
         area = float(layer.get("area_mm2", 0.0) or 0.0)
         state = str(layer.get("state", "neutral") or "neutral")
         included = bool(layer.get("included", True))
         factor = float(layer.get("transformed_factor", 0.0) or 0.0)
-        contribution = float(layer.get("first_moment_mm3", 0.0) or 0.0)
+        equivalent_area = factor * area
 
         if not included:
             blocks.append(
                 rf"""**{label}**
 
-This layer is on the **{state}** side but is omitted by the current
-compression-reinforcement option.
+This physical steel layer is omitted by the current compression-reinforcement option.
 
 $$
-\boxed{{Q_{{s,{i}}}=0}}
+\boxed{{A'_{{s,{i}}}=0}}
 $$"""
             )
             continue
@@ -98,16 +96,98 @@ $$"""
             blocks.append(
                 rf"""**{label} — tension**
 
+Because concrete is the reference material, replace the physical steel area by:
+
 $$
-Q_{{s,t,{i}}}=nA_{{s,{i}}}(y_i-d_n)
+A'_{{s,t,{i}}}=nA_{{s,{i}}}
 $$
 
 **For this beam**
 
 $$
+A'_{{s,t,{i}}}
+=
+({factor:.6f})({area:.3f})
+=
+{equivalent_area:,.3f}\ \text{{mm}}^2
+$$
+
+$$
+\boxed{{A'_{{s,t,{i}}}={equivalent_area:,.3f}\ \text{{mm}}^2}}
+$$"""
+            )
+        elif state == "compression":
+            blocks.append(
+                rf"""**{label} — compression**
+
+The gross concrete compression area already contains the concrete displaced by this
+steel, so only the additional equivalent area is added:
+
+$$
+A'_{{s,c,{i}}}=(n-1)A_{{s,{i}}}
+$$
+
+**For this beam**
+
+$$
+A'_{{s,c,{i}}}
+=
+({factor:.6f})({area:.3f})
+=
+{equivalent_area:,.3f}\ \text{{mm}}^2
+$$
+
+$$
+\boxed{{A'_{{s,c,{i}}}={equivalent_area:,.3f}\ \text{{mm}}^2}}
+$$"""
+            )
+        else:
+            blocks.append(
+                rf"""**{label} — neutral-axis layer**
+
+The layer is approximately at the neutral axis. Its transformed area may still exist,
+but its first-moment lever arm is approximately zero.
+
+$$
+A'_{{s,{i}}}={equivalent_area:,.3f}\ \text{{mm}}^2
+$$"""
+            )
+
+    return "\n\n".join(blocks) or "No active reinforcement layers were published."
+
+
+def _first_moment_markdown(
+    layers: tuple[Mapping[str, Any], ...],
+    dn: float,
+) -> str:
+    """Take first moments only after the equivalent transformed areas are known."""
+
+    blocks: list[str] = []
+    for i, layer in enumerate(layers, start=1):
+        label = str(layer.get("label", layer.get("layer_id", f"Layer {i}")))
+        y = float(layer.get("depth_from_compression_mm", 0.0) or 0.0)
+        area = float(layer.get("area_mm2", 0.0) or 0.0)
+        state = str(layer.get("state", "neutral") or "neutral")
+        included = bool(layer.get("included", True))
+        factor = float(layer.get("transformed_factor", 0.0) or 0.0)
+        equivalent_area = factor * area
+        contribution = float(layer.get("first_moment_mm3", 0.0) or 0.0)
+
+        if not included:
+            continue
+
+        if state == "tension":
+            blocks.append(
+                rf"""**{label} — tension first moment**
+
+$$
+Q_{{s,t,{i}}}=A'_{{s,t,{i}}}(y_i-d_n)
+$$
+
+$$
 Q_{{s,t,{i}}}
 =
-({factor:.4f})({area:.3f})({y:.3f}-{dn:.3f})
+({equivalent_area:,.3f})({y:.3f}-{dn:.3f})
 =
 {contribution:,.3f}\ \text{{mm}}^3
 $$
@@ -118,18 +198,16 @@ $$"""
             )
         elif state == "compression":
             blocks.append(
-                rf"""**{label} — compression**
+                rf"""**{label} — compression first moment**
 
 $$
-Q_{{s,c,{i}}}=(n-1)A_{{s,{i}}}(d_n-y_i)
+Q_{{s,c,{i}}}=A'_{{s,c,{i}}}(d_n-y_i)
 $$
-
-**For this beam**
 
 $$
 Q_{{s,c,{i}}}
 =
-({factor:.4f})({area:.3f})({dn:.3f}-{y:.3f})
+({equivalent_area:,.3f})({dn:.3f}-{y:.3f})
 =
 {contribution:,.3f}\ \text{{mm}}^3
 $$
@@ -142,15 +220,14 @@ $$"""
             blocks.append(
                 rf"""**{label} — neutral-axis layer**
 
-The layer is approximately at the neutral axis and therefore has
-approximately zero transformed first-moment contribution.
+Its lever arm is approximately zero, so:
 
 $$
 \boxed{{Q_{{s,{i}}}\approx0}}
 $$"""
             )
 
-    return "\n\n".join(blocks) or "No active reinforcement layers were published."
+    return "\n\n".join(blocks) or "No included reinforcement first moments are required."
 
 
 def _step_row(
@@ -183,6 +260,19 @@ def _check2_payload(
     shape = str(result.get("section_shape", "RECT") or "RECT")
     compression_face = str(result.get("compression_face", "top") or "top")
 
+    q_compression = sum(
+        float(layer.get("first_moment_mm3", 0.0) or 0.0)
+        for layer in layers
+        if bool(layer.get("included", True))
+        and str(layer.get("state", "neutral") or "neutral") == "compression"
+    )
+    q_tension = sum(
+        float(layer.get("first_moment_mm3", 0.0) or 0.0)
+        for layer in layers
+        if bool(layer.get("included", True))
+        and str(layer.get("state", "neutral") or "neutral") == "tension"
+    )
+
     if shape == "RECT":
         concrete_formula = r"Q_c=\frac{b d_n^2}{2}"
         concrete_sub = rf"""
@@ -207,7 +297,7 @@ $$
     purpose = rf"""**From Check 1**
 
 $$
-\boxed{{n={n:.4f}}}
+\boxed{{n={n:.6f}}}
 $$
 
 **Purpose**
@@ -220,33 +310,33 @@ $$
 \boxed{{Q_c+Q_{{s,c}}=Q_{{s,t}}}}
 $$
 
-The app repeats the transformed-section calculation for trial values of $d_n$.
-The numerical calculations below show the **final converged iteration** for this beam.
+The solver varies $d_n$ until the first moments of the active concrete and the
+**equivalent transformed steel areas** balance. The calculations below show the
+final converged evaluation for this beam.
 """
 
-    step1 = rf"""**Step 1 — Choose a trial neutral axis**
+    step1 = rf"""**Step 1 — Define the unknown neutral axis**
 
-Start with a trial neutral-axis depth measured from the active compression face:
-
-$$
-d_n=d_{{n,\mathrm{{trial}}}}
-$$
-
-Changing $d_n$ changes the active concrete compression region, the classification
-of every reinforcement layer, and each transformed reinforcement contribution.
-
-For the final converged trial shown below:
+The cracked neutral-axis depth is initially unknown:
 
 $$
-\boxed{{d_n={dn:.3f}\ \text{{mm}}}}
+d_n=\text{{unknown}}
 $$
 
-Steps 2–6 verify that this trial satisfies transformed-section equilibrium.
+The solver varies $d_n$ from the active compression face. Each candidate value changes:
+
+- the active concrete compression region;
+- whether each physical steel layer is in tension or compression; and
+- the lever arm used when the transformed areas are checked for equilibrium.
+
+The diagram alongside this step shows the **final converged section for reference**.
+The converged value itself is accepted in Step 6.
 """
 
     step2 = rf"""**Step 2 — Ignore tensile concrete**
 
-Concrete on the tension side of the cracked neutral axis is inactive.
+Concrete on the tension side of the cracked neutral axis is cracked and is not included
+in the transformed-section equilibrium.
 
 For this {shape} section:
 
@@ -254,7 +344,7 @@ $$
 {concrete_formula}
 $$
 
-**For this beam**
+**For the final converged evaluation**
 
 {concrete_sub}
 
@@ -265,7 +355,7 @@ $$
 
     step3 = rf"""**Step 3 — Classify every physical reinforcement layer**
 
-For each reinforcement layer:
+For each physical reinforcement layer:
 
 $$
 y_i<d_n\Rightarrow\text{{compression}}
@@ -276,65 +366,75 @@ y_i>d_n\Rightarrow\text{{tension}}
 $$
 
 $$
-y_i\approx d_n\Rightarrow\text{{approximately zero contribution}}
+y_i\approx d_n\Rightarrow\text{{approximately zero first-moment contribution}}
 $$
 
 Physical names such as “top” and “bottom” do not set the engineering state.
 
-**For this beam**
+**For the final converged evaluation**
 
 {_classification_markdown(layers, dn)}
 """
 
-    step4 = rf"""**Step 4 — Transform reinforcement using Check 1**
+    step4 = rf"""**Step 4 — Transform physical steel into equivalent concrete area**
 
-The modular ratio from Check 1 is:
-
-$$
-n={n:.4f}
-$$
-
-For tension reinforcement:
+The transformed-section method uses concrete as the reference material. The physical
+steel area is therefore replaced by an equivalent area using the modular ratio from
+Check 1:
 
 $$
-Q_{{s,t,i}}=nA_{{s,i}}(y_i-d_n)
+\boxed{{n={n:.6f}}}
 $$
 
-For compression reinforcement:
+For tension reinforcement in the cracked concrete region:
 
 $$
-Q_{{s,c,i}}=(n-1)A_{{s,i}}(d_n-y_i)
+A'_{{s,t,i}}=nA_{{s,i}}
 $$
 
-The $(n-1)$ compression factor is used because the gross concrete compression
-area already includes the concrete displaced by the reinforcement.
+For compression reinforcement already inside the gross concrete compression area:
+
+$$
+A'_{{s,c,i}}=(n-1)A_{{s,i}}
+$$
+
+The $(n-1)$ factor avoids counting the concrete displaced by compression steel twice.
+At this step we are calculating **areas only** — the first-moment lever arms are applied
+in Step 5.
 
 **For this beam**
 
-{_transformed_layer_markdown(layers, dn, n)}
+{_transformed_area_markdown(layers)}
 """
 
-    step5 = rf"""**Step 5 — Check transformed-section equilibrium**
+    step5 = rf"""**Step 5 — Take first moments and enforce transformed-section equilibrium**
 
-Form the residual:
+Now multiply each equivalent transformed area from Step 4 by its distance from the
+candidate neutral axis.
+
+{_first_moment_markdown(layers, dn)}
+
+The equilibrium condition is:
+
+$$
+Q_c+Q_{{s,c}}=Q_{{s,t}}
+$$
+
+**For the final converged evaluation**
+
+$$
+{concrete_q:,.3f}
++
+{q_compression:,.3f}
+=
+{q_tension:,.3f}\ \text{{mm}}^3
+$$
+
+Equivalently, form the residual:
 
 $$
 R(d_n)=Q_c(d_n)+Q_{{s,c}}(d_n)-Q_{{s,t}}(d_n)
 $$
-
-For this beam, the converged layer-by-layer equilibrium is:
-
-$$
-{legacy._equilibrium_assembly(result)}
-$$
-
-which gives:
-
-$$
-{legacy._equilibrium_substitution(result)}
-$$
-
-and therefore:
 
 $$
 R({dn:.6f})={residual:.6g}\ \text{{mm}}^3
@@ -345,9 +445,9 @@ $$
 $$
 """
 
-    step6 = rf"""**Step 6 — Accept the cracked neutral axis**
+    step6 = rf"""**Step 6 — Accept the converged cracked neutral axis**
 
-The solver accepts the trial neutral axis when:
+The solver accepts a candidate neutral axis when:
 
 $$
 |R(d_n)|\leq R_{{\mathrm{{tol}}}}
@@ -361,13 +461,13 @@ $$
 {tolerance:.6g}\ \text{{mm}}^3
 $$
 
-Therefore:
+Therefore the converged cracked neutral axis is:
 
 $$
 \boxed{{d_n={dn:.3f}\ \text{{mm}}}}
 $$
 
-Check 3 uses this converged cracked neutral axis to calculate $I_{{cr}}$.
+Check 3 uses this converged $d_n$ to calculate $I_{{cr}}$.
 """
 
     suffix = "ignore" if ignore_compression else "include"
@@ -429,7 +529,7 @@ Check 3 uses this converged cracked neutral axis to calculate $I_{{cr}}$.
             step_md=step1,
             uid="bending_sls_check2_step_1",
             diagram_fn=lambda: canonical_diagram(
-                "Cracked section and neutral axis",
+                "Converged cracked section (reference)",
                 "trial_section",
             ),
         )
