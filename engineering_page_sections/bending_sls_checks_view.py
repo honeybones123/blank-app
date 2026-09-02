@@ -8,7 +8,10 @@ import streamlit as st
 
 from bending_diagrams import _make_sls_stress_block_figure
 from engineering_page_sections.bending_checks_context import BendingSlsChecksInput
-from engineering_page_sections.bending_sls_diagram import make_sls_canonical_section_figure
+from engineering_page_sections.bending_sls_diagram import (
+    make_sls_canonical_section_figure,
+    make_sls_compression_first_moment_figure,
+)
 from engineering_page_sections.bending_sls_transformed_diagram import (
     make_sls_transformed_section_figure,
 )
@@ -259,6 +262,15 @@ def _check2_payload(
     concrete_q = float(result.get("concrete_first_moment_mm3", 0.0) or 0.0)
     shape = str(result.get("section_shape", "RECT") or "RECT")
     compression_face = str(result.get("compression_face", "top") or "top")
+    width = float(view.width_mm)
+    depth = float(view.overall_depth_mm)
+    dn_top = float(
+        result.get(
+            "neutral_axis_depth_from_top_mm",
+            dn if compression_face.lower() == "top" else depth - dn,
+        )
+        or 0.0
+    )
 
     q_compression = sum(
         float(layer.get("first_moment_mm3", 0.0) or 0.0)
@@ -272,27 +284,6 @@ def _check2_payload(
         if bool(layer.get("included", True))
         and str(layer.get("state", "neutral") or "neutral") == "tension"
     )
-
-    if shape == "RECT":
-        concrete_formula = r"Q_c=\frac{b d_n^2}{2}"
-        concrete_sub = rf"""
-$$
-Q_c
-=
-\frac{{{float(view.width_mm):.3f}({dn:.6f})^2}}{{2}}
-=
-{concrete_q:,.3f}\ \text{{mm}}^3
-$$
-"""
-    else:
-        concrete_formula = r"Q_c(d_n)=\int_{A_c}(d_n-y)\,dA"
-        concrete_sub = rf"""
-$$
-Q_c({dn:.6f})
-=
-{concrete_q:,.3f}\ \text{{mm}}^3
-$$
-"""
 
     purpose = rf"""**From Check 1**
 
@@ -333,24 +324,108 @@ The diagram alongside this step shows the **final converged section for referenc
 The converged value itself is accepted in Step 6.
 """
 
-    step2 = rf"""**Step 2 — Ignore tensile concrete**
+    tension_side = "below" if compression_face.lower() == "top" else "above"
+    compression_side = "above" if compression_face.lower() == "top" else "below"
+    if shape == "RECT":
+        concrete_area = width * dn
+        concrete_centroid_distance = 0.5 * dn
+        step2 = rf"""**Step 2 — Determine the compression concrete first moment**
 
-Concrete on the tension side of the cracked neutral axis is cracked and is not included
-in the transformed-section equilibrium.
+Concrete {tension_side} the neutral axis is cracked in tension and is therefore
+ignored. Only the concrete compression region {compression_side} the neutral axis is
+retained.
 
-For this {shape} section:
+For a rectangular section, the first moment of this compression concrete area about
+the neutral axis is calculated below.
+
+**Compression concrete area**
 
 $$
-{concrete_formula}
+A_c=b\,d_n
 $$
 
-**For the final converged evaluation**
+**For this beam**
 
-{concrete_sub}
+$$
+A_c
+=
+({width:.3f})({dn:.6f})
+=
+{concrete_area:,.3f}\ \text{{mm}}^2
+$$
+
+**Distance from the neutral axis to its centroid**
+
+Because the compression region is rectangular:
+
+$$
+\bar y_c=\frac{{d_n}}{{2}}
+$$
+
+$$
+\bar y_c
+=
+\frac{{{dn:.6f}}}{{2}}
+=
+{concrete_centroid_distance:.6f}\ \text{{mm}}
+$$
+
+**First moment about the neutral axis**
+
+$$
+Q_c=A_c\bar y_c
+$$
+
+Therefore:
+
+$$
+Q_c
+=
+(b d_n)\left(\frac{{d_n}}{{2}}\right)
+=
+\frac{{b d_n^2}}{{2}}
+$$
+
+**For this beam**
+
+$$
+Q_c
+=
+({width:.3f})({dn:.6f})\left(\frac{{{dn:.6f}}}{{2}}\right)
+$$
 
 $$
 \boxed{{Q_c={concrete_q:,.3f}\ \text{{mm}}^3}}
 $$
+
+*Meaning — $Q_c$ is a geometric first-moment term, not a concrete stress or force.
+It represents the retained compression concrete area multiplied by the distance of
+its centroid from the neutral axis.*
+"""
+    else:
+        step2 = rf"""**Step 2 — Determine the compression concrete first moment**
+
+Concrete {tension_side} the neutral axis is cracked in tension and is therefore
+ignored. Only the concrete compression region {compression_side} the neutral axis is
+retained.
+
+For this {shape} section, the compression region is not treated as a rectangular
+$b d_n$ area. Its geometric first moment about the neutral axis is obtained from the
+authoritative section geometry:
+
+$$
+Q_c(d_n)=\int_{{A_c}}(d_n-y)\,dA
+$$
+
+**For this beam**
+
+$$
+\boxed{{Q_c({dn:.6f})={concrete_q:,.3f}\ \text{{mm}}^3}}
+$$
+
+*Meaning — $Q_c$ is a geometric first-moment term, not a concrete stress or force.
+It represents the retained compression concrete area multiplied by the distance of
+its centroid from the neutral axis.*
 """
 
     step3 = rf"""**Step 3 — Classify every physical reinforcement layer**
@@ -491,6 +566,27 @@ Check 3 uses this converged $d_n$ to calculate $I_{{cr}}$.
             config={"displayModeBar": False},
         )
 
+    def compression_first_moment_diagram() -> None:
+        if shape != "RECT":
+            canonical_diagram(
+                "Retained compression concrete",
+                "compression_first_moment",
+            )
+            return
+        fig = make_sls_compression_first_moment_figure(
+            width_mm=width,
+            depth_mm=depth,
+            neutral_axis_depth_mm=dn,
+            neutral_axis_depth_from_top_mm=dn_top,
+            compression_face=compression_face,
+        )
+        render_plotly_diagram(
+            fig,
+            key=f"bending_sls_check2_compression_first_moment_{suffix}",
+            title="Compression concrete first moment",
+            config={"displayModeBar": False},
+        )
+
     def stress_block_diagram(title: str, key_suffix: str) -> None:
         include_comp = any(
             bool(layer.get("included", True))
@@ -533,21 +629,13 @@ Check 3 uses this converged $d_n$ to calculate $I_{{cr}}$.
                 "trial_section",
             ),
         )
-        _step_row(
-            step_md=step2,
-            uid="bending_sls_check2_step_2",
-            diagram_fn=lambda: stress_block_diagram(
-                "Active concrete compression region",
-                "concrete_region",
-            ),
-        )
+        # The geometric first-moment figure needs a wide canvas so its depth,
+        # centroid and equation annotations remain legible.
+        calcbox(step2, uid="bending_sls_check2_step_2")
+        compression_first_moment_diagram()
         _step_row(
             step_md=step3,
             uid="bending_sls_check2_step_3",
-            diagram_fn=lambda: canonical_diagram(
-                "Reinforcement layer classification",
-                "layer_classification",
-            ),
         )
 
         # Step 4 needs a wide teaching canvas: the calculation stays intact and

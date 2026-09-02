@@ -20,17 +20,16 @@ from engineering_page_sections.bending_sls_diagram import (
 
 
 _CARD_BG = {
-    "compression": "rgba(219,234,254,0.72)",
-    "tension": "rgba(254,226,226,0.72)",
+    "compression": "rgba(254,226,226,0.72)",
+    "tension": "rgba(219,234,254,0.72)",
     "neutral": "rgba(241,245,249,0.86)",
 }
 
-_BAND_FILL = {
-    "compression": "rgba(37,99,235,0.08)",
-    "tension": "rgba(220,38,38,0.08)",
-    "neutral": "rgba(100,116,139,0.07)",
+_CALLOUT_COLOURS = {
+    "compression": "#dc2626",
+    "tension": "#2563eb",
+    "neutral": "#64748b",
 }
-
 
 def _transformed_expression(state: str) -> str:
     if state == "compression":
@@ -59,50 +58,18 @@ def make_sls_transformed_section_figure(result: Mapping[str, Any]) -> go.Figure:
         and float(layer.get("area_mm2", 0.0) or 0.0) > 0.0
     )
 
-    # Remove the compact right-hand labels from the base figure.  Keep its real
-    # section, physical bars, ligature cage, neutral-axis line and transformed
-    # bands, then rebuild only the teaching annotations in the approved layout.
+    # Remove the compact right-hand labels from the base figure. Keep its real
+    # section, physical bars, ligature cage, neutral-axis line and area-scaled
+    # transformed bands, then rebuild only the teaching annotations.
     fig.layout.annotations = ()
-
-    # Give the transformed area a deliberately clear schematic envelope while
-    # retaining the actual physical bars on top.  Numeric equivalent area is
-    # stated in the callout card, so the band is explanatory rather than a
-    # literal scaled steel shape.
-    for layer in layers:
-        if not bool(layer.get("included", True)):
-            continue
-        y = float(layer.get("depth_from_top_mm", 0.0) or 0.0)
-        state = str(layer.get("state", "neutral") or "neutral")
-        colour = _STATE_COLOURS.get(state, _STATE_COLOURS["neutral"])
-        fig.add_shape(
-            type="rect",
-            x0=0.12 * width,
-            x1=0.88 * width,
-            y0=y - 0.045 * depth,
-            y1=y + 0.045 * depth,
-            line=dict(color=colour, width=1.6, dash="dot"),
-            fillcolor=_BAND_FILL.get(state, _BAND_FILL["neutral"]),
-            layer="below",
-        )
 
     # Section labels stay inside the beam and away from the transformed-area
     # callout cards.
     if compression_face == "bottom":
-        comp_y0, comp_y1 = dn_top, depth
         cracked_y0, cracked_y1 = 0.0, dn_top
     else:
-        comp_y0, comp_y1 = 0.0, dn_top
         cracked_y0, cracked_y1 = dn_top, depth
 
-    if comp_y1 - comp_y0 > 0.07 * depth:
-        fig.add_annotation(
-            x=0.5 * width,
-            y=0.5 * (comp_y0 + comp_y1),
-            text="<b>Active concrete</b><br>compression region",
-            showarrow=False,
-            align="center",
-            font=dict(color="#1d4ed8", size=13),
-        )
     if cracked_y1 - cracked_y0 > 0.12 * depth:
         fig.add_annotation(
             x=0.5 * width,
@@ -155,7 +122,7 @@ def make_sls_transformed_section_figure(result: Mapping[str, Any]) -> go.Figure:
         area = float(layer.get("area_mm2", 0.0) or 0.0)
         equivalent_area = factor * area
         label = str(layer.get("label", layer.get("layer_id", f"Layer {idx}")))
-        colour = _STATE_COLOURS.get(state, _STATE_COLOURS["neutral"])
+        colour = _CALLOUT_COLOURS.get(state, _CALLOUT_COLOURS["neutral"])
         expression = _transformed_expression(state)
 
         if included:

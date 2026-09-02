@@ -300,15 +300,6 @@ def make_sls_canonical_section_figure(
         font=dict(color="#6d28d9", size=10),
     )
 
-    if compression_y1 - compression_y0 > 0.08 * depth:
-        fig.add_annotation(
-            x=0.5 * width,
-            y=0.5 * (compression_y0 + compression_y1),
-            text="Active concrete<br>compression region",
-            showarrow=False,
-            align="center",
-            font=dict(color="#1d4ed8", size=10),
-        )
     if cracked_y1 - cracked_y0 > 0.12 * depth:
         fig.add_annotation(
             x=0.5 * width,
@@ -418,4 +409,215 @@ def make_sls_canonical_section_figure(
     return fig
 
 
-__all__ = ["make_sls_canonical_section_figure"]
+def make_sls_compression_first_moment_figure(
+    *,
+    width_mm: float,
+    depth_mm: float,
+    neutral_axis_depth_mm: float,
+    neutral_axis_depth_from_top_mm: float,
+    compression_face: str,
+) -> go.Figure:
+    """Show the geometric terms in the rectangular-section concrete first moment.
+
+    This is a presentation-only figure. All dimensions are supplied by the
+    authoritative SLS result/view; the figure does not solve for the neutral axis
+    or calculate an alternative first-moment result.
+    """
+
+    width = max(1.0, float(width_mm))
+    depth = max(1.0, float(depth_mm))
+    dn = max(0.0, min(depth, float(neutral_axis_depth_mm)))
+    dn_top = max(0.0, min(depth, float(neutral_axis_depth_from_top_mm)))
+    face = str(compression_face or "top").lower()
+
+    if face == "bottom":
+        compression_y0, compression_y1 = dn_top, depth
+        cracked_y0, cracked_y1 = 0.0, dn_top
+        compression_face_y = depth
+    else:
+        compression_y0, compression_y1 = 0.0, dn_top
+        cracked_y0, cracked_y1 = dn_top, depth
+        compression_face_y = 0.0
+
+    centroid_y = 0.5 * (compression_y0 + compression_y1)
+    centroid_distance = 0.5 * dn
+    fig = go.Figure()
+
+    fig.add_shape(
+        type="rect",
+        x0=0.0,
+        x1=width,
+        y0=compression_y0,
+        y1=compression_y1,
+        line=dict(width=0),
+        fillcolor="rgba(96,165,250,0.24)",
+        layer="below",
+    )
+    fig.add_shape(
+        type="rect",
+        x0=0.0,
+        x1=width,
+        y0=cracked_y0,
+        y1=cracked_y1,
+        line=dict(width=0),
+        fillcolor="rgba(226,232,240,0.42)",
+        layer="below",
+    )
+    fig.add_shape(
+        type="rect",
+        x0=0.0,
+        x1=width,
+        y0=0.0,
+        y1=depth,
+        line=dict(color="#0f172a", width=2.0),
+        fillcolor="rgba(255,255,255,0)",
+    )
+    fig.add_shape(
+        type="line",
+        x0=-0.04 * width,
+        x1=1.05 * width,
+        y0=dn_top,
+        y1=dn_top,
+        line=dict(color="#7c3aed", width=2.0, dash="dash"),
+    )
+
+    # Neutral-axis depth dimension from the active compression face.
+    dim_x = -0.13 * width
+    fig.add_shape(
+        type="line",
+        x0=dim_x,
+        x1=dim_x,
+        y0=compression_face_y,
+        y1=dn_top,
+        line=dict(color="#334155", width=1.3),
+    )
+    for y in (compression_face_y, dn_top):
+        fig.add_shape(
+            type="line",
+            x0=dim_x - 0.025 * width,
+            x1=dim_x + 0.025 * width,
+            y0=y,
+            y1=y,
+            line=dict(color="#334155", width=1.3),
+        )
+
+    # Centroid-distance dimension between the compression centroid and NA.
+    centroid_dim_x = 1.10 * width
+    fig.add_shape(
+        type="line",
+        x0=centroid_dim_x,
+        x1=centroid_dim_x,
+        y0=centroid_y,
+        y1=dn_top,
+        line=dict(color="#2563eb", width=1.4),
+    )
+    for y in (centroid_y, dn_top):
+        fig.add_shape(
+            type="line",
+            x0=centroid_dim_x - 0.025 * width,
+            x1=centroid_dim_x + 0.025 * width,
+            y0=y,
+            y1=y,
+            line=dict(color="#2563eb", width=1.4),
+        )
+
+    fig.add_shape(
+        type="circle",
+        x0=0.5 * width - 0.018 * width,
+        x1=0.5 * width + 0.018 * width,
+        y0=centroid_y - 0.018 * width,
+        y1=centroid_y + 0.018 * width,
+        line=dict(color="#1d4ed8", width=1.5),
+        fillcolor="#1d4ed8",
+    )
+
+    fig.add_annotation(
+        x=0.5 * width,
+        y=compression_y0 - 0.08 * depth if face == "top" else compression_y1 + 0.08 * depth,
+        text=f"b = {width:.1f} mm",
+        showarrow=False,
+        font=dict(color="#0f172a", size=11),
+    )
+    fig.add_annotation(
+        x=0.5 * width,
+        y=centroid_y,
+        text=f"<b>A<sub>c</sub> = b d<sub>n</sub></b><br>compression concrete",
+        showarrow=False,
+        yshift=-24 if face == "top" else 24,
+        align="center",
+        font=dict(color="#1e3a8a", size=11),
+    )
+    fig.add_annotation(
+        x=0.5 * width,
+        y=0.5 * (cracked_y0 + cracked_y1),
+        text="Tensile concrete ignored<br>(cracked)",
+        showarrow=False,
+        align="center",
+        font=dict(color="#64748b", size=11),
+    )
+    fig.add_annotation(
+        x=dim_x - 0.025 * width,
+        y=0.5 * (compression_face_y + dn_top),
+        text=f"d<sub>n</sub> = {dn:.3f} mm",
+        showarrow=False,
+        xanchor="right",
+        font=dict(color="#334155", size=10),
+    )
+    fig.add_annotation(
+        x=centroid_dim_x + 0.035 * width,
+        y=0.5 * (centroid_y + dn_top),
+        text=(
+            "ȳ<sub>c</sub> = d<sub>n</sub>/2"
+            f"<br>= {centroid_distance:.3f} mm"
+        ),
+        showarrow=False,
+        xanchor="left",
+        align="left",
+        font=dict(color="#1d4ed8", size=10),
+    )
+    fig.add_annotation(
+        x=1.52 * width,
+        y=0.50 * depth,
+        text=(
+            "<b>Q<sub>c</sub> = A<sub>c</sub> × ȳ<sub>c</sub></b><br><br>"
+            "= (b d<sub>n</sub>)(d<sub>n</sub>/2)<br><br>"
+            "= b d<sub>n</sub>²/2"
+        ),
+        showarrow=False,
+        xanchor="left",
+        align="left",
+        font=dict(color="#0f172a", size=12),
+        bgcolor="rgba(248,250,252,0.92)",
+        bordercolor="#cbd5e1",
+        borderwidth=1.0,
+        borderpad=10,
+    )
+
+    fig.update_xaxes(
+        range=[-0.35 * width, 2.45 * width],
+        visible=False,
+        fixedrange=True,
+        constrain="domain",
+    )
+    fig.update_yaxes(
+        range=[depth * 1.15, -depth * 0.15],
+        visible=False,
+        fixedrange=True,
+        scaleanchor="x",
+        scaleratio=1,
+    )
+    fig.update_layout(
+        height=330,
+        margin=dict(l=8, r=8, t=8, b=8),
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff",
+        showlegend=False,
+        dragmode=False,
+    )
+    return fig
+
+
+__all__ = [
+    "make_sls_canonical_section_figure",
+    "make_sls_compression_first_moment_figure",
+]
